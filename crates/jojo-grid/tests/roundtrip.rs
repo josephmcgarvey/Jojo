@@ -101,3 +101,71 @@ fn alternate_screen_with_mouse_modes() {
 fn line_wrap_disabled() {
     assert_roundtrip("nowrap", b"\x1b[?7lno wrap mode");
 }
+
+// --- Fix round 1 fixtures (task-4-findings-r1.md) ---
+
+#[test]
+fn underline_variants_round_trip() {
+    // I1: double underline is SGR `4:2`, not `21` (vte 0.15 parses `21` as
+    // CancelBold). Exercised alongside the sibling underline subparameters
+    // (undercurl, dotted, dashed) to confirm they still round-trip.
+    let mut s = Vec::new();
+    s.extend_from_slice(b"\x1b[1;4:2mbold_double\x1b[0m \x1b[4:3mundercurl\x1b[0m \x1b[4:4mdotted\x1b[0m \x1b[4:5mdashed\x1b[0m");
+    assert_roundtrip("underline_variants", &s);
+}
+
+#[test]
+fn wrap_at_bottom_does_not_bleed_background() {
+    // I2: a natural wrap that scrolls the screen bottom reveals the new row
+    // by resetting it with whichever pen is active at that instant
+    // (Grid::scroll_up uses cursor.template). Here that pen is blue: the
+    // continuation row starts out entirely blue before any text reaches it.
+    // An explicit `\x1b[K` (with the pen freshly reset to default) then
+    // clears the untouched tail of that row back to true default in A.
+    // The snapshot's trim relies on "never written == blank", but grid B's
+    // own reveal of the same row is also blue (its reveal timing matches
+    // A's byte-for-byte), so without re-emitting the erase, B's untouched
+    // tail stays blue while A's is genuinely default.
+    let mut s = Vec::new();
+    for i in 0..24 {
+        s.extend_from_slice(format!("line {i}\r\n").as_bytes());
+    }
+    s.extend_from_slice(b"\x1b[44m");
+    s.extend_from_slice("x".repeat(85).as_bytes());
+    s.extend_from_slice(b"\x1b[0m\x1b[K");
+    s.extend_from_slice(b"\r\nmore\r\nlines\r\nhere");
+    assert_roundtrip("wrap_bottom_bg_bleed", &s);
+}
+
+#[test]
+fn pending_wrap_at_screen_edge() {
+    // I3: exactly 160 printable characters at 80 columns ends with the
+    // cursor on row 2 in pending-wrap state (input_needs_wrap), which the
+    // snapshot's final CUP otherwise clears.
+    let line: String = (0..160).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+    assert_roundtrip("pending_wrap", line.as_bytes());
+}
+
+#[test]
+fn pending_wrap_with_colored_last_cell() {
+    // I3: same pending-wrap state, but the last cell on the row carries a
+    // non-default pen, exercising the re-emit-last-cell path with a pen
+    // change instead of the default pen.
+    let mut s = Vec::new();
+    let line: String = (0..159).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+    s.extend_from_slice(line.as_bytes());
+    s.extend_from_slice(b"\x1b[31mZ");
+    assert_roundtrip("pending_wrap_colored", &s);
+}
+
+#[test]
+fn fresh_grid_snapshot_has_no_cursor_style_sequence() {
+    // M4: term.cursor_style() always resolves to a concrete style (falling
+    // back to the configured default), so emitting DECSCUSR unconditionally
+    // would override a receiver's own configured cursor style even when the
+    // program never asked for one.
+    let g = TermGrid::new(COLS, ROWS, SCROLLBACK);
+    let snapshot = g.snapshot();
+    let text = String::from_utf8_lossy(&snapshot);
+    assert!(!text.contains(" q"), "unexpected DECSCUSR in snapshot: {text:?}");
+}

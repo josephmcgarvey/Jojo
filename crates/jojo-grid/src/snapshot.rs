@@ -13,7 +13,7 @@ use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::TermMode;
-use vte::ansi::{Color, CursorShape, NamedColor};
+use vte::ansi::{Color, CursorShape, CursorStyle, NamedColor};
 
 /// Cell flags that map to SGR attributes.
 pub(crate) const STYLE_FLAGS: Flags = Flags::BOLD
@@ -81,7 +81,10 @@ impl Pen {
             (Flags::DIM, ";2"),
             (Flags::ITALIC, ";3"),
             (Flags::UNDERLINE, ";4"),
-            (Flags::DOUBLE_UNDERLINE, ";21"),
+            // vte 0.15 parses bare `21` as CancelBold (ansi.rs:1849), not
+            // double underline; double underline is the colon-subparameter
+            // form `4:2` (ansi.rs:1839).
+            (Flags::DOUBLE_UNDERLINE, ";4:2"),
             (Flags::UNDERCURL, ";4:3"),
             (Flags::DOTTED_UNDERLINE, ";4:4"),
             (Flags::DASHED_UNDERLINE, ";4:5"),
@@ -183,22 +186,72 @@ impl TermGrid {
                     }
                 }
             }
-            if line != bottom && !wrapped {
-                // Reset before the line feed so a scroll does not fill the
-                // new row with the current background color.
-                if pen != Pen::DEFAULT {
+            if !wrapped {
+                if end < cols {
+                    // Columns beyond `end` were not written because they
+                    // matched the default pen (see is_blank), but
+                    // Grid::scroll_up reveals a newly scrolled-in row by
+                    // resetting it with whichever pen is active at that
+                    // instant. If this row was itself revealed with a
+                    // non-default pen and the program later cleared its
+                    // tail back to default explicitly (e.g. EL) rather than
+                    // simply never reaching it, the untouched columns are
+                    // genuinely default here, but the receiver's own reveal
+                    // of this same row (which lands on the same pen, since
+                    // its timing mirrors ours byte for byte) would leave
+                    // them colored unless told otherwise. Erase them
+                    // explicitly so they match regardless of what the
+                    // receiver's own scroll left behind.
+                    out.extend_from_slice(b"\x1b[0m\x1b[K");
+                    pen = Pen::DEFAULT;
+                } else if pen != Pen::DEFAULT {
+                    // Reset before the line feed so a scroll does not fill
+                    // the new row with the current background color.
                     out.extend_from_slice(b"\x1b[0m");
                     pen = Pen::DEFAULT;
                 }
-                out.extend_from_slice(b"\r\n");
+                if line != bottom {
+                    out.extend_from_slice(b"\r\n");
+                }
             }
         }
 
         // Cursor position (1-based), then the pen the program had selected.
+        //
+        // If the cursor is pending-wrap (the program filled the last column
+        // and the *next* character printed will wrap first), a plain CUP to
+        // that column is not enough: CUP always clears pending-wrap in
+        // alacritty_terminal, so the receiver would treat the next write as
+        // landing in that column rather than wrapping first. Instead,
+        // position on that column and re-emit the cell already there, so
+        // writing it sets pending-wrap in the receiver the same way the
+        // original write did, rather than merely moving the cursor there.
         let cursor = &grid.cursor;
-        out.extend_from_slice(
-            format!("\x1b[{};{}H", cursor.point.line.0 + 1, cursor.point.column.0 + 1).as_bytes(),
-        );
+        if cursor.input_needs_wrap {
+            let row = &grid[cursor.point.line];
+            let last = Column(cols - 1);
+            // A wide character's trailing spacer cell carries no content of
+            // its own; the glyph is in the cell before it, so re-emitting
+            // the spacer's column must instead write the leading cell.
+            let (col, cell) = if row[last].flags.contains(Flags::WIDE_CHAR_SPACER) {
+                (cols - 2, &row[Column(cols - 2)])
+            } else {
+                (cols - 1, &row[last])
+            };
+            out.extend_from_slice(format!("\x1b[{};{}H", cursor.point.line.0 + 1, col + 1).as_bytes());
+            Pen::of(cell).write(&mut out);
+            let mut buf = [0u8; 4];
+            out.extend_from_slice(cell.c.encode_utf8(&mut buf).as_bytes());
+            if let Some(extra) = cell.zerowidth() {
+                for z in extra {
+                    out.extend_from_slice(z.encode_utf8(&mut buf).as_bytes());
+                }
+            }
+        } else {
+            out.extend_from_slice(
+                format!("\x1b[{};{}H", cursor.point.line.0 + 1, cursor.point.column.0 + 1).as_bytes(),
+            );
+        }
         Pen::of(&cursor.template).write(&mut out);
 
         for (flag, param) in PRIVATE_MODES {
@@ -216,16 +269,30 @@ impl TermGrid {
             out.extend_from_slice(b"\x1b[?25l");
         }
 
+        // DECSCUSR is emitted only when the resolved style differs from
+        // CursorStyle::default() (Block, not blinking) — the same value
+        // Config::default().default_cursor_style resolves to, which is what
+        // TermGrid::new builds its Term with. term.cursor_style() always
+        // resolves to a concrete style, including when the program never
+        // requested one at all, so emitting it unconditionally would
+        // override a receiver's own configured cursor style on every
+        // snapshot. alacritty_terminal does not expose whether the style
+        // was set explicitly (Term::cursor_style is a private field), so
+        // this comparison cannot distinguish "the program never asked" from
+        // "the program explicitly asked for the default style"; both emit
+        // nothing.
         let style = self.term.cursor_style();
-        let base = match style.shape {
-            CursorShape::Block => Some(1),
-            CursorShape::Underline => Some(3),
-            CursorShape::Beam => Some(5),
-            _ => None,
-        };
-        if let Some(base) = base {
-            let n = if style.blinking { base } else { base + 1 };
-            out.extend_from_slice(format!("\x1b[{n} q").as_bytes());
+        if style != CursorStyle::default() {
+            let base = match style.shape {
+                CursorShape::Block => Some(1),
+                CursorShape::Underline => Some(3),
+                CursorShape::Beam => Some(5),
+                _ => None,
+            };
+            if let Some(base) = base {
+                let n = if style.blinking { base } else { base + 1 };
+                out.extend_from_slice(format!("\x1b[{n} q").as_bytes());
+            }
         }
 
         out

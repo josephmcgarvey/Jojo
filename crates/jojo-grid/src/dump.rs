@@ -29,7 +29,12 @@ impl TermGrid {
             out.push('\n');
         }
         let cursor = &grid.cursor;
-        writeln!(out, "cursor {:?} {:?}", cursor.point.line, cursor.point.column).unwrap();
+        writeln!(
+            out,
+            "cursor {:?} {:?} pending_wrap {:?}",
+            cursor.point.line, cursor.point.column, cursor.input_needs_wrap
+        )
+        .unwrap();
         writeln!(
             out,
             "pen {:?}/{:?}/{:#x}",
