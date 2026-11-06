@@ -84,7 +84,7 @@ async fn create_attach_echo_detach_reattach_shutdown() {
     let session = create_shell(&mut c, &project).await;
     assert_eq!(session.label, test_shell().trim_end_matches(".exe"));
 
-    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id })).await.unwrap();
+    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id, cols: 80, rows: 24 })).await.unwrap();
     c.recv_until(WAIT, |f| matches!(f, Frame::Snapshot { .. })).await.unwrap();
 
     c.send(Frame::Input { session_id: session.id, bytes: b"echo jojo-hi\r".to_vec() }).await.unwrap();
@@ -101,7 +101,7 @@ async fn create_attach_echo_detach_reattach_shutdown() {
     }
 
     c.send(Frame::Control(ControlMsg::Detach { session_id: session.id })).await.unwrap();
-    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id })).await.unwrap();
+    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id, cols: 80, rows: 24 })).await.unwrap();
     let snapshot = match c.recv_until(WAIT, |f| matches!(f, Frame::Snapshot { .. })).await.unwrap() {
         Frame::Snapshot { bytes, .. } => bytes,
         _ => unreachable!(),
@@ -181,7 +181,7 @@ async fn resize_out_of_range_is_rejected_and_session_still_echoes() {
         _ => unreachable!(),
     }
 
-    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id })).await.unwrap();
+    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id, cols: 80, rows: 24 })).await.unwrap();
     c.recv_until(WAIT, |f| matches!(f, Frame::Snapshot { .. })).await.unwrap();
     c.send(Frame::Input { session_id: session.id, bytes: b"echo jojo-still-alive\r".to_vec() }).await.unwrap();
     let mut grid = TermGrid::new(80, 24, 1000);
@@ -205,7 +205,83 @@ async fn errors_go_to_requester() {
     let dir = tempfile::tempdir().unwrap();
     let (endpoint, server) = start(dir.path()).await;
     let mut c = Client::connect(&endpoint).await.unwrap();
-    c.send(Frame::Control(ControlMsg::Attach { session_id: jojo_proto::SessionId::new() })).await.unwrap();
+    c.send(Frame::Control(ControlMsg::Attach { session_id: jojo_proto::SessionId::new(), cols: 80, rows: 24 })).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, .. }) => assert_eq!(request, "Attach"),
+        _ => unreachable!(),
+    }
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bad_json_frame_gets_an_error_and_the_connection_survives() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let body = b"{not json";
+    let mut raw = ((1 + body.len()) as u32).to_le_bytes().to_vec();
+    raw.push(1); // control frame
+    raw.extend_from_slice(body);
+    c.send_raw(&raw).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, .. }) => assert_eq!(request, "Frame"),
+        _ => unreachable!(),
+    }
+    c.send(Frame::Control(ControlMsg::ListProjects)).await.unwrap();
+    c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Projects { .. }))).await.unwrap();
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    c.send(Frame::Control(ControlMsg::CreateSession {
+        project_id: project.id,
+        kind: SessionKind::Shell,
+        cols: 80,
+        rows: 24,
+        shell: Some("definitely-not-a-real-program-jojo".into()),
+    }))
+    .await
+    .unwrap();
+    let created = match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionCreated { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::SessionCreated { session }) => session,
+        _ => unreachable!(),
+    };
+    assert!(!created.attachable);
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, message, session_id }) => {
+            assert_eq!(request, "CreateSession");
+            assert_eq!(session_id, Some(created.id));
+            assert!(message.contains("PATH searched"), "{message}");
+        }
+        _ => unreachable!(),
+    }
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn live_sessions_are_attachable_and_attach_validates_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+    assert!(session.attachable);
+
+    c.send(Frame::Control(ControlMsg::ListSessions)).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Sessions { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Sessions { sessions }) => assert!(sessions[0].attachable),
+        _ => unreachable!(),
+    }
+
+    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id, cols: 0, rows: 0 })).await.unwrap();
     match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
         Frame::Control(ControlMsg::Error { request, .. }) => assert_eq!(request, "Attach"),
         _ => unreachable!(),

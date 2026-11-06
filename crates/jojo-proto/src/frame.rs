@@ -45,10 +45,10 @@ impl Frame {
         match frame_type {
             FRAME_CONTROL => serde_json::from_slice(payload)
                 .map(Frame::Control)
-                .map_err(|e| invalid(format!("bad control JSON: {e}"))),
+                .map_err(|e| bad_payload(format!("bad control JSON: {e}"))),
             FRAME_INPUT | FRAME_OUTPUT | FRAME_SNAPSHOT => {
                 if payload.len() < 16 {
-                    return Err(invalid("data frame shorter than its 16-byte session id"));
+                    return Err(bad_payload("data frame shorter than its 16-byte session id"));
                 }
                 let id_bytes: [u8; 16] = payload[..16].try_into().expect("checked length");
                 let session_id = SessionId::from_bytes(id_bytes);
@@ -59,7 +59,7 @@ impl Frame {
                     _ => Frame::Snapshot { session_id, bytes },
                 })
             }
-            other => Err(invalid(format!("unknown frame type {other}"))),
+            other => Err(bad_payload(format!("unknown frame type {other}"))),
         }
     }
 }
@@ -73,6 +73,31 @@ fn data_payload(session_id: SessionId, bytes: &[u8]) -> Vec<u8> {
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
+}
+
+/// Marks a frame whose length prefix and body were read completely but whose
+/// payload could not be decoded (bad JSON, unknown frame type, short data
+/// frame). The stream is still positioned at the next frame, so a server can
+/// reply with an error and keep the connection open.
+#[derive(Debug)]
+pub struct BadPayload(pub String);
+
+impl std::fmt::Display for BadPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for BadPayload {}
+
+fn bad_payload(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, BadPayload(message.into()))
+}
+
+/// True when `err` came from a frame that was fully read but could not be
+/// decoded. Any other `read_frame` error leaves the stream misaligned.
+pub fn is_bad_payload(err: &io::Error) -> bool {
+    err.get_ref().is_some_and(|inner| inner.is::<BadPayload>())
 }
 
 /// Reads one frame. Returns `Ok(None)` when the stream ends cleanly between
@@ -94,7 +119,14 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<Opti
 }
 
 pub async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, frame: &Frame) -> io::Result<()> {
-    writer.write_all(&frame.encode()).await?;
+    let bytes = frame.encode();
+    if bytes.len() - 4 > MAX_FRAME_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("frame of {} bytes exceeds MAX_FRAME_LEN", bytes.len() - 4),
+        ));
+    }
+    writer.write_all(&bytes).await?;
     writer.flush().await
 }
 
@@ -176,5 +208,55 @@ mod tests {
     fn control_json_uses_type_tag() {
         let json = serde_json::to_string(&ControlMsg::ListSessions).unwrap();
         assert_eq!(json, r#"{"type":"ListSessions"}"#);
+    }
+
+    #[tokio::test]
+    async fn bad_control_json_is_reported_and_stream_stays_aligned() {
+        let (mut a, mut b) = tokio::io::duplex(1024);
+        use tokio::io::AsyncWriteExt;
+        let body = b"{not json";
+        a.write_all(&((1 + body.len()) as u32).to_le_bytes()).await.unwrap();
+        a.write_all(&[FRAME_CONTROL]).await.unwrap();
+        a.write_all(body).await.unwrap();
+        write_frame(&mut a, &Frame::Control(ControlMsg::ListSessions)).await.unwrap();
+
+        let err = read_frame(&mut b).await.unwrap_err();
+        assert!(is_bad_payload(&err), "expected BadPayload, got {err:?}");
+        let next = read_frame(&mut b).await.unwrap().expect("next frame");
+        assert_eq!(next, Frame::Control(ControlMsg::ListSessions));
+    }
+
+    #[tokio::test]
+    async fn oversized_length_is_not_a_bad_payload() {
+        let (mut a, mut b) = tokio::io::duplex(64);
+        use tokio::io::AsyncWriteExt;
+        a.write_all(&((MAX_FRAME_LEN as u32) + 1).to_le_bytes()).await.unwrap();
+        let err = read_frame(&mut b).await.unwrap_err();
+        assert!(!is_bad_payload(&err));
+    }
+
+    #[tokio::test]
+    async fn write_frame_refuses_frames_over_the_limit() {
+        let (mut a, _b) = tokio::io::duplex(64);
+        let frame = Frame::Snapshot { session_id: SessionId::new(), bytes: vec![b'x'; MAX_FRAME_LEN] };
+        let err = write_frame(&mut a, &frame).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn error_without_session_id_still_parses() {
+        let json = r#"{"type":"Error","request":"Attach","message":"x"}"#;
+        let msg: ControlMsg = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            msg,
+            ControlMsg::Error { request: "Attach".into(), message: "x".into(), session_id: None }
+        );
+    }
+
+    #[test]
+    fn attach_carries_size() {
+        let id = SessionId::new();
+        let json = serde_json::to_string(&ControlMsg::Attach { session_id: id, cols: 100, rows: 30 }).unwrap();
+        assert!(json.contains(r#""cols":100"#) && json.contains(r#""rows":30"#), "{json}");
     }
 }

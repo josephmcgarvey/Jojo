@@ -46,6 +46,11 @@ pub struct SessionInfo {
     pub state_changed_at: u64,
     pub exit_code: Option<i32>,
     pub claude_session_id: Option<String>,
+    /// True when this daemon still holds a screen for the session, so
+    /// `Attach` will succeed. Computed by the daemon for every message that
+    /// carries a `SessionInfo`; the value stored in state.json is ignored.
+    #[serde(default)]
+    pub attachable: bool,
 }
 
 /// Every control message. Serialized as JSON with a `type` tag naming the
@@ -76,7 +81,7 @@ pub enum ControlMsg {
     },
     SessionCreated { session: SessionInfo },
     SessionUpdated { session: SessionInfo },
-    Attach { session_id: SessionId },
+    Attach { session_id: SessionId, cols: u16, rows: u16 },
     Detach { session_id: SessionId },
     Resize { session_id: SessionId, cols: u16, rows: u16 },
     Kill { session_id: SessionId },
@@ -86,5 +91,12 @@ pub enum ControlMsg {
     SessionExited { session_id: SessionId, exit_code: Option<i32> },
 
     Shutdown,
-    Error { request: String, message: String },
+    Error {
+        request: String,
+        message: String,
+        /// The session the error concerns, when there is one (for example
+        /// a `CreateSession` whose program failed to start).
+        #[serde(default)]
+        session_id: Option<SessionId>,
+    },
 }

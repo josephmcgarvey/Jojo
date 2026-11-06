@@ -213,3 +213,39 @@ fn fresh_grid_snapshot_has_no_cursor_style_sequence() {
     let text = String::from_utf8_lossy(&snapshot);
     assert!(!text.contains(" q"), "unexpected DECSCUSR in snapshot: {text:?}");
 }
+
+#[test]
+fn bounded_snapshot_fits_and_keeps_the_visible_screen() {
+    let mut a = TermGrid::new(80, 24, 10_000);
+    let mut input = Vec::new();
+    for i in 0..10_000u32 {
+        // Every cell carries its own truecolor foreground and background so
+        // the full snapshot is far larger than the bound used below.
+        for c in 0..80u32 {
+            input.extend_from_slice(
+                format!("\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}mx", c, i % 256, 7, 255 - c, 3, i % 200).as_bytes(),
+            );
+        }
+        input.extend_from_slice(b"\x1b[0m\r\n");
+    }
+    input.extend_from_slice(b"last visible line");
+    a.feed(&input);
+
+    let full = a.snapshot();
+    let limit = 1_000_000;
+    assert!(full.len() > limit, "fixture too small: {}", full.len());
+
+    let bounded = a.snapshot_bounded(limit);
+    assert!(bounded.len() <= limit, "bounded snapshot is {} bytes", bounded.len());
+
+    let mut b = TermGrid::new(80, 24, 10_000);
+    b.feed(&bounded);
+    assert_eq!(b.visible_text(), a.visible_text());
+}
+
+#[test]
+fn bounded_snapshot_equals_full_snapshot_when_it_fits() {
+    let mut a = TermGrid::new(80, 24, 1000);
+    a.feed(b"\x1b[31mhello\x1b[0m\r\nworld");
+    assert_eq!(a.snapshot_bounded(1_000_000), a.snapshot());
+}

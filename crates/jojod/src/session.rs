@@ -20,6 +20,10 @@
 //! fall between the snapshot and the first Output frame, and none appears
 //! in both (spec section 5.5, rule 3).
 //!
+//! Lock order: `shared` before `master`. `attach` and `resize` each take
+//! `shared` first and `master` second (through `resize_pty`); never acquire
+//! them in the reverse order.
+//!
 //! The daemon itself answers terminal queries (DSR, DA, DECRQM, and the
 //! like) by parsing the PTY output through `TermGrid` and writing
 //! `TermGrid::take_replies`'s result back to the PTY (see the reader thread
@@ -53,6 +57,10 @@ pub type ClientId = u64;
 /// for the reader would then block forever, `on_exit` would never run, and
 /// the daemon would never broadcast `SessionExited` for that session.
 const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Largest snapshot payload that still fits in one frame together with the
+/// frame type byte and the 16-byte session id.
+pub const MAX_SNAPSHOT_BYTES: usize = jojo_proto::MAX_FRAME_LEN - 1 - 16;
 
 pub struct SpawnSpec {
     pub program: String,
@@ -190,9 +198,17 @@ impl Session {
         Ok(Arc::new(Session { id, shared, input_tx, master, killer: Mutex::new(killer) }))
     }
 
-    pub fn attach(&self, client: ClientId, tx: UnboundedSender<Frame>) {
+    /// Sends one Snapshot laid out for `cols` x `rows`, then live Output.
+    /// The grid and PTY are resized first when the size differs, because a
+    /// snapshot replays correctly only into a terminal of the grid's size.
+    /// Lock order: `shared`, then `master` (same as `resize`).
+    pub fn attach(&self, client: ClientId, tx: UnboundedSender<Frame>, cols: u16, rows: u16) {
         let mut s = self.shared.lock().expect("session lock");
-        let bytes = s.grid.snapshot();
+        if (cols, rows) != (s.grid.cols(), s.grid.rows()) {
+            s.grid.resize(cols, rows);
+            self.resize_pty(s.grid.cols(), s.grid.rows());
+        }
+        let bytes = s.grid.snapshot_bounded(MAX_SNAPSHOT_BYTES);
         if tx.send(Frame::Snapshot { session_id: self.id, bytes }).is_ok() {
             s.subscribers.retain(|(c, _)| *c != client);
             s.subscribers.push((client, tx));
@@ -207,11 +223,23 @@ impl Session {
         let _ = self.input_tx.send(bytes);
     }
 
+    /// Resizes the grid first, then the PTY, so ConPTY's repaint at the new
+    /// size is never fed into a grid of the old size.
     pub fn resize(&self, cols: u16, rows: u16) {
+        let mut s = self.shared.lock().expect("session lock");
+        s.grid.resize(cols, rows);
+        self.resize_pty(s.grid.cols(), s.grid.rows());
+    }
+
+    fn resize_pty(&self, cols: u16, rows: u16) {
         if let Some(master) = self.master.lock().expect("master lock").as_ref() {
             let _ = master.resize(pty_size(cols, rows));
         }
-        self.shared.lock().expect("session lock").grid.resize(cols, rows);
+    }
+
+    pub fn size(&self) -> (u16, u16) {
+        let s = self.shared.lock().expect("session lock");
+        (s.grid.cols(), s.grid.rows())
     }
 
     pub fn kill(&self) {
@@ -258,7 +286,7 @@ mod tests {
         .unwrap();
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        session.attach(1, tx);
+        session.attach(1, tx, 80, 24);
         assert!(matches!(rx.blocking_recv(), Some(Frame::Snapshot { .. })));
 
         session.write(b"echo jojo-hi\r".to_vec());
@@ -298,7 +326,7 @@ mod tests {
     fn detached_client_receives_no_output() {
         let session = Session::spawn(SessionId::new(), test_spec(), |_| {}).unwrap();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        session.attach(7, tx);
+        session.attach(7, tx, 80, 24);
         let _snapshot = rx.blocking_recv();
         session.detach(7);
         session.write(b"echo after-detach\r".to_vec());
@@ -367,7 +395,7 @@ mod tests {
         })
         .unwrap();
 
-        session.attach(1, tx);
+        session.attach(1, tx, 80, 24);
         let (code, seen_before_exit) = exit_rx.recv_timeout(Duration::from_secs(15)).expect("exit reported");
         assert_eq!(code, Some(0));
         assert!(seen_before_exit, "SessionExited fired before the subscriber had the session's final output");
@@ -397,6 +425,16 @@ mod tests {
             .recv_timeout(Duration::from_secs(5))
             .expect("on_exit must fire within READER_DRAIN_TIMEOUT, not wait for the backgrounded grandchild");
         assert_eq!(code, Some(0));
+        session.kill();
+    }
+
+    #[test]
+    fn attach_with_a_new_size_resizes_the_session() {
+        let session = Session::spawn(SessionId::new(), test_spec(), |_| {}).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        session.attach(1, tx, 100, 30);
+        assert!(matches!(rx.blocking_recv(), Some(Frame::Snapshot { .. })));
+        assert_eq!(session.size(), (100, 30));
         session.kill();
     }
 }

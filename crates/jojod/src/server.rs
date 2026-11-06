@@ -66,6 +66,7 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
             let _ = tx.send(Frame::Control(ControlMsg::Error {
                 request: "Hello".into(),
                 message: format!("protocol mismatch: daemon {PROTOCOL_VERSION}, client {protocol_version}"),
+                session_id: None,
             }));
             drop(tx);
             let _ = writer_task.await;
@@ -94,8 +95,19 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
         }
     });
 
-    while let Ok(Some(frame)) = read_frame(&mut reader).await {
-        daemon.handle(client, &tx, frame);
+    loop {
+        match read_frame(&mut reader).await {
+            Ok(Some(frame)) => daemon.handle(client, &tx, frame),
+            Ok(None) => break,
+            Err(e) if jojo_proto::is_bad_payload(&e) => {
+                let _ = tx.send(Frame::Control(ControlMsg::Error {
+                    request: "Frame".into(),
+                    message: e.to_string(),
+                    session_id: None,
+                }));
+            }
+            Err(_) => break,
+        }
     }
 
     daemon.client_gone(client);

@@ -61,10 +61,32 @@ impl Daemon {
     }
 
     fn error(reply: &Reply, request: &str, message: impl Into<String>) {
+        Self::error_for(reply, request, None, message)
+    }
+
+    fn error_for(reply: &Reply, request: &str, session_id: Option<SessionId>, message: impl Into<String>) {
         let _ = reply.send(Frame::Control(ControlMsg::Error {
             request: request.to_string(),
             message: message.into(),
+            session_id,
         }));
+    }
+
+    /// Every stored session with `attachable` computed from the live map.
+    /// Lock order: store, then sessions.
+    fn session_infos(&self) -> Vec<SessionInfo> {
+        let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        let live = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        store
+            .data
+            .sessions
+            .iter()
+            .cloned()
+            .map(|mut s| {
+                s.attachable = live.contains_key(&s.id);
+                s
+            })
+            .collect()
     }
 
     fn save(&self, store: &Store) {
@@ -133,7 +155,7 @@ impl Daemon {
                 Err(e) => Self::error(reply, "ListDir", format!("{path}: {e}")),
             },
             ControlMsg::ListSessions => {
-                let sessions = self.store.lock().unwrap_or_else(PoisonError::into_inner).data.sessions.clone();
+                let sessions = self.session_infos();
                 let _ = reply.send(Frame::Control(ControlMsg::Sessions { sessions }));
             }
             ControlMsg::CreateSession { project_id, kind, cols, rows, shell } => {
@@ -142,10 +164,20 @@ impl Daemon {
                 }
                 self.create_session(reply, project_id, kind, cols, rows, shell.as_deref())
             }
-            ControlMsg::Attach { session_id } => match self.session(session_id) {
-                Some(s) => s.attach(client, reply.clone()),
-                None => Self::error(reply, "Attach", "session has no screen (not running in this daemon)"),
-            },
+            ControlMsg::Attach { session_id, cols, rows } => {
+                if !size_in_range(cols, rows) {
+                    return Self::error_for(reply, "Attach", Some(session_id), size_error_message(cols, rows));
+                }
+                match self.session(session_id) {
+                    Some(s) => s.attach(client, reply.clone(), cols, rows),
+                    None => Self::error_for(
+                        reply,
+                        "Attach",
+                        Some(session_id),
+                        "session has no screen (not running in this daemon)",
+                    ),
+                }
+            }
             ControlMsg::Detach { session_id } => {
                 if let Some(s) = self.session(session_id) {
                     s.detach(client);
@@ -180,7 +212,8 @@ impl Daemon {
                     return Self::error(reply, "RenameSession", "unknown session");
                 };
                 info.label = label;
-                let session = info.clone();
+                let mut session = info.clone();
+                session.attachable = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&session_id);
                 self.save(&store);
                 drop(store);
                 self.broadcast(ControlMsg::SessionUpdated { session });
@@ -221,16 +254,14 @@ impl Daemon {
             state_changed_at: now,
             exit_code: None,
             claude_session_id: None,
+            attachable: false,
         };
-        // Record the session before spawning so an immediate exit always
-        // finds its entry.
-        {
-            let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
-            store.data.sessions.push(info.clone());
-            self.save(&store);
-        }
-        self.broadcast(ControlMsg::SessionCreated { session: info });
-
+        // Hold the store lock across spawn and the SessionCreated broadcast.
+        // `on_session_exit` also takes the store lock, so even a program that
+        // exits immediately cannot have its SessionExited broadcast before
+        // SessionCreated. Lock order: store, then sessions.
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        store.data.sessions.push(info.clone());
         let spec = SpawnSpec {
             program: program.clone(),
             args,
@@ -253,11 +284,35 @@ impl Daemon {
         match Session::spawn(id, spec, on_exit) {
             Ok(session) => {
                 self.sessions.lock().unwrap_or_else(PoisonError::into_inner).insert(id, session);
+                self.save(&store);
+                drop(store);
+                self.broadcast(ControlMsg::SessionCreated { session: SessionInfo { attachable: true, ..info } });
             }
             Err(e) => {
+                let exit_code = Some(-1);
+                if let Some(stored) = store.session_mut(id) {
+                    stored.state = AgentState::Exited;
+                    stored.exit_code = exit_code;
+                }
+                self.save(&store);
+                drop(store);
+                let failed = SessionInfo { state: AgentState::Exited, exit_code, attachable: false, ..info };
+                // Sent directly to `reply`, in addition to the broadcast every
+                // other client gets, so the requester's own queue has these
+                // ahead of the `Error` below in a guaranteed order: `reply` is
+                // one plain channel, but `self.broadcast` only reaches this
+                // same client by way of its per-connection event-forwarding
+                // task, which wakes asynchronously and is not guaranteed to
+                // run (let alone complete two iterations) before this
+                // synchronous function returns and the `Error` reply is
+                // enqueued right behind it. Without the direct sends, the
+                // requester could observe `Error` before `SessionCreated`.
+                self.broadcast(ControlMsg::SessionCreated { session: failed.clone() });
+                let _ = reply.send(Frame::Control(ControlMsg::SessionCreated { session: failed }));
+                self.broadcast(ControlMsg::SessionExited { session_id: id, exit_code });
+                let _ = reply.send(Frame::Control(ControlMsg::SessionExited { session_id: id, exit_code }));
                 let path = std::env::var("PATH").unwrap_or_default();
-                Self::error(reply, "CreateSession", format!("{e:#}. PATH searched: {path}"));
-                self.on_session_exit(id, Some(-1));
+                Self::error_for(reply, "CreateSession", Some(id), format!("{e:#}. PATH searched: {path}"));
             }
         }
     }

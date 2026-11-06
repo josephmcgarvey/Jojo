@@ -37,6 +37,14 @@ impl Client {
         write_frame(&mut self.writer, &frame).await
     }
 
+    /// Writes raw bytes to the daemon. Used by tests and diagnostics to send
+    /// frames the codec would never produce.
+    pub async fn send_raw(&mut self, bytes: &[u8]) -> io::Result<()> {
+        use tokio::io::AsyncWriteExt;
+        self.writer.write_all(bytes).await?;
+        self.writer.flush().await
+    }
+
     pub async fn recv(&mut self) -> io::Result<Frame> {
         read_frame(&mut self.reader)
             .await?

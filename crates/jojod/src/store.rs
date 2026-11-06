@@ -44,6 +44,7 @@ impl Store {
         };
         let now = now_ms();
         for s in &mut data.sessions {
+            s.attachable = false;
             if s.state != AgentState::Exited {
                 s.state = AgentState::Exited;
                 s.exit_code = None;
@@ -89,6 +90,7 @@ mod tests {
             state_changed_at: 1,
             exit_code,
             claude_session_id: None,
+            attachable: false,
         }
     }
 
@@ -140,5 +142,17 @@ mod tests {
             .collect();
         assert_eq!(renamed.len(), 1);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn load_resets_attachable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let mut store = Store::load(&path).unwrap();
+        let mut s = session(AgentState::Exited, Some(0));
+        s.attachable = true;
+        store.data.sessions.push(s);
+        store.save().unwrap();
+        assert!(!Store::load(&path).unwrap().data.sessions[0].attachable);
     }
 }

@@ -134,9 +134,7 @@ fn is_blank(cell: &Cell) -> bool {
 }
 
 impl TermGrid {
-    /// VT bytes that reproduce this grid in a fresh terminal of the same size
-    /// and scrollback capacity.
-    pub fn snapshot(&self) -> Vec<u8> {
+    fn snapshot_skipping(&self, skip_history: usize) -> Vec<u8> {
         let grid = self.term.grid();
         let mode = *self.term.mode();
         let cols = grid.columns();
@@ -153,7 +151,9 @@ impl TermGrid {
         // Rows from the oldest scrollback line to the bottom of the screen.
         // Writing history + screen rows with CRLF between them scrolls the
         // history rows into the receiver's scrollback.
-        let top = if alt { 0 } else { -(grid.history_size() as i32) };
+        let history = grid.history_size();
+        let kept = history - skip_history.min(history);
+        let top = if alt { 0 } else { -(kept as i32) };
         let bottom = grid.screen_lines() as i32 - 1;
         let mut pen = Pen::DEFAULT;
         // C1: whether the row just written left the receiver's cursor
@@ -315,6 +315,46 @@ impl TermGrid {
             }
         }
 
+        out
+    }
+
+    /// VT bytes that reproduce this grid in a fresh terminal of the same size
+    /// and scrollback capacity.
+    pub fn snapshot(&self) -> Vec<u8> {
+        self.snapshot_skipping(0)
+    }
+
+    /// Like `snapshot`, but drops the oldest scrollback rows until the result
+    /// is at most `max_len` bytes. A frame larger than `MAX_FRAME_LEN` would be
+    /// rejected by the client and end its whole connection (Plan 1 carry-over
+    /// 2.1, item 2). If the visible screen alone is still too large, which only
+    /// a very large grid of truecolor cells can produce, the result is the
+    /// screen as plain text with no attributes.
+    pub fn snapshot_bounded(&self, max_len: usize) -> Vec<u8> {
+        let full = self.snapshot_skipping(0);
+        if full.len() <= max_len {
+            return full;
+        }
+        // Smallest number of skipped history rows whose snapshot fits.
+        let (mut lo, mut hi) = (1usize, self.term.grid().history_size());
+        let mut best = None;
+        while lo <= hi {
+            let mid = lo + (hi - lo) / 2;
+            let candidate = self.snapshot_skipping(mid);
+            if candidate.len() <= max_len {
+                best = Some(candidate);
+                hi = mid - 1;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        best.unwrap_or_else(|| self.plain_screen_snapshot())
+    }
+
+    /// The visible screen as plain text after a full reset.
+    fn plain_screen_snapshot(&self) -> Vec<u8> {
+        let mut out = b"\x1bc\x1b[3J".to_vec();
+        out.extend_from_slice(self.visible_text().replace('\n', "\r\n").as_bytes());
         out
     }
 }
