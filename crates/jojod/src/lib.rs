@@ -2,6 +2,7 @@
 
 pub mod command;
 pub mod paths;
+pub mod session;
 pub mod store;
 
 /// Daemon version reported in `Hello` and by `jojod --version`.
