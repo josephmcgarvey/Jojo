@@ -1,0 +1,300 @@
+//! Request handling. Mutations are broadcast to every client as events;
+//! only `Error` replies go to the requester alone (Plan 1, "Protocol
+//! Additions").
+
+use crate::command::{command_for, default_label};
+use crate::paths::Endpoint;
+use crate::session::{ClientId, Session, SpawnSpec};
+use crate::store::{now_ms, Store};
+use jojo_proto::{
+    AgentState, ControlMsg, Frame, ProjectId, ProjectInfo, SessionId, SessionInfo, SessionKind,
+};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use tokio::sync::{broadcast, mpsc::UnboundedSender, Notify};
+
+pub struct DaemonConfig {
+    pub endpoint: Endpoint,
+    pub state_dir: PathBuf,
+    pub scrollback: usize,
+}
+
+pub type Reply = UnboundedSender<Frame>;
+
+pub struct Daemon {
+    pub cfg: DaemonConfig,
+    store: Mutex<Store>,
+    sessions: Mutex<HashMap<SessionId, Arc<Session>>>,
+    events: broadcast::Sender<ControlMsg>,
+    next_client: AtomicU64,
+    pub shutdown: Notify,
+}
+
+impl Daemon {
+    pub fn new(cfg: DaemonConfig) -> anyhow::Result<Arc<Daemon>> {
+        let store = Store::load(&cfg.state_dir.join("state.json"))?;
+        store.save()?;
+        let (events, _) = broadcast::channel(1024);
+        Ok(Arc::new(Daemon {
+            cfg,
+            store: Mutex::new(store),
+            sessions: Mutex::new(HashMap::new()),
+            events,
+            next_client: AtomicU64::new(1),
+            shutdown: Notify::new(),
+        }))
+    }
+
+    pub fn next_client_id(&self) -> ClientId {
+        self.next_client.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<ControlMsg> {
+        self.events.subscribe()
+    }
+
+    fn broadcast(&self, msg: ControlMsg) {
+        let _ = self.events.send(msg);
+    }
+
+    fn error(reply: &Reply, request: &str, message: impl Into<String>) {
+        let _ = reply.send(Frame::Control(ControlMsg::Error {
+            request: request.to_string(),
+            message: message.into(),
+        }));
+    }
+
+    fn save(&self, store: &Store) {
+        // A failed write is retried on the next change; the in-memory state
+        // stays authoritative while the daemon runs.
+        let _ = store.save();
+    }
+
+    fn session(&self, id: SessionId) -> Option<Arc<Session>> {
+        self.sessions.lock().expect("sessions lock").get(&id).cloned()
+    }
+
+    /// Handles one frame from `client`.
+    pub fn handle(self: &Arc<Self>, client: ClientId, reply: &Reply, frame: Frame) {
+        match frame {
+            Frame::Input { session_id, bytes } => {
+                if let Some(s) = self.session(session_id) {
+                    s.write(bytes);
+                }
+            }
+            Frame::Control(msg) => self.handle_control(client, reply, msg),
+            Frame::Output { .. } | Frame::Snapshot { .. } => {
+                Self::error(reply, "Frame", "clients do not send Output or Snapshot frames")
+            }
+        }
+    }
+
+    fn handle_control(self: &Arc<Self>, client: ClientId, reply: &Reply, msg: ControlMsg) {
+        match msg {
+            ControlMsg::ListProjects => {
+                let projects = self.store.lock().expect("store lock").data.projects.clone();
+                let _ = reply.send(Frame::Control(ControlMsg::Projects { projects }));
+            }
+            ControlMsg::AddProject { path, name } => {
+                if !std::path::Path::new(&path).is_dir() {
+                    return Self::error(reply, "AddProject", format!("not a directory: {path}"));
+                }
+                let project = ProjectInfo { id: ProjectId::new(), path, name };
+                let mut store = self.store.lock().expect("store lock");
+                store.data.projects.push(project.clone());
+                self.save(&store);
+                drop(store);
+                self.broadcast(ControlMsg::ProjectAdded { project });
+            }
+            ControlMsg::RemoveProject { id } => {
+                let mut store = self.store.lock().expect("store lock");
+                let running = store
+                    .data
+                    .sessions
+                    .iter()
+                    .filter(|s| s.project_id == id && s.state != AgentState::Exited)
+                    .count();
+                if running > 0 {
+                    return Self::error(reply, "RemoveProject", format!("project has {running} running sessions"));
+                }
+                store.data.projects.retain(|p| p.id != id);
+                store.data.sessions.retain(|s| s.project_id != id);
+                self.save(&store);
+                drop(store);
+                self.broadcast(ControlMsg::ProjectRemoved { id });
+            }
+            ControlMsg::ListDir { path } => match list_dirs(&path) {
+                Ok(entries) => {
+                    let _ = reply.send(Frame::Control(ControlMsg::DirEntries { path, entries }));
+                }
+                Err(e) => Self::error(reply, "ListDir", format!("{path}: {e}")),
+            },
+            ControlMsg::ListSessions => {
+                let sessions = self.store.lock().expect("store lock").data.sessions.clone();
+                let _ = reply.send(Frame::Control(ControlMsg::Sessions { sessions }));
+            }
+            ControlMsg::CreateSession { project_id, kind, cols, rows, shell } => {
+                self.create_session(reply, project_id, kind, cols, rows, shell.as_deref())
+            }
+            ControlMsg::Attach { session_id } => match self.session(session_id) {
+                Some(s) => s.attach(client, reply.clone()),
+                None => Self::error(reply, "Attach", "session has no screen (not running in this daemon)"),
+            },
+            ControlMsg::Detach { session_id } => {
+                if let Some(s) = self.session(session_id) {
+                    s.detach(client);
+                }
+            }
+            ControlMsg::Resize { session_id, cols, rows } => {
+                if let Some(s) = self.session(session_id) {
+                    s.resize(cols, rows);
+                }
+            }
+            ControlMsg::Kill { session_id } => {
+                if let Some(s) = self.session(session_id) {
+                    s.kill();
+                }
+            }
+            ControlMsg::CloseSession { session_id } => {
+                if let Some(s) = self.sessions.lock().expect("sessions lock").remove(&session_id) {
+                    s.kill();
+                }
+                let mut store = self.store.lock().expect("store lock");
+                store.data.sessions.retain(|s| s.id != session_id);
+                self.save(&store);
+                drop(store);
+                self.broadcast(ControlMsg::SessionRemoved { session_id });
+            }
+            ControlMsg::RenameSession { session_id, label } => {
+                let mut store = self.store.lock().expect("store lock");
+                let Some(info) = store.session_mut(session_id) else {
+                    return Self::error(reply, "RenameSession", "unknown session");
+                };
+                info.label = label;
+                let session = info.clone();
+                self.save(&store);
+                drop(store);
+                self.broadcast(ControlMsg::SessionUpdated { session });
+            }
+            ControlMsg::Shutdown => self.shutdown.notify_one(),
+            other => Self::error(reply, &variant_name(&other), "not a client request"),
+        }
+    }
+
+    fn create_session(
+        self: &Arc<Self>,
+        reply: &Reply,
+        project_id: ProjectId,
+        kind: SessionKind,
+        cols: u16,
+        rows: u16,
+        shell: Option<&str>,
+    ) {
+        let project = {
+            let store = self.store.lock().expect("store lock");
+            store.data.projects.iter().find(|p| p.id == project_id).cloned()
+        };
+        let Some(project) = project else {
+            return Self::error(reply, "CreateSession", "unknown project");
+        };
+        let (program, args) = command_for(kind, shell);
+        let id = SessionId::new();
+        let now = now_ms();
+        let info = SessionInfo {
+            id,
+            project_id,
+            kind,
+            command: program.clone(),
+            args: args.clone(),
+            label: default_label(kind, &program),
+            created_at: now,
+            state: if kind == SessionKind::Claude { AgentState::Starting } else { AgentState::Running },
+            state_changed_at: now,
+            exit_code: None,
+            claude_session_id: None,
+        };
+        // Record the session before spawning so an immediate exit always
+        // finds its entry.
+        {
+            let mut store = self.store.lock().expect("store lock");
+            store.data.sessions.push(info.clone());
+            self.save(&store);
+        }
+        self.broadcast(ControlMsg::SessionCreated { session: info });
+
+        let spec = SpawnSpec {
+            program: program.clone(),
+            args,
+            cwd: PathBuf::from(&project.path),
+            env: vec![
+                ("TERM".into(), "xterm-256color".into()),
+                ("COLORTERM".into(), "truecolor".into()),
+                ("JOJO_SESSION_ID".into(), id.to_string()),
+            ],
+            cols,
+            rows,
+            scrollback: self.cfg.scrollback,
+        };
+        let weak = Arc::downgrade(self);
+        let on_exit = move |code: Option<i32>| {
+            if let Some(daemon) = weak.upgrade() {
+                daemon.on_session_exit(id, code);
+            }
+        };
+        match Session::spawn(id, spec, on_exit) {
+            Ok(session) => {
+                self.sessions.lock().expect("sessions lock").insert(id, session);
+            }
+            Err(e) => {
+                let path = std::env::var("PATH").unwrap_or_default();
+                Self::error(reply, "CreateSession", format!("{e:#}. PATH searched: {path}"));
+                self.on_session_exit(id, Some(-1));
+            }
+        }
+    }
+
+    fn on_session_exit(&self, id: SessionId, exit_code: Option<i32>) {
+        let mut store = self.store.lock().expect("store lock");
+        if let Some(info) = store.session_mut(id) {
+            info.state = AgentState::Exited;
+            info.exit_code = exit_code;
+            info.state_changed_at = now_ms();
+            self.save(&store);
+            drop(store);
+            self.broadcast(ControlMsg::SessionExited { session_id: id, exit_code });
+        }
+    }
+
+    /// Removes `client` from every session's subscribers.
+    pub fn client_gone(&self, client: ClientId) {
+        for s in self.sessions.lock().expect("sessions lock").values() {
+            s.detach(client);
+        }
+    }
+
+    pub fn kill_all(&self) {
+        for s in self.sessions.lock().expect("sessions lock").values() {
+            s.kill();
+        }
+    }
+}
+
+fn list_dirs(path: &str) -> std::io::Result<Vec<String>> {
+    let mut entries: Vec<String> = std::fs::read_dir(path)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    entries.sort_by_key(|s| s.to_lowercase());
+    Ok(entries)
+}
+
+/// The JSON `type` tag of a message, for example `"Projects"`.
+fn variant_name(msg: &ControlMsg) -> String {
+    serde_json::to_value(msg)
+        .ok()
+        .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
+        .unwrap_or_else(|| "Unknown".to_string())
+}
