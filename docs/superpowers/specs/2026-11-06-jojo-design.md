@@ -1,7 +1,7 @@
 # Jojo: Design Specification
 
 **Date:** 2026-11-06
-**Status:** Approved in brainstorming; awaiting written-spec review
+**Status:** Approved (2026-11-06)
 **Author:** Joe McGarvey, with Claude Code
 
 ## 1. Overview
