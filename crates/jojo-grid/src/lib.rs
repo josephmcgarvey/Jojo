@@ -24,6 +24,18 @@ impl EventListener for ReplyCollector {
     }
 }
 
+/// Smallest grid width accepted by `TermGrid::new` and `resize`. Below this,
+/// alacritty_terminal's grid resize can panic (C2).
+pub const MIN_COLS: u16 = 2;
+/// Largest grid width accepted. Above this, the allocation becomes
+/// unreasonably large: 65535x65535 attempts to allocate roughly 100 GB and
+/// aborts the process (C2).
+pub const MAX_COLS: u16 = 1000;
+/// Smallest grid height accepted by `TermGrid::new` and `resize`.
+pub const MIN_ROWS: u16 = 1;
+/// Largest grid height accepted, for the same reason as `MAX_COLS`.
+pub const MAX_ROWS: u16 = 1000;
+
 /// Grid size in the form `alacritty_terminal` expects.
 struct GridSize {
     cols: usize,
@@ -53,6 +65,8 @@ pub struct TermGrid {
 
 impl TermGrid {
     pub fn new(cols: u16, rows: u16, scrollback: usize) -> Self {
+        let cols = cols.clamp(MIN_COLS, MAX_COLS);
+        let rows = rows.clamp(MIN_ROWS, MAX_ROWS);
         let replies = ReplyCollector::default();
         let config = Config { scrolling_history: scrollback, ..Config::default() };
         let size = GridSize { cols: cols as usize, rows: rows as usize };
@@ -66,12 +80,16 @@ impl TermGrid {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
+        let cols = cols.clamp(MIN_COLS, MAX_COLS);
+        let rows = rows.clamp(MIN_ROWS, MAX_ROWS);
         self.term.resize(GridSize { cols: cols as usize, rows: rows as usize });
     }
 
     /// Returns and clears the bytes the emulator generated as replies to
-    /// queries in the output. The daemon writes these to the PTY only when
-    /// no window is attached, because an attached xterm.js answers itself.
+    /// queries in the output. The daemon always writes these to the PTY: it
+    /// is the sole responder to terminal queries (DSR, DA, DECRQM, and the
+    /// like), and an attached window must not also answer them, since the
+    /// program issuing the query only expects one reply.
     pub fn take_replies(&mut self) -> Vec<u8> {
         std::mem::take(&mut *self.replies.0.lock().expect("reply lock"))
     }
@@ -150,5 +168,29 @@ mod tests {
     fn grid_is_send() {
         fn assert_send<T: Send>() {}
         assert_send::<TermGrid>();
+    }
+
+    #[test]
+    fn resize_to_zero_is_clamped_and_feed_does_not_panic() {
+        // C2: `Resize { cols: 0, rows: 0 }` panics inside alacritty's grid
+        // resize. `TermGrid::resize` clamps to `MIN_COLS..=MAX_COLS` /
+        // `MIN_ROWS..=MAX_ROWS` as defense in depth, independent of
+        // jojod's own validation in `handle_control`.
+        let mut g = TermGrid::new(80, 24, 1000);
+        g.resize(0, 0);
+        g.feed(b"x");
+        assert_eq!(g.cols(), MIN_COLS);
+        assert_eq!(g.rows(), MIN_ROWS);
+    }
+
+    #[test]
+    fn new_clamps_sizes_out_of_range() {
+        // C2: `TermGrid::new` clamps the same way `resize` does, so a
+        // CreateSession with an out-of-range size cannot reach alacritty's
+        // allocator unclamped even if jojod's own validation were bypassed.
+        let g = TermGrid::new(0, 0, 1000);
+        assert_eq!((g.cols(), g.rows()), (MIN_COLS, MIN_ROWS));
+        let g = TermGrid::new(65535, 65535, 1000);
+        assert_eq!((g.cols(), g.rows()), (MAX_COLS, MAX_ROWS));
     }
 }

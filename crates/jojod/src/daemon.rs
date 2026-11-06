@@ -6,13 +6,14 @@ use crate::command::{command_for, default_label};
 use crate::paths::Endpoint;
 use crate::session::{ClientId, Session, SpawnSpec};
 use crate::store::{now_ms, Store};
+use jojo_grid::{MAX_COLS, MAX_ROWS, MIN_COLS, MIN_ROWS};
 use jojo_proto::{
     AgentState, ControlMsg, Frame, ProjectId, ProjectInfo, SessionId, SessionInfo, SessionKind,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use tokio::sync::{broadcast, mpsc::UnboundedSender, Notify};
 
 pub struct DaemonConfig {
@@ -73,7 +74,7 @@ impl Daemon {
     }
 
     fn session(&self, id: SessionId) -> Option<Arc<Session>> {
-        self.sessions.lock().expect("sessions lock").get(&id).cloned()
+        self.sessions.lock().unwrap_or_else(PoisonError::into_inner).get(&id).cloned()
     }
 
     /// Handles one frame from `client`.
@@ -94,7 +95,7 @@ impl Daemon {
     fn handle_control(self: &Arc<Self>, client: ClientId, reply: &Reply, msg: ControlMsg) {
         match msg {
             ControlMsg::ListProjects => {
-                let projects = self.store.lock().expect("store lock").data.projects.clone();
+                let projects = self.store.lock().unwrap_or_else(PoisonError::into_inner).data.projects.clone();
                 let _ = reply.send(Frame::Control(ControlMsg::Projects { projects }));
             }
             ControlMsg::AddProject { path, name } => {
@@ -102,14 +103,14 @@ impl Daemon {
                     return Self::error(reply, "AddProject", format!("not a directory: {path}"));
                 }
                 let project = ProjectInfo { id: ProjectId::new(), path, name };
-                let mut store = self.store.lock().expect("store lock");
+                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 store.data.projects.push(project.clone());
                 self.save(&store);
                 drop(store);
                 self.broadcast(ControlMsg::ProjectAdded { project });
             }
             ControlMsg::RemoveProject { id } => {
-                let mut store = self.store.lock().expect("store lock");
+                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 let running = store
                     .data
                     .sessions
@@ -132,10 +133,13 @@ impl Daemon {
                 Err(e) => Self::error(reply, "ListDir", format!("{path}: {e}")),
             },
             ControlMsg::ListSessions => {
-                let sessions = self.store.lock().expect("store lock").data.sessions.clone();
+                let sessions = self.store.lock().unwrap_or_else(PoisonError::into_inner).data.sessions.clone();
                 let _ = reply.send(Frame::Control(ControlMsg::Sessions { sessions }));
             }
             ControlMsg::CreateSession { project_id, kind, cols, rows, shell } => {
+                if !size_in_range(cols, rows) {
+                    return Self::error(reply, "CreateSession", size_error_message(cols, rows));
+                }
                 self.create_session(reply, project_id, kind, cols, rows, shell.as_deref())
             }
             ControlMsg::Attach { session_id } => match self.session(session_id) {
@@ -148,6 +152,9 @@ impl Daemon {
                 }
             }
             ControlMsg::Resize { session_id, cols, rows } => {
+                if !size_in_range(cols, rows) {
+                    return Self::error(reply, "Resize", size_error_message(cols, rows));
+                }
                 if let Some(s) = self.session(session_id) {
                     s.resize(cols, rows);
                 }
@@ -158,17 +165,17 @@ impl Daemon {
                 }
             }
             ControlMsg::CloseSession { session_id } => {
-                if let Some(s) = self.sessions.lock().expect("sessions lock").remove(&session_id) {
+                if let Some(s) = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).remove(&session_id) {
                     s.kill();
                 }
-                let mut store = self.store.lock().expect("store lock");
+                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 store.data.sessions.retain(|s| s.id != session_id);
                 self.save(&store);
                 drop(store);
                 self.broadcast(ControlMsg::SessionRemoved { session_id });
             }
             ControlMsg::RenameSession { session_id, label } => {
-                let mut store = self.store.lock().expect("store lock");
+                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 let Some(info) = store.session_mut(session_id) else {
                     return Self::error(reply, "RenameSession", "unknown session");
                 };
@@ -193,7 +200,7 @@ impl Daemon {
         shell: Option<&str>,
     ) {
         let project = {
-            let store = self.store.lock().expect("store lock");
+            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
             store.data.projects.iter().find(|p| p.id == project_id).cloned()
         };
         let Some(project) = project else {
@@ -218,7 +225,7 @@ impl Daemon {
         // Record the session before spawning so an immediate exit always
         // finds its entry.
         {
-            let mut store = self.store.lock().expect("store lock");
+            let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
             store.data.sessions.push(info.clone());
             self.save(&store);
         }
@@ -245,7 +252,7 @@ impl Daemon {
         };
         match Session::spawn(id, spec, on_exit) {
             Ok(session) => {
-                self.sessions.lock().expect("sessions lock").insert(id, session);
+                self.sessions.lock().unwrap_or_else(PoisonError::into_inner).insert(id, session);
             }
             Err(e) => {
                 let path = std::env::var("PATH").unwrap_or_default();
@@ -256,7 +263,7 @@ impl Daemon {
     }
 
     fn on_session_exit(&self, id: SessionId, exit_code: Option<i32>) {
-        let mut store = self.store.lock().expect("store lock");
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(info) = store.session_mut(id) {
             info.state = AgentState::Exited;
             info.exit_code = exit_code;
@@ -269,16 +276,35 @@ impl Daemon {
 
     /// Removes `client` from every session's subscribers.
     pub fn client_gone(&self, client: ClientId) {
-        for s in self.sessions.lock().expect("sessions lock").values() {
+        for s in self.sessions.lock().unwrap_or_else(PoisonError::into_inner).values() {
             s.detach(client);
         }
     }
 
     pub fn kill_all(&self) {
-        for s in self.sessions.lock().expect("sessions lock").values() {
+        for s in self.sessions.lock().unwrap_or_else(PoisonError::into_inner).values() {
             s.kill();
         }
     }
+}
+
+/// True when `cols`/`rows` are within the session size the daemon accepts
+/// for `CreateSession` and `Resize` (C2). The bounds (`MIN_COLS..=MAX_COLS`,
+/// `MIN_ROWS..=MAX_ROWS`) are defined once in `jojo_grid` and reused here so
+/// the daemon's rejection and `TermGrid`'s own clamp (defense in depth) never
+/// drift apart. Outside this range, alacritty_terminal's grid resize/
+/// allocation path used to panic while the session's `shared` lock was held:
+/// 0x0 underflows a subtraction in the resize path, and 65535x65535 attempts
+/// to allocate roughly 100 GB and aborts the process. That panic poisoned
+/// `shared`, and through `client_gone` and the daemon-wide `sessions`/`store`
+/// locks (see the `Mutex::lock` calls below, fixed for I4), cascaded into
+/// every later request handled by this daemon.
+fn size_in_range(cols: u16, rows: u16) -> bool {
+    (MIN_COLS..=MAX_COLS).contains(&cols) && (MIN_ROWS..=MAX_ROWS).contains(&rows)
+}
+
+fn size_error_message(cols: u16, rows: u16) -> String {
+    format!("size out of range: {cols}x{rows} (cols {MIN_COLS}-{MAX_COLS}, rows {MIN_ROWS}-{MAX_ROWS})")
 }
 
 fn list_dirs(path: &str) -> std::io::Result<Vec<String>> {

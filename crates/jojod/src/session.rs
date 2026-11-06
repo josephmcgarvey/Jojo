@@ -19,6 +19,12 @@
 //! `shared`, the same lock the reader holds while feeding. No output can
 //! fall between the snapshot and the first Output frame, and none appears
 //! in both (spec section 5.5, rule 3).
+//!
+//! The daemon itself answers terminal queries (DSR, DA, DECRQM, and the
+//! like) by parsing the PTY output through `TermGrid` and writing
+//! `TermGrid::take_replies`'s result back to the PTY (see the reader thread
+//! below); an attached window must never also answer them, since the
+//! program issuing the query only expects one reply.
 
 use anyhow::Context;
 use jojo_grid::TermGrid;

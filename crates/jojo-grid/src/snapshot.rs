@@ -156,16 +156,35 @@ impl TermGrid {
         let top = if alt { 0 } else { -(grid.history_size() as i32) };
         let bottom = grid.screen_lines() as i32 - 1;
         let mut pen = Pen::DEFAULT;
+        // C1: whether the row just written left the receiver's cursor
+        // pending-wrap at the last column. `\x1b[K` (used below to clear a
+        // row's untouched tail) is a no-op while pending-wrap is set
+        // (alacritty term/mod.rs:1643; xterm.js matches), so if this row
+        // would otherwise write nothing, the following `\r\n` clears
+        // pending-wrap and lands directly on this row without ever forcing
+        // the wrap: the blank continuation row is lost, WRAPLINE never gets
+        // set on the previous row in the receiver, and every later row
+        // shifts by one.
+        let mut prev_wrapped = false;
         for line in top..=bottom {
             let row = &grid[Line(line)];
             let wrapped = row[Column(cols - 1)].flags.contains(Flags::WRAPLINE);
             // A wrapped row is written in full so the next character wraps
             // naturally and sets WRAPLINE in the receiver. Other rows stop
-            // after the last non-blank cell.
+            // after the last non-blank cell; except, per the `prev_wrapped`
+            // comment above, a row immediately after a wrapped row always
+            // writes at least one default-pen space (column 0, which is
+            // genuinely blank whenever `end` would otherwise be 0 — that is
+            // what made it blank) so the wrap is actually forced.
             let end = if wrapped {
                 cols
             } else {
-                (0..cols).rev().find(|&c| !is_blank(&row[Column(c)])).map_or(0, |c| c + 1)
+                let found = (0..cols).rev().find(|&c| !is_blank(&row[Column(c)])).map_or(0, |c| c + 1);
+                if prev_wrapped {
+                    found.max(1)
+                } else {
+                    found
+                }
             };
             for col in 0..end {
                 let cell = &row[Column(col)];
@@ -214,6 +233,7 @@ impl TermGrid {
                     out.extend_from_slice(b"\r\n");
                 }
             }
+            prev_wrapped = wrapped;
         }
 
         // Cursor position (1-based), then the pen the program had selected.

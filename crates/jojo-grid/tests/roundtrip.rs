@@ -9,10 +9,14 @@ const ROWS: u16 = 24;
 const SCROLLBACK: usize = 10_000;
 
 fn assert_roundtrip(name: &str, input: &[u8]) {
-    let mut a = TermGrid::new(COLS, ROWS, SCROLLBACK);
+    assert_roundtrip_sized(name, COLS, ROWS, SCROLLBACK, input);
+}
+
+fn assert_roundtrip_sized(name: &str, cols: u16, rows: u16, scrollback: usize, input: &[u8]) {
+    let mut a = TermGrid::new(cols, rows, scrollback);
     a.feed(input);
     let snapshot = a.snapshot();
-    let mut b = TermGrid::new(COLS, ROWS, SCROLLBACK);
+    let mut b = TermGrid::new(cols, rows, scrollback);
     b.feed(&snapshot);
     let (da, db) = (a.debug_dump(), b.debug_dump());
     if da != db {
@@ -156,6 +160,46 @@ fn pending_wrap_with_colored_last_cell() {
     s.extend_from_slice(line.as_bytes());
     s.extend_from_slice(b"\x1b[31mZ");
     assert_roundtrip("pending_wrap_colored", &s);
+}
+
+// --- Final-review fix wave (final-fixes.md, C1) ---
+
+#[test]
+fn blank_continuation_row_after_wrapped_row_round_trips() {
+    // C1: row 0 wraps ("0123456789" fills all 10 columns and sets
+    // WRAPLINE), and the 11th character (the trailing space) lands on row
+    // 1's column 0. Because that space has the default pen, `is_blank`
+    // reports row 1 as entirely blank (`end == 0`), which is exactly the
+    // trigger case: row 0's WRAPLINE left the receiver's cursor pending-wrap
+    // at the last column after replaying row 0, and `\x1b[K` is a no-op
+    // while pending-wrap is set, so writing nothing for row 1 would let the
+    // following `\r\n` clear pending-wrap and land directly on row 1
+    // without ever forcing the wrap, collapsing row 1 into row 0 and
+    // shifting "next" and "last" up by one row each.
+    assert_roundtrip_sized("blank_continuation_row", 10, 5, 10_000, b"0123456789 \r\nnext\r\nlast");
+}
+
+#[test]
+fn blank_continuation_row_cleared_by_el_round_trips() {
+    // C1: same trigger as above, but row 1 ("AB" wrapped from row 0) is
+    // cleared in full by `\x1b[2K` rather than merely holding a disguised
+    // default-pen space, so row 1 is genuinely blank going into the
+    // snapshot, not just blank by `is_blank`'s definition.
+    assert_roundtrip_sized("blank_continuation_row_el", 10, 5, 10_000, b"0123456789AB\x1b[2K\r\nnext");
+}
+
+#[test]
+fn blank_continuation_row_with_history_round_trips() {
+    // C1: the same shift bug, but with enough prior scrollback that the
+    // wrapped row and its blank continuation row are no longer the first
+    // rows fed, exercising the history-row path of the snapshot loop (`top`
+    // starts negative) rather than only the screen-row path.
+    let mut s = Vec::new();
+    for i in 0..20 {
+        s.extend_from_slice(format!("line {i}\r\n").as_bytes());
+    }
+    s.extend_from_slice(b"0123456789AB\x1b[2K\r\nnext");
+    assert_roundtrip_sized("blank_continuation_row_with_history", 10, 5, 10_000, &s);
 }
 
 #[test]

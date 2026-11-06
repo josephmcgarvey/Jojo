@@ -162,6 +162,45 @@ async fn second_daemon_on_same_endpoint_fails() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn resize_out_of_range_is_rejected_and_session_still_echoes() {
+    // C2: `Resize { cols: 0, rows: 0 }` used to panic inside alacritty's
+    // grid resize while the session's `shared` lock was held, poisoning it
+    // and, through `client_gone` and the daemon-wide `sessions`/`store`
+    // locks, cascading into every later request. `handle_control` now
+    // rejects out-of-range sizes before they reach `Session::resize`, and
+    // the session must keep working normally afterward.
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+
+    c.send(Frame::Control(ControlMsg::Resize { session_id: session.id, cols: 0, rows: 0 })).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, .. }) => assert_eq!(request, "Resize"),
+        _ => unreachable!(),
+    }
+
+    c.send(Frame::Control(ControlMsg::Attach { session_id: session.id })).await.unwrap();
+    c.recv_until(WAIT, |f| matches!(f, Frame::Snapshot { .. })).await.unwrap();
+    c.send(Frame::Input { session_id: session.id, bytes: b"echo jojo-still-alive\r".to_vec() }).await.unwrap();
+    let mut grid = TermGrid::new(80, 24, 1000);
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !has_line(&grid, "jojo-still-alive") {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        match tokio::time::timeout(left, c.recv()).await {
+            Ok(Ok(Frame::Output { bytes, .. })) => grid.feed(&bytes),
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => panic!("connection error: {e}"),
+            Err(_) => panic!("no echo after rejected resize; screen:\n{}", grid.visible_text()),
+        }
+    }
+
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn errors_go_to_requester() {
     let dir = tempfile::tempdir().unwrap();
     let (endpoint, server) = start(dir.path()).await;
