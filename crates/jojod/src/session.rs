@@ -2,14 +2,17 @@
 //!
 //! Threads per session:
 //! - reader: reads PTY output, feeds the grid and sends Output frames to
-//!   subscribers, all while holding `shared`;
+//!   subscribers, all while holding `shared`; signals (by dropping its end
+//!   of a channel) once its loop ends, as the last thing it does;
 //! - writer: writes queued input to the PTY so a slow program never blocks
 //!   the daemon's async tasks;
 //! - waiter: waits for the process to exit, closes the PTY master (which
-//!   ends the reader on ConPTY), joins the reader thread so every buffered
-//!   Output frame has already been sent, and only then calls `on_exit`. The
-//!   waiter never holds `shared` while joining: it takes the master out of
-//!   its mutex and drops the guard before dropping the master itself, so a
+//!   ends the reader on ConPTY), waits for the reader's signal (bounded by
+//!   `READER_DRAIN_TIMEOUT`, not an unbounded join — see that constant's
+//!   doc comment for why Unix cannot guarantee EOF within any bound), and
+//!   only then calls `on_exit`. The waiter never holds the master's mutex
+//!   while waiting on that signal: it takes the master out of its own
+//!   mutex and drops the guard before dropping the master itself, so a
 //!   concurrent `resize` is never blocked behind `ClosePseudoConsole`.
 //!
 //! `attach` takes the snapshot and registers the subscriber while holding
@@ -25,9 +28,25 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{mpsc as std_mpsc, Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub type ClientId = u64;
+
+/// Bounds how long the waiter waits for the reader thread to signal (by
+/// dropping its end of a channel) that it has reached EOF and finished
+/// fanning out the session's final output, before giving up and reporting
+/// exit anyway. On Windows, dropping the PTY master forces EOF via
+/// `ClosePseudoConsole`, so the reader signals promptly and this bound is
+/// rarely hit. On Unix, the reader holds a `dup` of the master fd and only
+/// sees EOF once every slave fd referencing the pty is closed; that never
+/// happens if a grandchild process inherited the slave fd and is still
+/// running after the direct child being waited on has already exited (for
+/// example `sh -c 'sleep 600 &'`, or a background job a shell leaves
+/// running after its own `exit`). Without this bound, waiting unboundedly
+/// for the reader would then block forever, `on_exit` would never run, and
+/// the daemon would never broadcast `SessionExited` for that session.
+const READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct SpawnSpec {
     pub program: String,
@@ -96,7 +115,15 @@ impl Session {
             }
         })?;
 
-        let reader_handle = {
+        // Signaled, by being dropped, once the reader thread's loop ends
+        // (EOF or a read error) and it has finished fanning out its last
+        // chunk of output: the waiter below waits on this, bounded by
+        // `READER_DRAIN_TIMEOUT`, instead of joining the reader thread
+        // outright (Finding F3 fix round 2; see that constant's doc comment
+        // for why an unbounded join is unsound on Unix).
+        let (reader_done_tx, reader_done_rx) = std_mpsc::channel::<()>();
+
+        {
             let shared = shared.clone();
             let input_tx = input_tx.clone();
             thread::Builder::new().name(format!("pty-out-{id}")).spawn(move || {
@@ -124,27 +151,32 @@ impl Session {
                         let _ = input_tx.send(replies);
                     }
                 }
-            })?
-        };
+                drop(reader_done_tx);
+            })?;
+        }
 
         {
             let master = master.clone();
             thread::Builder::new().name(format!("pty-wait-{id}")).spawn(move || {
                 let code = child.wait().ok().map(|status| status.exit_code() as i32);
-                // Take the master out of its mutex and drop the guard before
-                // dropping the master itself (Finding F3): dropping it is
-                // what closes the pseudoconsole (ClosePseudoConsole), which
-                // ends the reader thread's blocking read on Windows, and
-                // that close must not run while `shared`'s master mutex is
-                // held, or a concurrent `resize` would block on it.
+                // Take the master out of its own mutex and drop the guard
+                // before dropping the master itself (Finding F3): dropping
+                // it is what closes the pseudoconsole (ClosePseudoConsole),
+                // which ends the reader thread's blocking read on Windows,
+                // and that close must not run while the master's own mutex
+                // is held, or a concurrent `resize` would block on it.
                 let taken = { master.lock().expect("master lock").take() };
                 drop(taken);
-                // Wait for the reader thread to reach EOF and finish fanning
-                // out whatever output was still buffered in the
-                // pseudoconsole. Without this, `on_exit` (and so the
-                // daemon's SessionExited broadcast) could race ahead of the
-                // session's final Output frames (Finding F3).
-                let _ = reader_handle.join();
+                // Wait, bounded, for the reader thread to signal that it has
+                // reached EOF and finished fanning out whatever output was
+                // still buffered in the pseudoconsole, so `on_exit` (and so
+                // the daemon's SessionExited broadcast) does not race ahead
+                // of the session's final Output frames (Finding F3). Bounded
+                // rather than joined outright: see `READER_DRAIN_TIMEOUT`'s
+                // doc comment for why EOF is not guaranteed within any
+                // bound on Unix. Past the timeout, exit is still reported;
+                // the alternative is a `SessionExited` that never arrives.
+                let _ = reader_done_rx.recv_timeout(READER_DRAIN_TIMEOUT);
                 on_exit(code);
             })?;
         }
@@ -333,5 +365,32 @@ mod tests {
         let (code, seen_before_exit) = exit_rx.recv_timeout(Duration::from_secs(15)).expect("exit reported");
         assert_eq!(code, Some(0));
         assert!(seen_before_exit, "SessionExited fired before the subscriber had the session's final output");
+    }
+
+    /// Finding F3 (fix round 2, Unix only): a grandchild that inherited the
+    /// slave fd and keeps it open after the direct child has exited must
+    /// not block `on_exit` forever. `sh -c 'sleep 30 & echo started'`
+    /// backgrounds `sleep 30` (which keeps the pty's slave fd open for 30s)
+    /// and then exits immediately; `on_exit` must still fire well within
+    /// `READER_DRAIN_TIMEOUT`'s 2s bound, not after `sleep 30` eventually
+    /// exits. This cannot run on Windows (ConPTY has no grandchild-fd-open
+    /// scenario: `ClosePseudoConsole` forces EOF), so it only compiles and
+    /// runs under `#[cfg(unix)]`.
+    #[cfg(unix)]
+    #[test]
+    fn exit_is_reported_despite_a_backgrounded_grandchild_holding_the_pty_open() {
+        let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+        let mut spec = test_spec();
+        spec.args = vec!["-c".into(), "sleep 30 & echo started".into()];
+        let session = Session::spawn(SessionId::new(), spec, move |code| {
+            let _ = exit_tx.send(code);
+        })
+        .unwrap();
+
+        let code = exit_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("on_exit must fire within READER_DRAIN_TIMEOUT, not wait for the backgrounded grandchild");
+        assert_eq!(code, Some(0));
+        session.kill();
     }
 }
