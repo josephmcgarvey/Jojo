@@ -6,7 +6,11 @@
 //! - writer: writes queued input to the PTY so a slow program never blocks
 //!   the daemon's async tasks;
 //! - waiter: waits for the process to exit, closes the PTY master (which
-//!   ends the reader on ConPTY) and calls `on_exit`.
+//!   ends the reader on ConPTY), joins the reader thread so every buffered
+//!   Output frame has already been sent, and only then calls `on_exit`. The
+//!   waiter never holds `shared` while joining: it takes the master out of
+//!   its mutex and drops the guard before dropping the master itself, so a
+//!   concurrent `resize` is never blocked behind `ClosePseudoConsole`.
 //!
 //! `attach` takes the snapshot and registers the subscriber while holding
 //! `shared`, the same lock the reader holds while feeding. No output can
@@ -92,7 +96,7 @@ impl Session {
             }
         })?;
 
-        {
+        let reader_handle = {
             let shared = shared.clone();
             let input_tx = input_tx.clone();
             thread::Builder::new().name(format!("pty-out-{id}")).spawn(move || {
@@ -120,16 +124,27 @@ impl Session {
                         let _ = input_tx.send(replies);
                     }
                 }
-            })?;
-        }
+            })?
+        };
 
         {
             let master = master.clone();
             thread::Builder::new().name(format!("pty-wait-{id}")).spawn(move || {
                 let code = child.wait().ok().map(|status| status.exit_code() as i32);
-                // Dropping the master closes the pseudoconsole, which ends
-                // the reader thread's blocking read on Windows.
-                master.lock().expect("master lock").take();
+                // Take the master out of its mutex and drop the guard before
+                // dropping the master itself (Finding F3): dropping it is
+                // what closes the pseudoconsole (ClosePseudoConsole), which
+                // ends the reader thread's blocking read on Windows, and
+                // that close must not run while `shared`'s master mutex is
+                // held, or a concurrent `resize` would block on it.
+                let taken = { master.lock().expect("master lock").take() };
+                drop(taken);
+                // Wait for the reader thread to reach EOF and finish fanning
+                // out whatever output was still buffered in the
+                // pseudoconsole. Without this, `on_exit` (and so the
+                // daemon's SessionExited broadcast) could race ahead of the
+                // session's final Output frames (Finding F3).
+                let _ = reader_handle.join();
                 on_exit(code);
             })?;
         }
@@ -261,5 +276,62 @@ mod tests {
         let mut spec = test_spec();
         spec.program = "definitely-not-a-real-program-jojo".into();
         assert!(Session::spawn(SessionId::new(), spec, |_| {}).is_err());
+    }
+
+    /// A command that prints a distinctive line and exits immediately,
+    /// instead of `test_spec`'s interactive shell, to make the window
+    /// between the process truly exiting and the PTY's buffered output
+    /// being delivered as narrow as possible (Finding F3).
+    fn exit_immediately_spec() -> SpawnSpec {
+        #[cfg(windows)]
+        let (program, args) =
+            ("cmd.exe".to_string(), vec!["/d".into(), "/c".into(), "echo jojo-last-line".into()]);
+        #[cfg(unix)]
+        let (program, args) = ("sh".to_string(), vec!["-c".into(), "echo jojo-last-line".into()]);
+        SpawnSpec {
+            program,
+            args,
+            cwd: std::env::temp_dir(),
+            env: vec![("JOJO_SESSION_ID".into(), "test".into())],
+            cols: 80,
+            rows: 24,
+            scrollback: 1000,
+        }
+    }
+
+    /// Finding F3: `on_exit` (and so the daemon's `SessionExited` broadcast)
+    /// must not fire before the reader thread has fanned out the session's
+    /// final output. A subscriber attached as early as possible may see
+    /// that output either in the `Snapshot` (if attach happens to run after
+    /// the output was already fed into the grid) or in a later `Output`
+    /// frame (if attach runs first); both are fed into one grid here so the
+    /// assertion holds regardless of which race attach wins.
+    #[test]
+    fn exit_is_reported_only_after_final_output_is_sent() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+
+        let session = Session::spawn(SessionId::new(), exit_immediately_spec(), move |code| {
+            // Checked synchronously, on the waiter thread, at the instant
+            // `on_exit` fires: has the reader thread already delivered the
+            // session's final output to this subscriber? No further
+            // waiting happens here; that immediacy is the point of the
+            // test.
+            let mut grid = TermGrid::new(80, 24, 1000);
+            while let Ok(frame) = rx.try_recv() {
+                match frame {
+                    Frame::Snapshot { bytes, .. } | Frame::Output { bytes, .. } => grid.feed(&bytes),
+                    _ => {}
+                }
+            }
+            let seen = has_line_text(&grid.visible_text(), "jojo-last-line");
+            let _ = exit_tx.send((code, seen));
+        })
+        .unwrap();
+
+        session.attach(1, tx);
+        let (code, seen_before_exit) = exit_rx.recv_timeout(Duration::from_secs(15)).expect("exit reported");
+        assert_eq!(code, Some(0));
+        assert!(seen_before_exit, "SessionExited fired before the subscriber had the session's final output");
     }
 }

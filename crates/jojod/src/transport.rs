@@ -2,6 +2,7 @@
 //! on Windows, a Unix socket on Linux (spec section 3.1).
 
 use crate::paths::Endpoint;
+use std::future::Future;
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -19,7 +20,13 @@ mod imp {
 
     pub struct Listener {
         name: String,
-        next: NamedPipeServer,
+        // `None` means the next instance still needs to be created: either
+        // this is the first call, or a previous call consumed its instance
+        // (a successful accept) or left it unusable (`connect` failed, or
+        // `create` for the following instance failed). `accept` never
+        // reuses a stale or already-consumed handle; it creates a fresh one
+        // whenever this is `None` (Finding F1).
+        next: Option<NamedPipeServer>,
     }
 
     fn create(name: &str, first: bool) -> io::Result<NamedPipeServer> {
@@ -34,14 +41,22 @@ mod imp {
 
     impl Listener {
         pub fn bind(endpoint: &Endpoint) -> io::Result<Listener> {
-            Ok(Listener { name: endpoint.0.clone(), next: create(&endpoint.0, true)? })
+            Ok(Listener { name: endpoint.0.clone(), next: Some(create(&endpoint.0, true)?) })
         }
 
         pub async fn accept(&mut self) -> io::Result<(BoxRead, BoxWrite)> {
-            self.next.connect().await?;
-            let fresh = create(&self.name, false)?;
-            let connected = std::mem::replace(&mut self.next, fresh);
-            let (r, w) = tokio::io::split(connected);
+            let server = match self.next.take() {
+                Some(s) => s,
+                None => create(&self.name, false)?,
+            };
+            server.connect().await?;
+            // Prepare the instance for the *next* connection. If this fails
+            // (for example under resource exhaustion), the client we just
+            // accepted is still returned below; `next` stays `None` and the
+            // following `accept()` call retries `create` instead of reusing
+            // a consumed instance.
+            self.next = create(&self.name, false).ok();
+            let (r, w) = tokio::io::split(server);
             Ok((Box::new(r), Box::new(w)))
         }
     }
@@ -105,3 +120,16 @@ mod imp {
 }
 
 pub use imp::{connect, Listener};
+
+/// Abstracts the accept loop over the real transport so `server::run` can be
+/// tested against a fake that injects accept errors deterministically
+/// (Finding F1). Implemented by `Listener` on every platform.
+pub trait Accept: Send {
+    fn accept(&mut self) -> impl Future<Output = io::Result<(BoxRead, BoxWrite)>> + Send;
+}
+
+impl Accept for Listener {
+    async fn accept(&mut self) -> io::Result<(BoxRead, BoxWrite)> {
+        Listener::accept(self).await
+    }
+}
