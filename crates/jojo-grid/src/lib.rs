@@ -1,5 +1,8 @@
 //! Terminal grid for one session, backed by `alacritty_terminal`.
 
+mod dump;
+mod snapshot;
+
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
