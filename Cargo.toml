@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/jojo-proto", "crates/jojo-grid", "crates/jojod"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+anyhow = "1"
+alacritty_terminal = "0.25"
+clap = { version = "4", features = ["derive"] }
+portable-pty = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+ulid = { version = "1", features = ["serde"] }
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Threading",
+] }
+jojo-proto = { path = "crates/jojo-proto" }
+jojo-grid = { path = "crates/jojo-grid" }
