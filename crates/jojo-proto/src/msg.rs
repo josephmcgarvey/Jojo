@@ -101,19 +101,21 @@ pub enum ControlMsg {
     SessionExited { session_id: SessionId, exit_code: Option<i32> },
 
     Shutdown,
-    /// `request` is almost always the `type` tag of the message that caused
-    /// the error (for example `"Resize"`). Four values instead name a
-    /// condition detected outside of handling one particular request:
-    /// - `"Output"`: this client fell behind on a session's output and was
-    ///   detached from it; attach again for a fresh snapshot.
-    /// - `"Events"`: this client missed broadcast events (its subscription
-    ///   lagged); the connection is closing, so reconnect and list again.
-    /// - `"Frame"`: a frame this client sent could not be decoded (malformed
-    ///   JSON, unknown frame type, or a data frame shorter than its 16-byte
-    ///   session id).
-    /// - `"Hello"`: the client's `protocol_version` did not exactly match
-    ///   the daemon's; the connection is closing.
+    /// Reports a failure, either in response to a specific request or for a
+    /// condition detected outside of handling one.
     Error {
+        /// Almost always the `type` tag of the message that caused the error
+        /// (for example `"Resize"`). Four values instead name a condition
+        /// detected outside of handling one particular request:
+        /// - `"Output"`: this client fell behind on a session's output and was
+        ///   detached from it; attach again for a fresh snapshot.
+        /// - `"Events"`: this client missed broadcast events (its subscription
+        ///   lagged); the connection is closing, so reconnect and list again.
+        /// - `"Frame"`: a frame this client sent could not be decoded (malformed
+        ///   JSON, unknown frame type, or a data frame shorter than its 16-byte
+        ///   session id).
+        /// - `"Hello"`: the client's `protocol_version` did not exactly match
+        ///   the daemon's; the connection is closing.
         request: String,
         message: String,
         /// The session the error concerns, when there is one (for example

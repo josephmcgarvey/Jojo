@@ -303,11 +303,12 @@ impl Daemon {
             attachable: false,
         };
         // Hold the store lock across the duplicate-id check, the project
-        // lookup, spawn, and the SessionCreated broadcast. Checking the
-        // live map too (lock order: store, then sessions) means a session
-        // id that is still attached from a previous daemon instance (not
-        // yet in `store` because the row was removed, but still running)
-        // is also rejected. `on_session_exit` also takes the store lock, so
+        // lookup, spawn, and the SessionCreated broadcast. The store and the
+        // live `self.sessions` map are always updated together, so the store
+        // check alone is sufficient to catch a duplicate id; the live-map
+        // check (lock order: store, then sessions) is defense in depth,
+        // guarding against the two ever diverging in the future.
+        // `on_session_exit` also takes the store lock, so
         // even a program that exits immediately cannot have its
         // SessionExited broadcast before SessionCreated. The project lookup
         // happens inside this same acquisition (not a separate earlier
@@ -385,8 +386,10 @@ impl Daemon {
             info.exit_code = exit_code;
             info.state_changed_at = now_ms();
             self.save(&store);
-            drop(store);
+            // Broadcast while still holding `store`, matching every other
+            // handler in this file, so event order always matches store order.
             self.broadcast(ControlMsg::SessionExited { session_id: id, exit_code });
+            drop(store);
         }
     }
 

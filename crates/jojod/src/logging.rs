@@ -6,21 +6,19 @@ use std::path::Path;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
-/// Writes `jojod.<date>.log` files into `log_dir`, rotated daily, keeping
-/// the newest 7. Keep the returned guard alive for the life of the process;
-/// dropping it flushes and stops the background writer.
-pub fn init(log_dir: &Path) -> anyhow::Result<WorkerGuard> {
-    // On Unix, `log_dir` is `<state_dir>/logs`; create the state directory
-    // itself (its parent) with mode 0700 before `logs/` goes into it, so a
-    // daemon whose state directory did not already exist never has a window
-    // where it is world- or group-readable. On Windows, ACLs on the pipe
-    // (see `pipe_security.rs`) are the access-control mechanism instead, so
-    // this is a no-op there.
+/// Writes `jojod.<date>.log` files into `<state_dir>/logs`, rotated daily,
+/// keeping the newest 7. Keep the returned guard alive for the life of the
+/// process; dropping it flushes and stops the background writer.
+pub fn init(state_dir: &Path) -> anyhow::Result<WorkerGuard> {
+    // On Unix, create `state_dir` itself with mode 0700 before `logs/` goes
+    // into it, so a daemon whose state directory did not already exist never
+    // has a window where it is world- or group-readable. On Windows, ACLs on
+    // the pipe (see `pipe_security.rs`) are the access-control mechanism
+    // instead, so this is a no-op there.
     #[cfg(unix)]
-    if let Some(state_dir) = log_dir.parent() {
-        create_private_dir(state_dir)?;
-    }
-    std::fs::create_dir_all(log_dir)?;
+    create_private_dir(state_dir)?;
+    let log_dir = state_dir.join("logs");
+    std::fs::create_dir_all(&log_dir)?;
     let appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
         .filename_prefix("jojod")
