@@ -7,3 +7,5 @@ pub mod daemon_manager;
 pub mod layout;
 pub mod links;
 pub mod settings;
+#[cfg(windows)]
+pub mod snap;

@@ -62,6 +62,17 @@ async fn open_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("the link opener thread failed: {e}"))?
 }
 
+/// Places the snap-layout input sink over the HTML maximize button (see
+/// `jojo_app::snap`). The frontend sends the button's rectangle in
+/// physical pixels whenever the window or the button changes size.
+#[tauri::command]
+fn set_maximize_button_rect(x: i32, y: i32, width: i32, height: i32) {
+    #[cfg(windows)]
+    jojo_app::snap::set_button_rect(x, y, width, height);
+    #[cfg(not(windows))]
+    let _ = (x, y, width, height);
+}
+
 fn main() {
     let bridge = Arc::new(Bridge::default());
     tauri::Builder::default()
@@ -80,7 +91,8 @@ fn main() {
             get_settings,
             get_layout,
             save_layout,
-            open_url
+            open_url,
+            set_maximize_button_rect
         ])
         .setup(move |app| {
             // The main window has `"create": false` in tauri.conf.json so it
@@ -90,10 +102,20 @@ fn main() {
             let config = app.config().app.windows.iter().find(|w| w.label == "main").ok_or("no main window in tauri.conf.json")?.clone();
             // enable_clipboard_access makes wry allow WebView2's clipboard-read
             // permission, which navigator.clipboard.readText (Paste) needs.
-            WebviewWindowBuilder::from_config(app.handle(), &config)?
+            let window = WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .enable_clipboard_access()
                 .build()?;
+            // Snap layouts add a flyout to the maximize button; they are not
+            // needed for the button to work. If the sink cannot be created,
+            // a click on the HTML button still maximizes through the window
+            // API, only without the flyout.
+            #[cfg(windows)]
+            if let Ok(hwnd) = window.hwnd() {
+                let _ = jojo_app::snap::install(app.handle(), hwnd.0 as isize);
+            }
+            #[cfg(not(windows))]
+            drop(window);
             let source = app.path().resource_dir()?.join("daemon");
             let paths = DaemonPaths::for_app(source);
             tauri::async_runtime::spawn(jojo_app::connection::run(paths, bridge.clone()));
