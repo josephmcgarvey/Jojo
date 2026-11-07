@@ -63,6 +63,9 @@ function handleControl(msg: ControlMsg): void {
     router.fellBehind(msg.session_id);
     return;
   }
+  if (msg.type === "Error" && msg.request === "Attach" && msg.session_id) {
+    router.attachFailed(msg.session_id);
+  }
 
   // Computed against the pre-update model, which still has the removed
   // session and its siblings, so the project's creation order is intact.

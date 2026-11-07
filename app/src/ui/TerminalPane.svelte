@@ -8,7 +8,7 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app } from "../lib/state/app.svelte";
-  import { AttachGate } from "../lib/terminal/attachGate";
+  import { createPaneStream } from "../lib/terminal/paneStream";
   import { noScreenMessage } from "../lib/terminal/pane";
   import { suppressQueryReplies } from "../lib/terminal/queries";
   import { router } from "../lib/terminal/router";
@@ -57,28 +57,17 @@
     fit.fit();
 
     const id = session.id;
-    const gate = new AttachGate();
     let size = clampSize(term.cols, term.rows);
-    const attach = () => {
-      if (!session.attachable) return;
-      gate.requestAttach();
-      // If this Attach is refused (disconnected), the gate is left awaiting
-      // a snapshot: that is fine, because the store's onStatus handler calls
-      // router.reattachAll() on the next "connected" status, which retries
-      // attach() and the awaited snapshot is satisfied then. No separate
-      // rejection handling of the gate is needed here.
-      void sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
-    };
-    if (session.attachable) attach();
-    else term.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
-
-    const unregister = router.register(id, {
-      deliver(kind, bytes) {
-        const accepted = gate.accept(kind, bytes);
-        if (accepted) term.write(accepted);
-      },
-      reattach: attach,
+    const stream = createPaneStream({
+      write: (bytes, done) => term.write(bytes, done),
+      sendAttach: () => sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }),
     });
+    // A session with no screen is never attached, so it is not registered
+    // with the router: reattachAll() after a reconnect must not send an
+    // Attach that jojod can only refuse.
+    const unregister = session.attachable ? router.register(id, stream) : () => {};
+    if (session.attachable) stream.start();
+    else term.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
 
     // A session with no screen has nothing on the daemon side to receive
     // input, so keystrokes are not sent. App.svelte keys this pane on
