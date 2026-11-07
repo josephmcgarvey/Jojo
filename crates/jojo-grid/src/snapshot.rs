@@ -335,6 +335,13 @@ impl TermGrid {
         if full.len() <= max_len {
             return full;
         }
+        // On the alternate screen, `snapshot_skipping` always serializes only
+        // the alternate screen itself (Limit 1 above): there is no
+        // scrollback to drop, so every candidate the binary search below
+        // would try is identical to `full`. Go straight to the fallback.
+        if self.term.mode().contains(TermMode::ALT_SCREEN) {
+            return self.bounded_plain_screen_snapshot(max_len);
+        }
         // Smallest number of skipped history rows whose snapshot fits.
         let (mut lo, mut hi) = (1usize, self.term.grid().history_size());
         let mut best = None;
@@ -348,13 +355,27 @@ impl TermGrid {
                 lo = mid + 1;
             }
         }
-        best.unwrap_or_else(|| self.plain_screen_snapshot())
+        best.unwrap_or_else(|| self.bounded_plain_screen_snapshot(max_len))
     }
 
-    /// The visible screen as plain text after a full reset.
-    fn plain_screen_snapshot(&self) -> Vec<u8> {
+    /// The visible screen as plain text after a full reset, truncated to
+    /// `max_len` on a UTF-8 character boundary if it would otherwise exceed
+    /// it (only a screen of implausible size reaches this: `MAX_COLS` x
+    /// `MAX_ROWS` plain ASCII text alone is well under `MAX_SNAPSHOT_BYTES`).
+    /// On the alternate screen, also switches the receiver to the alternate
+    /// screen so it ends up in the same mode this grid is in.
+    fn bounded_plain_screen_snapshot(&self, max_len: usize) -> Vec<u8> {
         let mut out = b"\x1bc\x1b[3J".to_vec();
-        out.extend_from_slice(self.visible_text().replace('\n', "\r\n").as_bytes());
+        if self.term.mode().contains(TermMode::ALT_SCREEN) {
+            out.extend_from_slice(b"\x1b[?1049h");
+        }
+        let text = self.visible_text().replace('\n', "\r\n");
+        let budget = max_len.saturating_sub(out.len());
+        let mut end = text.len().min(budget);
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.extend_from_slice(text[..end].as_bytes());
         out
     }
 }

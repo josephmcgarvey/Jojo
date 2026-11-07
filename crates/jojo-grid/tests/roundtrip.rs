@@ -237,10 +237,30 @@ fn bounded_snapshot_fits_and_keeps_the_visible_screen() {
 
     let bounded = a.snapshot_bounded(limit);
     assert!(bounded.len() <= limit, "bounded snapshot is {} bytes", bounded.len());
+    // Every cell in the fixture carries a truecolor foreground, which only
+    // the binary-search-over-skipped-history path can reproduce; the plain
+    // fallback (`bounded_plain_screen_snapshot`) emits no SGR sequences at
+    // all. This confirms the bounded snapshot took that path rather than
+    // falling back to plain text.
+    let text = String::from_utf8_lossy(&bounded);
+    assert!(text.contains("\x1b[0;38;2;"), "no truecolor SGR sequence found; fallback ran instead");
 
     let mut b = TermGrid::new(80, 24, 10_000);
     b.feed(&bounded);
     assert_eq!(b.visible_text(), a.visible_text());
+}
+
+#[test]
+fn bounded_snapshot_respects_a_tiny_limit() {
+    let mut a = TermGrid::new(80, 24, 10_000);
+    for i in 0..10_000u32 {
+        a.feed(format!("line {i}\r\n").as_bytes());
+    }
+    a.feed(b"last visible line");
+
+    let limit = 50;
+    let bounded = a.snapshot_bounded(limit);
+    assert!(bounded.len() <= limit, "bounded snapshot is {} bytes, limit {limit}", bounded.len());
 }
 
 #[test]

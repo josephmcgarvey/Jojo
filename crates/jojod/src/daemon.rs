@@ -285,8 +285,15 @@ impl Daemon {
             Ok(session) => {
                 self.sessions.lock().unwrap_or_else(PoisonError::into_inner).insert(id, session);
                 self.save(&store);
-                drop(store);
+                // Broadcast while still holding `store` (tokio's
+                // broadcast::Sender::send does not block): `on_session_exit`
+                // also takes the store lock, so if this release the lock
+                // first, a program that exits during spawn could have its
+                // SessionExited broadcast (from the waiter thread blocked on
+                // that same lock in `on_session_exit`) race ahead of this
+                // SessionCreated.
                 self.broadcast(ControlMsg::SessionCreated { session: SessionInfo { attachable: true, ..info } });
+                drop(store);
             }
             Err(e) => {
                 let exit_code = Some(-1);
@@ -295,22 +302,12 @@ impl Daemon {
                     stored.exit_code = exit_code;
                 }
                 self.save(&store);
-                drop(store);
                 let failed = SessionInfo { state: AgentState::Exited, exit_code, attachable: false, ..info };
-                // Sent directly to `reply`, in addition to the broadcast every
-                // other client gets, so the requester's own queue has these
-                // ahead of the `Error` below in a guaranteed order: `reply` is
-                // one plain channel, but `self.broadcast` only reaches this
-                // same client by way of its per-connection event-forwarding
-                // task, which wakes asynchronously and is not guaranteed to
-                // run (let alone complete two iterations) before this
-                // synchronous function returns and the `Error` reply is
-                // enqueued right behind it. Without the direct sends, the
-                // requester could observe `Error` before `SessionCreated`.
-                self.broadcast(ControlMsg::SessionCreated { session: failed.clone() });
-                let _ = reply.send(Frame::Control(ControlMsg::SessionCreated { session: failed }));
+                // Broadcast both events before dropping `store`, for the same
+                // reason as the Ok branch above.
+                self.broadcast(ControlMsg::SessionCreated { session: failed });
                 self.broadcast(ControlMsg::SessionExited { session_id: id, exit_code });
-                let _ = reply.send(Frame::Control(ControlMsg::SessionExited { session_id: id, exit_code }));
+                drop(store);
                 let path = std::env::var("PATH").unwrap_or_default();
                 Self::error_for(reply, "CreateSession", Some(id), format!("{e:#}. PATH searched: {path}"));
             }

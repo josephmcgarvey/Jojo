@@ -249,19 +249,44 @@ async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
     }))
     .await
     .unwrap();
-    let created = match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionCreated { .. }))).await.unwrap() {
-        Frame::Control(ControlMsg::SessionCreated { session }) => session,
-        _ => unreachable!(),
-    };
+    // `SessionCreated` and `Error` are not ordered relative to each other:
+    // `SessionCreated` reaches this client through its broadcast subscription
+    // (forwarded asynchronously by a per-connection task), while `Error` is
+    // sent directly to the requester's reply channel. Collect both,
+    // whichever arrives first.
+    let (mut created, mut error) = (None, None);
+    while created.is_none() || error.is_none() {
+        match c
+            .recv_until(WAIT, |f| {
+                matches!(f, Frame::Control(ControlMsg::SessionCreated { .. } | ControlMsg::Error { .. }))
+            })
+            .await
+            .unwrap()
+        {
+            Frame::Control(ControlMsg::SessionCreated { session }) => created = Some(session),
+            Frame::Control(ControlMsg::Error { request, message, session_id }) => {
+                error = Some((request, message, session_id))
+            }
+            _ => unreachable!(),
+        }
+    }
+    let created = created.unwrap();
+    let (request, message, session_id) = error.unwrap();
     assert!(!created.attachable);
-    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
-        Frame::Control(ControlMsg::Error { request, message, session_id }) => {
-            assert_eq!(request, "CreateSession");
-            assert_eq!(session_id, Some(created.id));
-            assert!(message.contains("PATH searched"), "{message}");
+    assert_eq!(request, "CreateSession");
+    assert_eq!(session_id, Some(created.id));
+    assert!(message.contains("PATH searched"), "{message}");
+
+    c.send(Frame::Control(ControlMsg::ListSessions)).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Sessions { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Sessions { sessions }) => {
+            let session = sessions.iter().find(|s| s.id == created.id).expect("session listed");
+            assert!(!session.attachable);
+            assert_eq!(session.exit_code, Some(-1));
         }
         _ => unreachable!(),
     }
+
     c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
 }
