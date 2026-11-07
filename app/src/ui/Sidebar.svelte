@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { activateSession, addProject, app, newSession, selectProject } from "../lib/state/app.svelte";
+  import { addProject, app, focusPane, focusedSessionId, newSession, selectProject } from "../lib/state/app.svelte";
   import { formatElapsed } from "../lib/state/elapsed";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
+  import Badge from "./Badge.svelte";
 
   let menuFor = $state<string | null>(null);
   const projects = $derived(sortedProjects(app.model));
@@ -60,8 +61,8 @@
       </div>
     {/if}
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
-      <button class="session" class:active={app.activeSessionId === session.id} onclick={() => activateSession(session)}>
-        <span class="badge {session.state}"></span>
+      <button class="session" class:active={focusedSessionId() === session.id} onclick={() => focusPane(session.id)}>
+        <Badge agentState={session.state} />
         <span class="label">{session.label}</span>
         <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
       </button>
@@ -176,43 +177,5 @@
   .time {
     color: var(--jojo-muted);
     font-size: 10.5px;
-  }
-  .badge {
-    width: 13px;
-    height: 13px;
-    flex: none;
-    border-radius: 50%;
-    border: 2px solid var(--jojo-idle);
-  }
-  .badge.working {
-    border-color: var(--jojo-working);
-    border-top-color: transparent;
-    animation: spin 1s linear infinite;
-  }
-  .badge.needs_you {
-    border-color: var(--jojo-needs-you);
-    background: var(--jojo-needs-you-soft);
-    box-shadow: 0 0 10px var(--jojo-needs-you-glow);
-  }
-  .badge.done {
-    border-color: var(--jojo-done);
-    background: var(--jojo-done);
-  }
-  .badge.error {
-    border-color: var(--jojo-error);
-    background: var(--jojo-error);
-  }
-  .badge.exited {
-    opacity: 0.6;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .badge.working {
-      animation: none;
-    }
   }
 </style>

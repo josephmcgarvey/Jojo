@@ -11,7 +11,7 @@ describe("theme", () => {
   });
 
   it("defines the tokens and terminal colors the UI uses", () => {
-    const required = ["bg", "bg-glow", "side", "bar", "pane", "line", "sel", "fg", "fg2", "muted", "accent", "working", "needs-you", "done", "error", "idle", "font-ui", "font-mono", "brand-gradient", "radius", "radius-sm", "danger"];
+    const required = ["bg", "bg-glow", "side", "bar", "pane", "line", "sel", "fg", "fg2", "muted", "accent", "working", "needs-you", "done", "error", "idle", "font-ui", "font-mono", "brand-gradient", "radius", "radius-sm", "danger", "scrim", "menu", "shadow"];
     for (const name of required) expect(neonGlass.tokens, name).toHaveProperty(name);
     for (const key of ["background", "foreground", "cursor", "selectionBackground", "black", "brightWhite"]) {
       expect(neonGlass.terminal, key).toHaveProperty(key);

@@ -1,21 +1,21 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import neonGlass from "./themes/neon-glass.json";
-  import { app, startApp } from "./lib/state/app.svelte";
-  import { paneKey } from "./lib/terminal/pane";
+  import { app, currentTab, startApp } from "./lib/state/app.svelte";
   import { applyTheme, type Theme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
+  import ConfirmDialog from "./ui/ConfirmDialog.svelte";
+  import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
   import TabBar from "./ui/TabBar.svelte";
-  import TerminalPane from "./ui/TerminalPane.svelte";
 
   const theme = neonGlass as Theme;
   onMount(() => {
     applyTheme(theme);
     return startApp();
   });
-  const active = $derived(app.activeSessionId ? app.model.sessions[app.activeSessionId] : undefined);
+  const tab = $derived(currentTab());
 </script>
 
 <div class="window">
@@ -24,10 +24,8 @@
     <TabBar />
     <Banner />
     <div class="panes">
-      {#if active}
-        {#key paneKey(active)}
-          <TerminalPane session={active} terminalTheme={theme.terminal} />
-        {/key}
+      {#if tab}
+        <PaneGrid terminalTheme={theme.terminal} />
       {:else if app.selectedProjectId}
         <p class="empty">No session open. Use + to start Claude or a shell.</p>
       {:else}
@@ -37,6 +35,7 @@
     <StatusBar />
   </section>
 </div>
+<ConfirmDialog />
 
 <style>
   .window {

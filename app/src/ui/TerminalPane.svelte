@@ -8,19 +8,23 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app } from "../lib/state/app.svelte";
-  import { createPaneStream } from "../lib/terminal/paneStream";
   import { noScreenMessage } from "../lib/terminal/pane";
+  import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
+  import { registerTerminal } from "../lib/terminal/registry";
   import { router } from "../lib/terminal/router";
   import { clampSize } from "../lib/terminal/size";
   import { sendControl, sendInput } from "../lib/wire/bridge";
 
-  let { session, terminalTheme }: { session: SessionInfo; terminalTheme: ITheme } = $props();
+  let { session, terminalTheme, focused }: { session: SessionInfo; terminalTheme: ITheme; focused: boolean } = $props();
   let host: HTMLDivElement;
+  /** Set in onMount and cleared on unmount; read by the focus effect below. */
+  let term: Terminal | undefined;
 
   onMount(() => {
     const settings = app.settings;
-    const term = new Terminal({
+    const id = session.id;
+    const created = new Terminal({
       allowProposedApi: true,
       fontFamily: settings?.terminalFontFamily ?? "Geist Mono",
       fontSize: settings?.terminalFontSize ?? 13,
@@ -29,20 +33,21 @@
       theme: terminalTheme,
       cursorBlink: true,
     });
+    term = created;
     const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(new Unicode11Addon());
-    term.unicode.activeVersion = "11";
+    created.loadAddon(fit);
+    created.loadAddon(new Unicode11Addon());
+    created.unicode.activeVersion = "11";
     // The addon's default handler calls window.open, which the main webview
     // denies (see main.rs). The open_url command validates the URL (http and
     // https only) and opens it in the default browser instead.
-    term.loadAddon(new WebLinksAddon((_event, uri) => void invoke("open_url", { url: uri }).catch(() => {})));
-    suppressQueryReplies(term);
-    term.open(host);
+    created.loadAddon(new WebLinksAddon((_event, uri) => void invoke("open_url", { url: uri }).catch(() => {})));
+    suppressQueryReplies(created);
+    created.open(host);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
-      term.loadAddon(webgl);
+      created.loadAddon(webgl);
       // xterm.js falls back to its DOM renderer on context loss; the addon
       // itself does not dispose on loss, so do it here to release the GL
       // resources instead of leaving a dead context attached.
@@ -56,10 +61,9 @@
     }
     fit.fit();
 
-    const id = session.id;
-    let size = clampSize(term.cols, term.rows);
+    let size = clampSize(created.cols, created.rows);
     const stream = createPaneStream({
-      write: (bytes, done) => term.write(bytes, done),
+      write: (bytes, done) => created.write(bytes, done),
       sendAttach: () => sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }),
     });
     // A session with no screen is never attached, so it is not registered
@@ -67,18 +71,26 @@
     // Attach that jojod can only refuse.
     const unregister = session.attachable ? router.register(id, stream) : () => {};
     if (session.attachable) stream.start();
-    else term.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
+    else created.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
+
+    const unregisterControls = registerTerminal(id, {
+      focus: () => created.focus(),
+      hasSelection: () => created.hasSelection(),
+      getSelection: () => created.getSelection(),
+      paste: (text) => created.paste(text),
+      mouseTrackingMode: () => created.modes.mouseTrackingMode,
+    });
 
     // A session with no screen has nothing on the daemon side to receive
-    // input, so keystrokes are not sent. App.svelte keys this pane on
+    // input, so keystrokes are not sent. PaneGrid keys this pane on
     // paneKey(), which includes `attachable`, so a session that loses its
     // screen while mounted is remounted and reaches this check.
     const encoder = new TextEncoder();
-    const onData = term.onData((data) => {
+    const onData = created.onData((data) => {
       if (!session.attachable) return;
       void sendInput(id, encoder.encode(data)).catch(() => {});
     });
-    const onBinary = term.onBinary((data) => {
+    const onBinary = created.onBinary((data) => {
       if (!session.attachable) return;
       void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(() => {});
     });
@@ -91,7 +103,7 @@
         // message to the host's width; only an attachable session has
         // anything on the daemon side to tell about the new size.
         fit.fit();
-        const next = clampSize(term.cols, term.rows);
+        const next = clampSize(created.cols, created.rows);
         if (next.cols !== size.cols || next.rows !== size.rows) {
           size = next;
           if (session.attachable) {
@@ -101,32 +113,33 @@
       }, 50);
     });
     observer.observe(host);
-    term.focus();
 
     return () => {
       observer.disconnect();
       clearTimeout(timer);
       unregister();
+      unregisterControls();
       onData.dispose();
       onBinary.dispose();
       if (session.attachable) void sendControl({ type: "Detach", session_id: id }).catch(() => {});
       webgl?.dispose();
-      term.dispose();
+      term = undefined;
+      created.dispose();
     };
+  });
+
+  // Moves keyboard focus into this terminal whenever its pane becomes the
+  // focused pane: a click on the pane, Alt+Arrow, a sidebar click, or a tab
+  // switch. Declared after onMount, so on first mount it runs after `term`
+  // is set.
+  $effect(() => {
+    if (focused) term?.focus();
   });
 </script>
 
-<div class="frame">
-  <div class="host" bind:this={host}></div>
-</div>
+<div class="host" bind:this={host}></div>
 
 <style>
-  .frame {
-    position: absolute;
-    inset: 0;
-    padding: 10px 12px;
-    background: var(--jojo-pane);
-  }
   .host {
     width: 100%;
     height: 100%;

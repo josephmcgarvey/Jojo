@@ -1,18 +1,26 @@
 <script lang="ts">
-  import { activateSession, app, closeSession, newSession } from "../lib/state/app.svelte";
-  import { sessionsForProject } from "../lib/state/views";
+  import { activeTab, tabLabel } from "../lib/layout/tabs";
+  import { countPanes } from "../lib/layout/tree";
+  import { app, closeTab, currentProjectLayout, newSession, selectTab } from "../lib/state/app.svelte";
+  import Badge from "./Badge.svelte";
   import WindowControls from "./WindowControls.svelte";
 
-  const tabs = $derived(app.selectedProjectId ? sessionsForProject(app.model, app.selectedProjectId) : []);
+  const project = $derived(currentProjectLayout());
+  const activeId = $derived(project ? activeTab(project)?.id : undefined);
+  const labelOf = (sessionId: string) => app.model.sessions[sessionId]?.label;
 </script>
 
 <div class="tabs">
-  {#each tabs as session (session.id)}
-    <div class="tab" class:on={app.activeSessionId === session.id}>
-      <button class="title" onclick={() => activateSession(session)}>
-        <span class="badge {session.state}"></span>{session.label}
+  {#each project?.tabs ?? [] as tab (tab.id)}
+    {@const focusedSession = app.model.sessions[tab.focused]}
+    {@const panes = countPanes(tab.root)}
+    <div class="tab" class:on={activeId === tab.id}>
+      <button class="title" onclick={() => selectTab(tab.id)}>
+        {#if focusedSession}<Badge agentState={focusedSession.state} size={11} />{/if}
+        <span class="name">{tabLabel(tab, labelOf)}</span>
+        {#if panes > 1}<span class="count">{panes}</span>{/if}
       </button>
-      <button class="close" aria-label="Close {session.label}" onclick={() => closeSession(session.id)}>×</button>
+      <button class="close" aria-label="Close tab {tabLabel(tab, labelOf)}" onclick={() => void closeTab(tab.id)}>×</button>
     </div>
   {/each}
   {#if app.selectedProjectId}
@@ -54,8 +62,17 @@
     gap: 7px;
     max-width: 220px;
     white-space: nowrap;
+  }
+  .name {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .count {
+    padding: 0 5px;
+    border-radius: var(--jojo-radius-sm);
+    font-size: 10.5px;
+    color: var(--jojo-muted);
+    background: var(--jojo-sel);
   }
   .close {
     padding: 0 4px;
@@ -72,20 +89,5 @@
   .drag {
     flex: 1;
     align-self: stretch;
-  }
-  .badge {
-    width: 11px;
-    height: 11px;
-    flex: none;
-    border-radius: 50%;
-    border: 2px solid var(--jojo-idle);
-  }
-  .badge.done {
-    border-color: var(--jojo-done);
-    background: var(--jojo-done);
-  }
-  .badge.error {
-    border-color: var(--jojo-error);
-    background: var(--jojo-error);
   }
 </style>
