@@ -262,9 +262,8 @@ impl Daemon {
                 // here: `kill()` can block briefly on the OS call that ends
                 // the process, and must not run while either lock is held,
                 // or it would stall every other request this daemon is
-                // handling for that long. `taken` is dropped only after both
-                // locks are released below; `Session::drop` is what actually
-                // calls `kill()`.
+                // handling for that long. The explicit `kill()` below runs
+                // only after both locks are released.
                 let taken = sessions.remove(&session_id);
                 drop(sessions);
                 store.data.sessions.retain(|s| s.id != session_id);
