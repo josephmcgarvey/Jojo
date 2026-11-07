@@ -9,6 +9,7 @@
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app } from "../lib/state/app.svelte";
   import { AttachGate } from "../lib/terminal/attachGate";
+  import { noScreenMessage } from "../lib/terminal/pane";
   import { suppressQueryReplies } from "../lib/terminal/queries";
   import { router } from "../lib/terminal/router";
   import { clampSize } from "../lib/terminal/size";
@@ -69,7 +70,7 @@
       void sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
     };
     if (session.attachable) attach();
-    else term.write("\x1b[2mThis session has no screen: it ran in a previous jojod. Close it and start a new one.\x1b[0m\r\n");
+    else term.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
 
     const unregister = router.register(id, {
       deliver(kind, bytes) {
