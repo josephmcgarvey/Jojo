@@ -30,6 +30,39 @@ fn assert_roundtrip_sized(name: &str, cols: u16, rows: u16, scrollback: usize, i
     }
 }
 
+/// Mirrors `Session::attach`: build grid A at the initial size, feed input,
+/// resize it (as an attaching client with a different terminal size would
+/// trigger), snapshot, then replay into a fresh grid B built directly at the
+/// new size. Unlike `assert_roundtrip_sized`, A and B start at different
+/// sizes, so a mismatch can surface state that only a resize produces (e.g.
+/// a cursor left pending-wrap at a column that resizing did not correct).
+fn assert_roundtrip_after_resize(
+    name: &str,
+    initial_cols: u16,
+    initial_rows: u16,
+    scrollback: usize,
+    input: &[u8],
+    new_cols: u16,
+    new_rows: u16,
+) {
+    let mut a = TermGrid::new(initial_cols, initial_rows, scrollback);
+    a.feed(input);
+    a.resize(new_cols, new_rows);
+    let snapshot = a.snapshot();
+    let mut b = TermGrid::new(new_cols, new_rows, scrollback);
+    b.feed(&snapshot);
+    let (da, db) = (a.debug_dump(), b.debug_dump());
+    if da != db {
+        let first_diff = da
+            .lines()
+            .zip(db.lines())
+            .find(|(x, y)| x != y)
+            .map(|(x, y)| format!("original: {x}\nrestored: {y}"))
+            .unwrap_or_else(|| "dumps differ in length".to_string());
+        panic!("fixture {name} did not round-trip after resize\n{first_diff}");
+    }
+}
+
 #[test]
 fn empty_grid() {
     assert_roundtrip("empty", b"");
@@ -285,4 +318,43 @@ fn pending_wrap_after_a_wide_character() {
     let mut s = "x".repeat(78).into_bytes();
     s.extend_from_slice("漢".as_bytes());
     assert_roundtrip("pending_wide", &s);
+}
+
+// --- Fix round 1 (task-5-report.md) ---
+
+#[test]
+#[ignore = "known gap: pending wrap after a non-reflowed alternate-screen resize cannot be restored; see snapshot.rs Known Gaps"]
+fn pending_wrap_survives_a_non_reflowed_alternate_screen_resize() {
+    // alacritty_terminal resizes the active grid on the alternate screen with
+    // reflow = false (Term::resize), and Grid::grow_columns only corrects a
+    // stale pending-wrap cursor when reflowing. Filling the last column of a
+    // 10-column alternate-screen grid arms pending-wrap at Column(9); growing
+    // to 20 columns leaves the cursor at Column(9) with input_needs_wrap
+    // still true, even though Column(9) is no longer the grid's last column.
+    // Session::attach resizes before snapshotting, so a wider client
+    // attaching to a session in this state hits this exact path. The
+    // snapshot re-emits at column 9 (now mid-row), so the receiver's cursor
+    // ends one column to the right of the original (Column(10)) with
+    // pending-wrap not set, since no sequence of normal output can recreate
+    // "pending wrap at a non-last column" in a fresh terminal.
+    assert_roundtrip_after_resize(
+        "pending_wrap_alt_screen_resize",
+        10,
+        5,
+        100,
+        b"\x1b[?1049h0123456789",
+        20,
+        5,
+    );
+}
+
+#[test]
+fn pending_wrap_survives_a_reflowed_primary_screen_resize() {
+    // Same resize shape as the alternate-screen gap above (fill the last
+    // column to arm pending-wrap, then grow the column count), but on the
+    // primary screen, where Term::resize reflows and Grid::grow_columns does
+    // correct a stale pending-wrap cursor. This proves the resize-then-
+    // snapshot path works correctly where reflow applies, isolating the gap
+    // above to the alternate screen specifically.
+    assert_roundtrip_after_resize("pending_wrap_primary_screen_resize", 10, 5, 100, b"0123456789", 20, 5);
 }

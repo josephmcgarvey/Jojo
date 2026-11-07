@@ -7,6 +7,29 @@
 //! 3. Tab cells are written as spaces. alacritty_terminal stores '\t' only in
 //!    the first cell a tab covers, so writing '\t' would move the cursor
 //!    past cells that are then written again.
+//! 4. A cursor left pending-wrap at a column that a prior resize made no
+//!    longer the grid's last column cannot be restored exactly. On the
+//!    alternate screen, `Term::resize` grows the active grid with
+//!    `reflow = false`, and `Grid::grow_columns` corrects a stale
+//!    pending-wrap cursor only when reflowing (alacritty_terminal
+//!    grid/mod.rs). So filling the last column of, say, a 10-column
+//!    alternate-screen grid arms pending-wrap at `Column(9)`; growing that
+//!    grid to 20 columns (`Session::attach` resizes before snapshotting, so
+//!    a wider client attaching to such a session reaches this) leaves the
+//!    cursor at `Column(9)` with `input_needs_wrap` still `true`, even
+//!    though `Column(9)` is no longer the last column. This module's
+//!    pending-wrap branch re-emits the cell at the cursor's own column
+//!    (`Column(9)`), so the receiver's cursor ends one column to the right
+//!    of the original (`Column(10)`) with pending-wrap not set, rather than
+//!    matching `Column(9)` pending-wrap true. No sequence of normal output
+//!    can recreate "pending wrap at a non-last column" in a fresh terminal,
+//!    so this cannot be made to round-trip. See
+//!    `pending_wrap_survives_a_non_reflowed_alternate_screen_resize` in
+//!    `tests/roundtrip.rs` (marked `#[ignore]`) for a fixture that pins this
+//!    exact case, and
+//!    `pending_wrap_survives_a_reflowed_primary_screen_resize` for the
+//!    equivalent primary-screen resize, which does round-trip because that
+//!    resize path reflows.
 
 use crate::TermGrid;
 use alacritty_terminal::grid::Dimensions;
