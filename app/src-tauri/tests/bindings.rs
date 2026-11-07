@@ -5,6 +5,7 @@
 use jojo_app::bridge::ConnectionStatus;
 use jojo_app::layout::LayoutFile;
 use jojo_app::settings::Settings;
+use jojo_app::shells::ShellOption;
 use std::path::PathBuf;
 use ts_rs::{Config, TS};
 
@@ -15,6 +16,7 @@ fn export_backend_bindings() {
     ConnectionStatus::export_all(&cfg).unwrap();
     Settings::export_all(&cfg).unwrap();
     LayoutFile::export_all(&cfg).unwrap();
+    ShellOption::export_all(&cfg).unwrap();
     let status = std::fs::read_to_string(dir.join("ConnectionStatus.ts")).unwrap();
     assert!(status.contains("\"state\": \"version_mismatch\""), "{status}");
     let settings = std::fs::read_to_string(dir.join("Settings.ts")).unwrap();
@@ -29,4 +31,6 @@ fn export_backend_bindings() {
     let file = std::fs::read_to_string(dir.join("LayoutFile.ts")).unwrap();
     assert!(file.contains("ProjectLayout"), "{file}");
     assert!(!file.contains("bigint"), "{file}");
+    let shell = std::fs::read_to_string(dir.join("ShellOption.ts")).unwrap();
+    assert!(shell.contains("label: string,") && shell.contains("program: string,"), "{shell}");
 }

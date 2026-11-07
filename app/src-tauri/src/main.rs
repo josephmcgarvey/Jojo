@@ -5,6 +5,7 @@ use jojo_app::bridge::Bridge;
 use jojo_app::daemon_manager::DaemonPaths;
 use jojo_app::layout::{self, LayoutFile};
 use jojo_app::settings::{self, Settings};
+use jojo_app::shells::{self, ShellOption};
 use std::sync::Arc;
 use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request};
 use tauri::webview::NewWindowResponse;
@@ -33,6 +34,13 @@ fn restart_daemon(bridge: State<'_, Arc<Bridge>>) {
 #[tauri::command]
 fn get_settings() -> Settings {
     settings::load(&settings::default_path())
+}
+
+/// The shell programs installed on this PC, for the "New shell" menus
+/// (see `jojo_app::shells`).
+#[tauri::command]
+fn available_shells() -> Vec<ShellOption> {
+    shells::available().to_vec()
 }
 
 #[tauri::command]
@@ -89,6 +97,7 @@ fn main() {
             send_frame,
             restart_daemon,
             get_settings,
+            available_shells,
             get_layout,
             save_layout,
             open_url,

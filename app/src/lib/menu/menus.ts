@@ -35,12 +35,19 @@ export interface PaneMenuContext {
   otherTabs: TabLayout[];
   labelOf(sessionId: string): string;
   tabLabelOf(tab: TabLayout): string;
+  /**
+   * The shells offered under New shell, default first (Plan 3 amendment B).
+   * Empty when detection found none; New shell then uses the defaultShell
+   * setting.
+   */
+  shells: { label: string; program: string }[];
 }
 
 export interface PaneMenuActions {
   copy(): void;
   paste(): void;
-  split(direction: SplitDirection, kind: SessionKind): void;
+  /** `shell` is the program for a shell session; omitted, the defaultShell setting applies. */
+  split(direction: SplitDirection, kind: SessionKind, shell?: string): void;
   toggleZoom(): void;
   swapWith(sessionId: string): void;
   moveToNewTab(): void;
@@ -58,7 +65,13 @@ export function buildPaneMenu(ctx: PaneMenuContext, actions: PaneMenuActions): M
   const others = ids.filter((id) => id !== ctx.sessionId);
   const splitItems = (direction: SplitDirection, shortcut: string): MenuEntry[] => [
     { kind: "action", label: "New Claude", shortcut, run: () => actions.split(direction, "claude") },
-    { kind: "action", label: "New shell", run: () => actions.split(direction, "shell") },
+    ctx.shells.length === 0
+      ? { kind: "action", label: "New shell", run: () => actions.split(direction, "shell") }
+      : {
+          kind: "submenu",
+          label: "New shell",
+          items: ctx.shells.map((shell): MenuEntry => ({ kind: "action", label: shell.label, run: () => actions.split(direction, "shell", shell.program) })),
+        },
   ];
   return [
     {

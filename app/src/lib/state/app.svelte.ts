@@ -7,6 +7,7 @@ import type { ConnectionStatus } from "../backend/ConnectionStatus";
 import type { LayoutFile } from "../backend/LayoutFile";
 import type { ProjectLayout } from "../backend/ProjectLayout";
 import type { Settings } from "../backend/Settings";
+import type { ShellOption } from "../backend/ShellOption";
 import type { TabLayout } from "../backend/TabLayout";
 import { errorText } from "../errors";
 import { focusNeighbor, layoutRects, type FocusDirection } from "../layout/geometry";
@@ -50,6 +51,8 @@ export const app = $state({
   /** True once any connection to jojod has succeeded in this app run. */
   everConnected: false,
   settings: null as Settings | null,
+  /** Shells installed on this PC (available_shells), for the New shell menus. */
+  shells: [] as ShellOption[],
   selectedProjectId: null as string | null,
   workspace: emptyWorkspace() as Workspace,
   /** True once layout.json has been read; nothing is written before that. */
@@ -82,6 +85,14 @@ function commit(next: Workspace): void {
 }
 
 export function startApp(): () => void {
+  void invoke<ShellOption[]>("available_shells")
+    .then((shells) => {
+      app.shells = shells;
+    })
+    .catch(() => {
+      // The menus then offer a single New shell entry, which uses the
+      // defaultShell setting.
+    });
   void invoke<Settings>("get_settings")
     .then((s) => {
       app.settings = s;
@@ -271,12 +282,13 @@ export function newSession(projectId: string, kind: SessionKind, placement: Plac
   });
 }
 
-export function splitSession(sessionId: string, direction: SplitDirection, kind: SessionKind): void {
+/** `shell` is the program for a shell session; omitted, the defaultShell setting applies. */
+export function splitSession(sessionId: string, direction: SplitDirection, kind: SessionKind, shell?: string): void {
   const projectId = projectIdOf(sessionId);
   if (!projectId) return;
   const tab = tabs.tabOf(projectLayout(projectId), sessionId);
   if (!tab || isFull(tab.root)) return;
-  newSession(projectId, kind, { kind: "split", tabId: tab.id, besideId: sessionId, direction });
+  newSession(projectId, kind, { kind: "split", tabId: tab.id, besideId: sessionId, direction }, shell);
 }
 
 export function splitFocused(direction: SplitDirection, kind: SessionKind): void {

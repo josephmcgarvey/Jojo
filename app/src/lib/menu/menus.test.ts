@@ -51,6 +51,7 @@ function context(over: Partial<PaneMenuContext> = {}): PaneMenuContext {
     otherTabs: [],
     labelOf: (id) => `label-${id}`,
     tabLabelOf: (t) => `tab-${t.id}`,
+    shells: [],
     ...over,
   };
 }
@@ -123,6 +124,20 @@ describe("buildPaneMenu", () => {
     const newShell = entry(right, "New shell");
     if (newShell.kind === "action") newShell.run();
     expect(split).toHaveBeenCalledWith("row", "shell");
+  });
+
+  it("lists the detected shells under New shell and passes the chosen program", () => {
+    const split = vi.fn();
+    const shells = [
+      { label: "Command Prompt (default)", program: "cmd" },
+      { label: "PowerShell 7", program: "pwsh" },
+    ];
+    const down = (entry(buildPaneMenu(context({ shells }), paneActions({ split })), "Split down") as MenuSubmenu).items;
+    const newShell = entry(down, "New shell") as MenuSubmenu;
+    expect(newShell.items.map((e) => (e.kind === "action" ? e.label : e.kind))).toEqual(["Command Prompt (default)", "PowerShell 7"]);
+    const pwsh = entry(newShell.items, "PowerShell 7");
+    if (pwsh.kind === "action") pwsh.run();
+    expect(split).toHaveBeenCalledWith("column", "shell", "pwsh");
   });
 
   it("offers the other panes by label in Swap with", () => {

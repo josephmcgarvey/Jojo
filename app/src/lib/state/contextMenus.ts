@@ -22,6 +22,7 @@ import {
   zoomSession,
 } from "./app.svelte";
 import { copyFromPane, pasteIntoPane } from "./clipboard";
+import { shellChoices } from "./shells";
 import { beginRename } from "./ui.svelte";
 
 const labelOf = (sessionId: string): string | undefined => app.model.sessions[sessionId]?.label;
@@ -40,11 +41,12 @@ export function paneMenu(sessionId: string): MenuEntry[] {
       otherTabs: project.tabs.filter((t) => t.id !== tab.id),
       labelOf: (id) => labelOf(id) ?? id,
       tabLabelOf: (t) => tabLabel(t, labelOf),
+      shells: shellChoices(app.shells, app.settings?.defaultShell),
     },
     {
       copy: () => void copyFromPane(sessionId),
       paste: () => void pasteIntoPane(sessionId),
-      split: (direction, kind) => splitSession(sessionId, direction, kind),
+      split: (direction, kind, shell) => splitSession(sessionId, direction, kind, shell),
       toggleZoom: () => zoomSession(sessionId),
       swapWith: (other) => swapSessions(sessionId, other),
       moveToNewTab: () => moveSessionToNewTab(sessionId),

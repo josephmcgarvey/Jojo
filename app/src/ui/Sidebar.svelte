@@ -3,12 +3,14 @@
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import { shellChoices } from "../lib/state/shells";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
   import Badge from "./Badge.svelte";
   import RenameField from "./RenameField.svelte";
 
   let menuFor = $state<string | null>(null);
   const projects = $derived(sortedProjects(app.model));
+  const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
 
   function isInsideOpenMenu(target: EventTarget | null): boolean {
     return target instanceof Element && target.closest(`[data-session-menu="${menuFor}"]`) !== null;
@@ -69,7 +71,11 @@
     {#if menuFor === project.id}
       <div class="menu" data-session-menu={project.id}>
         <button onclick={() => { menuFor = null; newSession(project.id, "claude"); }}>Claude</button>
-        <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>
+        {#each shells as shell (shell.program)}
+          <button onclick={() => { menuFor = null; newSession(project.id, "shell", { kind: "tab" }, shell.program); }}>{shell.label}</button>
+        {:else}
+          <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>
+        {/each}
       </div>
     {/if}
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
