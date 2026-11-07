@@ -89,6 +89,17 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }
 }
 
+/// What `Session::spawn`'s early setup (reader clone, writer take, the
+/// `pty-in` and `pty-out` thread spawns) produces once it succeeds: the
+/// pieces needed to build the final `Session` and to spawn the `pty-wait`
+/// thread, which alone takes ownership of `child`.
+type SessionSetup = (
+    Arc<Mutex<Shared>>,
+    std_mpsc::Sender<Vec<u8>>,
+    Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
+    std_mpsc::Receiver<()>,
+);
+
 impl Session {
     pub fn spawn(
         id: SessionId,
@@ -112,72 +123,90 @@ impl Session {
         drop(pair.slave);
 
         let killer = child.clone_killer();
-        let mut reader = pair.master.try_clone_reader().context("PTY reader")?;
-        let mut writer = pair.master.take_writer().context("PTY writer")?;
-        let master = Arc::new(Mutex::new(Some(pair.master)));
-        let shared = Arc::new(Mutex::new(Shared {
-            grid: TermGrid::new(spec.cols, spec.rows, spec.scrollback),
-            subscribers: Vec::new(),
-        }));
-        let (input_tx, input_rx) = std_mpsc::channel::<Vec<u8>>();
 
-        thread::Builder::new().name(format!("pty-in-{id}")).spawn(move || {
-            for bytes in input_rx {
-                if writer.write_all(&bytes).and_then(|_| writer.flush()).is_err() {
-                    break;
-                }
-            }
-        })?;
+        // `child` must not be moved into this closure: if any `?` inside it
+        // fails after `spawn_command` has already started the process
+        // (reader clone, writer take, or either of these two thread spawns),
+        // the error path below kills that process instead of leaking a
+        // running child with nothing left in `Session` to stop it.
+        let setup = (move || -> anyhow::Result<SessionSetup> {
+            let mut reader = pair.master.try_clone_reader().context("PTY reader")?;
+            let mut writer = pair.master.take_writer().context("PTY writer")?;
+            let master = Arc::new(Mutex::new(Some(pair.master)));
+            let shared = Arc::new(Mutex::new(Shared {
+                grid: TermGrid::new(spec.cols, spec.rows, spec.scrollback),
+                subscribers: Vec::new(),
+            }));
+            let (input_tx, input_rx) = std_mpsc::channel::<Vec<u8>>();
 
-        // Signaled, by being dropped, once the reader thread's loop ends
-        // (EOF or a read error) and it has finished fanning out its last
-        // chunk of output: the waiter below waits on this, bounded by
-        // `READER_DRAIN_TIMEOUT`, instead of joining the reader thread
-        // outright (Finding F3 fix round 2; see that constant's doc comment
-        // for why an unbounded join is unsound on Unix).
-        let (reader_done_tx, reader_done_rx) = std_mpsc::channel::<()>();
-
-        {
-            let shared = shared.clone();
-            let input_tx = input_tx.clone();
-            thread::Builder::new().name(format!("pty-out-{id}")).spawn(move || {
-                let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    let n = match reader.read(&mut buf) {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
-                    let mut s = shared.lock().expect("session lock");
-                    s.grid.feed(&buf[..n]);
-                    let replies = s.grid.take_replies();
-                    let chunk = &buf[..n];
-                    s.subscribers.retain(|(_, tx)| {
-                        if tx.send(Frame::Output { session_id: id, bytes: chunk.to_vec() }) {
-                            return true;
-                        }
-                        // Refused: the client fell behind or is gone. Tell it
-                        // (a no-op if it is gone) and stop sending to it.
-                        tx.send(Frame::Control(jojo_proto::ControlMsg::Error {
-                            request: "Output".into(),
-                            message: "client fell behind; attach again for a fresh snapshot".into(),
-                            session_id: Some(id),
-                        }));
-                        false
-                    });
-                    // The grid is the VT emulator of record (it is what
-                    // computed `replies` by parsing the stream), so it
-                    // always answers protocol queries such as ESC [ 6 n
-                    // itself; it never waits on an attached client to do
-                    // so, since Frame::Input carries user keystrokes, not
-                    // emulator-generated replies, and a session with no
-                    // client attached must still unblock the child.
-                    if !replies.is_empty() {
-                        let _ = input_tx.send(replies);
+            thread::Builder::new().name(format!("pty-in-{id}")).spawn(move || {
+                for bytes in input_rx {
+                    if writer.write_all(&bytes).and_then(|_| writer.flush()).is_err() {
+                        break;
                     }
                 }
-                drop(reader_done_tx);
             })?;
-        }
+
+            // Signaled, by being dropped, once the reader thread's loop ends
+            // (EOF or a read error) and it has finished fanning out its last
+            // chunk of output: the waiter below waits on this, bounded by
+            // `READER_DRAIN_TIMEOUT`, instead of joining the reader thread
+            // outright (Finding F3 fix round 2; see that constant's doc comment
+            // for why an unbounded join is unsound on Unix).
+            let (reader_done_tx, reader_done_rx) = std_mpsc::channel::<()>();
+
+            {
+                let shared = shared.clone();
+                let input_tx = input_tx.clone();
+                thread::Builder::new().name(format!("pty-out-{id}")).spawn(move || {
+                    let mut buf = vec![0u8; 64 * 1024];
+                    loop {
+                        let n = match reader.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => n,
+                        };
+                        let mut s = shared.lock().expect("session lock");
+                        s.grid.feed(&buf[..n]);
+                        let replies = s.grid.take_replies();
+                        let chunk = &buf[..n];
+                        s.subscribers.retain(|(_, tx)| {
+                            if tx.send(Frame::Output { session_id: id, bytes: chunk.to_vec() }) {
+                                return true;
+                            }
+                            // Refused: the client fell behind or is gone. Tell it
+                            // (a no-op if it is gone) and stop sending to it.
+                            tx.send(Frame::Control(jojo_proto::ControlMsg::Error {
+                                request: "Output".into(),
+                                message: "client fell behind; attach again for a fresh snapshot".into(),
+                                session_id: Some(id),
+                            }));
+                            false
+                        });
+                        // The grid is the VT emulator of record (it is what
+                        // computed `replies` by parsing the stream), so it
+                        // always answers protocol queries such as ESC [ 6 n
+                        // itself; it never waits on an attached client to do
+                        // so, since Frame::Input carries user keystrokes, not
+                        // emulator-generated replies, and a session with no
+                        // client attached must still unblock the child.
+                        if !replies.is_empty() {
+                            let _ = input_tx.send(replies);
+                        }
+                    }
+                    drop(reader_done_tx);
+                })?;
+            }
+
+            Ok((shared, input_tx, master, reader_done_rx))
+        })();
+
+        let (shared, input_tx, master, reader_done_rx) = match setup {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = child.kill();
+                return Err(e);
+            }
+        };
 
         {
             let master = master.clone();
@@ -261,6 +290,14 @@ impl Session {
     }
 }
 
+impl Drop for Session {
+    /// A session is dropped when the daemon closes or forgets it; its
+    /// process must not outlive it.
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +362,17 @@ mod tests {
 
     fn has_line_text(text: &str, want: &str) -> bool {
         text.lines().any(|l| l.trim() == want)
+    }
+
+    #[test]
+    fn dropping_a_session_kills_its_process() {
+        let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+        let session = Session::spawn(SessionId::new(), test_spec(), move |code| {
+            let _ = exit_tx.send(code);
+        })
+        .unwrap();
+        drop(session);
+        exit_rx.recv_timeout(Duration::from_secs(15)).expect("exit reported after drop");
     }
 
     #[test]

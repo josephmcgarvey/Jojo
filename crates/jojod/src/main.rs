@@ -59,6 +59,8 @@ async fn main() -> anyhow::Result<()> {
                 state_dir: state_dir.unwrap_or_else(default_state_dir),
                 scrollback: jojod::DEFAULT_SCROLLBACK,
             };
+            let _log_guard = jojod::logging::init(&cfg.state_dir.join("logs"))?;
+            tracing::info!(version = jojod::VERSION, endpoint = %cfg.endpoint.0, "jojod starting");
             jojod::server::run(cfg).await
         }
         Some(Command::Shutdown { endpoint }) => {

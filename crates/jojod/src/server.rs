@@ -29,7 +29,7 @@ async fn run_with_listener(cfg: DaemonConfig, mut listener: impl Accept + 'stati
                         // owns every running session (Finding F1). Logged
                         // metadata only: the error text, never terminal
                         // bytes.
-                        eprintln!("jojod: accept error: {e}");
+                        tracing::warn!(error = %e, "accept failed");
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
                 }
@@ -63,6 +63,7 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
         Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. })))
             if protocol_version == PROTOCOL_VERSION => {}
         Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. }))) => {
+            tracing::warn!(client, daemon_version = PROTOCOL_VERSION, client_version = protocol_version, "protocol mismatch");
             tx.send(Frame::Control(ControlMsg::Error {
                 request: "Hello".into(),
                 message: format!("protocol mismatch: daemon {PROTOCOL_VERSION}, client {protocol_version}"),
@@ -78,6 +79,8 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
             return;
         }
     }
+
+    tracing::info!(client, "client connected");
 
     let lagged = Arc::new(tokio::sync::Notify::new());
     let lagged_signal = lagged.clone();
@@ -133,6 +136,7 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
     event_task.abort();
     drop(tx);
     let _ = writer_task.await;
+    tracing::info!(client, "client disconnected");
 }
 
 #[cfg(test)]

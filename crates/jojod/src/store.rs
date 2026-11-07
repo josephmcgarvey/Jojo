@@ -32,10 +32,17 @@ impl Store {
             Ok(bytes) => match serde_json::from_slice::<StoreData>(&bytes) {
                 Ok(data) => data,
                 Err(_) => {
-                    let secs = now_ms() / 1000;
-                    let mut corrupt = path.as_os_str().to_owned();
-                    corrupt.push(format!(".corrupt-{secs}"));
-                    std::fs::rename(path, PathBuf::from(corrupt))?;
+                    let mut stamp = now_ms();
+                    let corrupt = loop {
+                        let mut name = path.as_os_str().to_owned();
+                        name.push(format!(".corrupt-{stamp}"));
+                        let candidate = PathBuf::from(name);
+                        if !candidate.exists() {
+                            break candidate;
+                        }
+                        stamp += 1;
+                    };
+                    std::fs::rename(path, corrupt)?;
                     StoreData::default()
                 }
             },
@@ -142,6 +149,22 @@ mod tests {
             .collect();
         assert_eq!(renamed.len(), 1);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn two_corrupt_loads_keep_both_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(&path, b"{ bad").unwrap();
+        Store::load(&path).unwrap();
+        std::fs::write(&path, b"{ bad again").unwrap();
+        Store::load(&path).unwrap();
+        let copies = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().starts_with("state.json.corrupt-"))
+            .count();
+        assert_eq!(copies, 2);
     }
 
     #[test]

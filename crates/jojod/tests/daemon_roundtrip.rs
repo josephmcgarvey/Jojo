@@ -291,6 +291,55 @@ async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
 }
 
+async fn expect_error(c: &mut Client, request: &str) -> String {
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request: r, message, .. }) => {
+            assert_eq!(r, request);
+            message
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn project_and_session_requests_are_validated() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+
+    c.send(Frame::Control(ControlMsg::AddProject { path: ".".into(), name: "rel".into() })).await.unwrap();
+    assert!(expect_error(&mut c, "AddProject").await.contains("absolute"));
+
+    let project = add_project(&mut c, dir.path()).await;
+    c.send(Frame::Control(ControlMsg::AddProject {
+        path: dir.path().to_string_lossy().into_owned(),
+        name: "again".into(),
+    }))
+    .await
+    .unwrap();
+    assert!(expect_error(&mut c, "AddProject").await.contains("already"));
+
+    c.send(Frame::Control(ControlMsg::CloseSession { session_id: jojo_proto::SessionId::new() })).await.unwrap();
+    expect_error(&mut c, "CloseSession").await;
+    c.send(Frame::Control(ControlMsg::RemoveProject { id: jojo_proto::ProjectId::new() })).await.unwrap();
+    expect_error(&mut c, "RemoveProject").await;
+
+    // A project whose only session has exited can be removed, and its
+    // session row is reported as removed too.
+    let session = create_shell(&mut c, &project).await;
+    c.send(Frame::Input { session_id: session.id, bytes: b"exit\r".to_vec() }).await.unwrap();
+    c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionExited { .. }))).await.unwrap();
+    c.send(Frame::Control(ControlMsg::RemoveProject { id: project.id })).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionRemoved { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::SessionRemoved { session_id }) => assert_eq!(session_id, session.id),
+        _ => unreachable!(),
+    }
+    c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::ProjectRemoved { .. }))).await.unwrap();
+
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn live_sessions_are_attachable_and_attach_validates_size() {
     let dir = tempfile::tempdir().unwrap();

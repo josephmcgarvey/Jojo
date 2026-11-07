@@ -16,6 +16,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 ulid = { version = "1", features = ["serde"] }
 vte = { version = "0.15", features = ["ansi"] }
 windows-sys = { version = "0.59", features = [

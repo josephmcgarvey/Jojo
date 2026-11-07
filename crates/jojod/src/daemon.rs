@@ -92,7 +92,9 @@ impl Daemon {
     fn save(&self, store: &Store) {
         // A failed write is retried on the next change; the in-memory state
         // stays authoritative while the daemon runs.
-        let _ = store.save();
+        if let Err(e) = store.save() {
+            tracing::error!(error = %e, "failed to write state.json");
+        }
     }
 
     fn session(&self, id: SessionId) -> Option<Arc<Session>> {
@@ -121,11 +123,17 @@ impl Daemon {
                 let _ = reply.send(Frame::Control(ControlMsg::Projects { projects }));
             }
             ControlMsg::AddProject { path, name } => {
+                if !std::path::Path::new(&path).is_absolute() {
+                    return Self::error(reply, "AddProject", format!("path must be absolute: {path}"));
+                }
                 if !std::path::Path::new(&path).is_dir() {
                     return Self::error(reply, "AddProject", format!("not a directory: {path}"));
                 }
-                let project = ProjectInfo { id: ProjectId::new(), path, name };
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                if store.data.projects.iter().any(|p| p.path == path) {
+                    return Self::error(reply, "AddProject", format!("project already added: {path}"));
+                }
+                let project = ProjectInfo { id: ProjectId::new(), path, name };
                 store.data.projects.push(project.clone());
                 self.save(&store);
                 drop(store);
@@ -133,6 +141,9 @@ impl Daemon {
             }
             ControlMsg::RemoveProject { id } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                if !store.data.projects.iter().any(|p| p.id == id) {
+                    return Self::error(reply, "RemoveProject", "unknown project");
+                }
                 let running = store
                     .data
                     .sessions
@@ -142,10 +153,25 @@ impl Daemon {
                 if running > 0 {
                     return Self::error(reply, "RemoveProject", format!("project has {running} running sessions"));
                 }
+                let removed_sessions: Vec<SessionId> =
+                    store.data.sessions.iter().filter(|s| s.project_id == id).map(|s| s.id).collect();
                 store.data.projects.retain(|p| p.id != id);
                 store.data.sessions.retain(|s| s.project_id != id);
                 self.save(&store);
                 drop(store);
+                // Lock order: store, then sessions. The removed session rows
+                // have already exited (checked above), so dropping their
+                // `Session` objects here only cleans up state the process
+                // itself no longer needs.
+                {
+                    let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+                    for session_id in &removed_sessions {
+                        sessions.remove(session_id);
+                    }
+                }
+                for session_id in removed_sessions {
+                    self.broadcast(ControlMsg::SessionRemoved { session_id });
+                }
                 self.broadcast(ControlMsg::ProjectRemoved { id });
             }
             ControlMsg::ListDir { path } => match list_dirs(&path) {
@@ -197,6 +223,12 @@ impl Daemon {
                 }
             }
             ControlMsg::CloseSession { session_id } => {
+                let in_store =
+                    self.store.lock().unwrap_or_else(PoisonError::into_inner).data.sessions.iter().any(|s| s.id == session_id);
+                let in_live = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&session_id);
+                if !in_store && !in_live {
+                    return Self::error_for(reply, "CloseSession", Some(session_id), "unknown session");
+                }
                 if let Some(s) = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).remove(&session_id) {
                     s.kill();
                 }
@@ -283,6 +315,7 @@ impl Daemon {
         };
         match Session::spawn(id, spec, on_exit) {
             Ok(session) => {
+                tracing::info!(session = %id, kind = ?kind, "session created");
                 self.sessions.lock().unwrap_or_else(PoisonError::into_inner).insert(id, session);
                 self.save(&store);
                 // Broadcast while still holding `store` (tokio's
@@ -296,6 +329,7 @@ impl Daemon {
                 drop(store);
             }
             Err(e) => {
+                tracing::warn!(session = %id, error = %e, "session failed to start");
                 let exit_code = Some(-1);
                 if let Some(stored) = store.session_mut(id) {
                     stored.state = AgentState::Exited;
@@ -315,6 +349,7 @@ impl Daemon {
     }
 
     fn on_session_exit(&self, id: SessionId, exit_code: Option<i32>) {
+        tracing::info!(session = %id, exit_code = ?exit_code, "session exited");
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(info) = store.session_mut(id) {
             info.state = AgentState::Exited;
