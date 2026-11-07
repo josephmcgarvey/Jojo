@@ -1,6 +1,7 @@
 //! jojod: the Jojo session daemon.
 
 pub mod client;
+pub mod client_queue;
 pub mod command;
 pub mod daemon;
 pub mod paths;
@@ -16,3 +17,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Scrollback lines kept per session (spec section 5.2).
 pub const DEFAULT_SCROLLBACK: usize = 10_000;
+
+/// True when this process runs elevated (Windows only).
+#[cfg(windows)]
+pub fn pipe_security_is_elevated() -> std::io::Result<bool> {
+    pipe_security::is_elevated()
+}

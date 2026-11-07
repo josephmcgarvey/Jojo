@@ -13,6 +13,7 @@ pub type BoxWrite = Box<dyn AsyncWrite + Unpin + Send>;
 mod imp {
     use super::*;
     use crate::pipe_security::UserOnly;
+    use std::os::windows::io::AsRawHandle;
     use std::time::Duration;
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
 
@@ -61,10 +62,13 @@ mod imp {
         }
     }
 
-    pub async fn connect(endpoint: &Endpoint) -> io::Result<(BoxRead, BoxWrite)> {
+    pub(super) async fn connect_unbounded(endpoint: &Endpoint) -> io::Result<(BoxRead, BoxWrite)> {
         loop {
             match ClientOptions::new().open(&endpoint.0) {
                 Ok(client) => {
+                    crate::pipe_security::verify_server_is_current_user(
+                        client.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE
+                    )?;
                     let (r, w) = tokio::io::split(client);
                     return Ok((Box::new(r), Box::new(w)));
                 }
@@ -113,13 +117,29 @@ mod imp {
         }
     }
 
-    pub async fn connect(endpoint: &Endpoint) -> io::Result<(BoxRead, BoxWrite)> {
+    pub(super) async fn connect_unbounded(endpoint: &Endpoint) -> io::Result<(BoxRead, BoxWrite)> {
         let (r, w) = UnixStream::connect(&endpoint.0).await?.into_split();
         Ok((Box::new(r), Box::new(w)))
     }
 }
 
-pub use imp::{connect, Listener};
+pub use imp::Listener;
+
+/// How long `connect` keeps retrying a busy pipe before giving up.
+pub const CONNECT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+pub async fn connect(endpoint: &Endpoint) -> io::Result<(BoxRead, BoxWrite)> {
+    connect_with_deadline(endpoint, CONNECT_DEADLINE).await
+}
+
+pub async fn connect_with_deadline(
+    endpoint: &Endpoint,
+    deadline: std::time::Duration,
+) -> io::Result<(BoxRead, BoxWrite)> {
+    tokio::time::timeout(deadline, imp::connect_unbounded(endpoint))
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "timed out connecting to jojod"))?
+}
 
 /// Abstracts the accept loop over the real transport so `server::run` can be
 /// tested against a fake that injects accept errors deterministically

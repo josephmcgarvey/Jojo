@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use std::sync::{mpsc as std_mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
+use crate::client_queue::ClientTx;
 
 pub type ClientId = u64;
 
@@ -74,7 +74,7 @@ pub struct SpawnSpec {
 
 struct Shared {
     grid: TermGrid,
-    subscribers: Vec<(ClientId, UnboundedSender<Frame>)>,
+    subscribers: Vec<(ClientId, ClientTx)>,
 }
 
 pub struct Session {
@@ -152,7 +152,17 @@ impl Session {
                     let replies = s.grid.take_replies();
                     let chunk = &buf[..n];
                     s.subscribers.retain(|(_, tx)| {
-                        tx.send(Frame::Output { session_id: id, bytes: chunk.to_vec() }).is_ok()
+                        if tx.send(Frame::Output { session_id: id, bytes: chunk.to_vec() }) {
+                            return true;
+                        }
+                        // Refused: the client fell behind or is gone. Tell it
+                        // (a no-op if it is gone) and stop sending to it.
+                        tx.send(Frame::Control(jojo_proto::ControlMsg::Error {
+                            request: "Output".into(),
+                            message: "client fell behind; attach again for a fresh snapshot".into(),
+                            session_id: Some(id),
+                        }));
+                        false
                     });
                     // The grid is the VT emulator of record (it is what
                     // computed `replies` by parsing the stream), so it
@@ -202,14 +212,14 @@ impl Session {
     /// The grid and PTY are resized first when the size differs, because a
     /// snapshot replays correctly only into a terminal of the grid's size.
     /// Lock order: `shared`, then `master` (same as `resize`).
-    pub fn attach(&self, client: ClientId, tx: UnboundedSender<Frame>, cols: u16, rows: u16) {
+    pub fn attach(&self, client: ClientId, tx: ClientTx, cols: u16, rows: u16) {
         let mut s = self.shared.lock().expect("session lock");
         if (cols, rows) != (s.grid.cols(), s.grid.rows()) {
             s.grid.resize(cols, rows);
             self.resize_pty(s.grid.cols(), s.grid.rows());
         }
         let bytes = s.grid.snapshot_bounded(MAX_SNAPSHOT_BYTES);
-        if tx.send(Frame::Snapshot { session_id: self.id, bytes }).is_ok() {
+        if tx.send(Frame::Snapshot { session_id: self.id, bytes }) {
             s.subscribers.retain(|(c, _)| *c != client);
             s.subscribers.push((client, tx));
         }
@@ -277,6 +287,12 @@ mod tests {
         grid.visible_text().lines().any(|l| l.trim() == want)
     }
 
+    /// Blocking receive with a timeout, for tests outside an async runtime.
+    fn recv_blocking(rx: &mut crate::client_queue::ClientRx, timeout: Duration) -> Option<Frame> {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        rt.block_on(async { tokio::time::timeout(timeout, rx.recv()).await.ok().flatten() })
+    }
+
     #[test]
     fn attach_receives_snapshot_then_output_and_exit_is_reported() {
         let (exit_tx, exit_rx) = std::sync::mpsc::channel();
@@ -285,18 +301,18 @@ mod tests {
         })
         .unwrap();
 
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = crate::client_queue::client_queue(crate::client_queue::MAX_CLIENT_QUEUE_BYTES);
         session.attach(1, tx, 80, 24);
-        assert!(matches!(rx.blocking_recv(), Some(Frame::Snapshot { .. })));
+        assert!(matches!(recv_blocking(&mut rx, Duration::from_secs(15)), Some(Frame::Snapshot { .. })));
 
         session.write(b"echo jojo-hi\r".to_vec());
         let mut grid = TermGrid::new(80, 24, 1000);
         let deadline = Instant::now() + Duration::from_secs(15);
         while !has_line(&grid, "jojo-hi") {
-            match rx.try_recv() {
-                Ok(Frame::Output { bytes, .. }) => grid.feed(&bytes),
-                Ok(_) => {}
-                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            match recv_blocking(&mut rx, Duration::from_millis(50)) {
+                Some(Frame::Output { bytes, .. }) => grid.feed(&bytes),
+                Some(_) => {}
+                None => std::thread::sleep(Duration::from_millis(20)),
             }
             assert!(Instant::now() < deadline, "no echo output; screen:\n{}", grid.visible_text());
         }
@@ -325,13 +341,13 @@ mod tests {
     #[test]
     fn detached_client_receives_no_output() {
         let session = Session::spawn(SessionId::new(), test_spec(), |_| {}).unwrap();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = crate::client_queue::client_queue(crate::client_queue::MAX_CLIENT_QUEUE_BYTES);
         session.attach(7, tx, 80, 24);
-        let _snapshot = rx.blocking_recv();
+        let _snapshot = recv_blocking(&mut rx, Duration::from_secs(15));
         session.detach(7);
         session.write(b"echo after-detach\r".to_vec());
         std::thread::sleep(Duration::from_millis(1500));
-        while let Ok(frame) = rx.try_recv() {
+        while let Some(frame) = recv_blocking(&mut rx, Duration::from_millis(50)) {
             assert!(!matches!(frame, Frame::Output { .. }), "output after detach");
         }
         session.kill();
@@ -374,7 +390,7 @@ mod tests {
     /// assertion holds regardless of which race attach wins.
     #[test]
     fn exit_is_reported_only_after_final_output_is_sent() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = crate::client_queue::client_queue(crate::client_queue::MAX_CLIENT_QUEUE_BYTES);
         let (exit_tx, exit_rx) = std::sync::mpsc::channel();
 
         let session = Session::spawn(SessionId::new(), exit_immediately_spec(), move |code| {
@@ -384,7 +400,7 @@ mod tests {
             // waiting happens here; that immediacy is the point of the
             // test.
             let mut grid = TermGrid::new(80, 24, 1000);
-            while let Ok(frame) = rx.try_recv() {
+            while let Some(frame) = recv_blocking(&mut rx, Duration::from_millis(50)) {
                 match frame {
                     Frame::Snapshot { bytes, .. } | Frame::Output { bytes, .. } => grid.feed(&bytes),
                     _ => {}
@@ -431,10 +447,35 @@ mod tests {
     #[test]
     fn attach_with_a_new_size_resizes_the_session() {
         let session = Session::spawn(SessionId::new(), test_spec(), |_| {}).unwrap();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = crate::client_queue::client_queue(crate::client_queue::MAX_CLIENT_QUEUE_BYTES);
         session.attach(1, tx, 100, 30);
-        assert!(matches!(rx.blocking_recv(), Some(Frame::Snapshot { .. })));
+        assert!(matches!(recv_blocking(&mut rx, Duration::from_secs(15)), Some(Frame::Snapshot { .. })));
         assert_eq!(session.size(), (100, 30));
+        session.kill();
+    }
+
+    #[test]
+    fn a_client_that_falls_behind_is_detached_with_an_error() {
+        let session = Session::spawn(SessionId::new(), test_spec(), |_| {}).unwrap();
+        let (tx, mut rx) = crate::client_queue::client_queue(4096);
+        session.attach(1, tx, 80, 24);
+        #[cfg(windows)]
+        session.write(b"for /L %i in (1,1,3000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r".to_vec());
+        #[cfg(unix)]
+        session.write(b"i=0; while [ $i -lt 3000 ]; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; i=$((i+1)); done\n".to_vec());
+        // Do not read until the session has produced far more than 4 KiB.
+        std::thread::sleep(Duration::from_secs(3));
+        let mut saw_error = false;
+        let mut output_after_error = false;
+        while let Some(frame) = recv_blocking(&mut rx, Duration::from_millis(500)) {
+            match frame {
+                Frame::Control(jojo_proto::ControlMsg::Error { request, .. }) if request == "Output" => saw_error = true,
+                Frame::Output { .. } if saw_error => output_after_error = true,
+                _ => {}
+            }
+        }
+        assert!(saw_error, "expected an Output error once the queue limit was hit");
+        assert!(!output_after_error, "no Output may follow the error");
         session.kill();
     }
 }

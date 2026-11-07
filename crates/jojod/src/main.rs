@@ -47,6 +47,13 @@ async fn main() -> anyhow::Result<()> {
     }
     match cli.command {
         Some(Command::Serve { endpoint, state_dir }) => {
+            #[cfg(windows)]
+            if jojod::pipe_security_is_elevated()? {
+                anyhow::bail!(
+                    "jojod will not run elevated: its pipe would let non-elevated processes drive \
+                     elevated shells. Start it from a terminal that is not running as administrator."
+                );
+            }
             let cfg = DaemonConfig {
                 endpoint: endpoint.map(Endpoint).unwrap_or_else(default_endpoint),
                 state_dir: state_dir.unwrap_or_else(default_state_dir),

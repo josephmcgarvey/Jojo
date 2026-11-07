@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use tokio::sync::{broadcast, mpsc::UnboundedSender, Notify};
+use tokio::sync::{broadcast, Notify};
 
 pub struct DaemonConfig {
     pub endpoint: Endpoint,
@@ -22,7 +22,7 @@ pub struct DaemonConfig {
     pub scrollback: usize,
 }
 
-pub type Reply = UnboundedSender<Frame>;
+pub type Reply = crate::client_queue::ClientTx;
 
 pub struct Daemon {
     pub cfg: DaemonConfig,

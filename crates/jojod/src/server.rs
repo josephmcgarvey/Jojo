@@ -4,7 +4,7 @@ use crate::daemon::{Daemon, DaemonConfig};
 use crate::transport::{Accept, BoxRead, BoxWrite, Listener};
 use jojo_proto::{read_frame, write_frame, ControlMsg, Frame, PROTOCOL_VERSION};
 use std::sync::Arc;
-use tokio::sync::{broadcast::error::RecvError, mpsc};
+use tokio::sync::broadcast::error::RecvError;
 
 /// Runs the daemon until a `Shutdown` request, then kills every session.
 pub async fn run(cfg: DaemonConfig) -> anyhow::Result<()> {
@@ -43,7 +43,7 @@ async fn run_with_listener(cfg: DaemonConfig, mut listener: impl Accept + 'stati
 
 async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxWrite) {
     let client = daemon.next_client_id();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Frame>();
+    let (tx, mut rx) = crate::client_queue::client_queue(crate::client_queue::MAX_CLIENT_QUEUE_BYTES);
 
     let writer_task = tokio::spawn(async move {
         let mut writer = writer;
@@ -54,7 +54,7 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
         }
     });
 
-    let _ = tx.send(Frame::Control(ControlMsg::Hello {
+    tx.send(Frame::Control(ControlMsg::Hello {
         protocol_version: PROTOCOL_VERSION,
         jojod_version: crate::VERSION.to_string(),
     }));
@@ -63,7 +63,7 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
         Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. })))
             if protocol_version == PROTOCOL_VERSION => {}
         Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. }))) => {
-            let _ = tx.send(Frame::Control(ControlMsg::Error {
+            tx.send(Frame::Control(ControlMsg::Error {
                 request: "Hello".into(),
                 message: format!("protocol mismatch: daemon {PROTOCOL_VERSION}, client {protocol_version}"),
                 session_id: None,
@@ -79,34 +79,53 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
         }
     }
 
+    let lagged = Arc::new(tokio::sync::Notify::new());
+    let lagged_signal = lagged.clone();
+
     let mut events = daemon.subscribe();
     let event_tx = tx.clone();
     let event_task = tokio::spawn(async move {
         loop {
             match events.recv().await {
                 Ok(msg) => {
-                    if event_tx.send(Frame::Control(msg)).is_err() {
+                    if !event_tx.send(Frame::Control(msg)) {
                         break;
                     }
                 }
-                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Lagged(missed)) => {
+                    // The client's view of projects and sessions is now
+                    // incomplete. Tell it, then close the connection so it
+                    // reconnects and lists everything again.
+                    event_tx.send(Frame::Control(ControlMsg::Error {
+                        request: "Events".into(),
+                        message: format!("missed {missed} events; reconnect"),
+                        session_id: None,
+                    }));
+                    lagged_signal.notify_one();
+                    break;
+                }
                 Err(RecvError::Closed) => break,
             }
         }
     });
 
     loop {
-        match read_frame(&mut reader).await {
-            Ok(Some(frame)) => daemon.handle(client, &tx, frame),
-            Ok(None) => break,
-            Err(e) if jojo_proto::is_bad_payload(&e) => {
-                let _ = tx.send(Frame::Control(ControlMsg::Error {
-                    request: "Frame".into(),
-                    message: e.to_string(),
-                    session_id: None,
-                }));
-            }
-            Err(_) => break,
+        tokio::select! {
+            read = read_frame(&mut reader) => match read {
+                Ok(Some(frame)) => daemon.handle(client, &tx, frame),
+                Ok(None) => break,
+                Err(e) if jojo_proto::is_bad_payload(&e) => {
+                    tx.send(Frame::Control(ControlMsg::Error {
+                        request: "Frame".into(),
+                        message: e.to_string(),
+                        session_id: None,
+                    }));
+                }
+                Err(_) => break,
+            },
+            // Cancelling a partly read frame is safe here: the connection
+            // is being closed.
+            _ = lagged.notified() => break,
         }
     }
 
@@ -124,7 +143,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
     use tokio::io::DuplexStream;
-    use tokio::sync::mpsc::UnboundedSender;
+    use tokio::sync::mpsc::{self, UnboundedSender};
 
     /// An `Accept` whose first call fails (simulating Finding F1's accept
     /// error), whose second call hands out one in-memory duplex connection,
