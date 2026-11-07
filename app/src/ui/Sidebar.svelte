@@ -5,6 +5,34 @@
 
   let menuFor = $state<string | null>(null);
   const projects = $derived(sortedProjects(app.model));
+
+  function isInsideOpenMenu(target: EventTarget | null): boolean {
+    return target instanceof Element && target.closest(`[data-session-menu="${menuFor}"]`) !== null;
+  }
+
+  // The Claude/Shell menu is a single piece of state (menuFor), so only one
+  // project's menu is ever open; these listeners are only attached while
+  // that is true, and torn down as soon as it closes.
+  $effect(() => {
+    if (menuFor === null) return;
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") menuFor = null;
+    };
+    const onClick = (e: MouseEvent) => {
+      // Reads menuFor live, not a stale closed-over value: when this click
+      // is the same one that toggled the menu via the "+" button's own
+      // onclick, that handler already ran (target-phase listeners fire
+      // before this bubble-phase one), so menuFor already reflects the
+      // toggle's result and isInsideOpenMenu is checked against it.
+      if (!isInsideOpenMenu(e.target)) menuFor = null;
+    };
+    window.addEventListener("keydown", onKeydown);
+    window.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKeydown);
+      window.removeEventListener("click", onClick);
+    };
+  });
 </script>
 
 <aside class="side">
@@ -12,15 +40,21 @@
   <div class="machine">
     <span class="dot" class:ok={app.status.state === "connected"}></span>
     <span class="grow">This PC</span>
-    <button class="icon" title="Add project" onclick={addProject}>+</button>
+    <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}>+</button>
   </div>
   {#each projects as project (project.id)}
     <div class="project" class:selected={app.selectedProjectId === project.id}>
       <button class="name" onclick={() => selectProject(project.id)}>{project.name}</button>
-      <button class="icon add" title="New session" onclick={() => (menuFor = menuFor === project.id ? null : project.id)}>+</button>
+      <button
+        class="icon add"
+        title="New session"
+        aria-label={`New session in ${project.name}`}
+        data-session-menu={project.id}
+        onclick={() => (menuFor = menuFor === project.id ? null : project.id)}
+      >+</button>
     </div>
     {#if menuFor === project.id}
-      <div class="menu">
+      <div class="menu" data-session-menu={project.id}>
         <button onclick={() => { menuFor = null; newSession(project.id, "claude"); }}>Claude</button>
         <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>
       </div>
@@ -99,10 +133,11 @@
     color: var(--jojo-fg);
   }
   .project .add {
-    visibility: hidden;
+    opacity: 0;
   }
-  .project:hover .add {
-    visibility: visible;
+  .project:hover .add,
+  .project:focus-within .add {
+    opacity: 1;
   }
   .menu {
     display: flex;

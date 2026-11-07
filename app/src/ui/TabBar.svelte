@@ -16,7 +16,7 @@
     </div>
   {/each}
   {#if app.selectedProjectId}
-    <button class="new" title="New Claude session" onclick={() => newSession(app.selectedProjectId!, "claude")}>+</button>
+    <button class="new" title="New Claude session" aria-label="New Claude session" onclick={() => newSession(app.selectedProjectId!, "claude")}>+</button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
   <WindowControls />

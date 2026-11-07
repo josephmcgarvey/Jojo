@@ -83,14 +83,18 @@
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(() => {
-      if (!session.attachable) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
+        // Always re-fit so a session with no screen still wraps its static
+        // message to the host's width; only an attachable session has
+        // anything on the daemon side to tell about the new size.
         fit.fit();
         const next = clampSize(term.cols, term.rows);
         if (next.cols !== size.cols || next.rows !== size.rows) {
           size = next;
-          void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
+          if (session.attachable) {
+            void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
+          }
         }
       }, 50);
     });
