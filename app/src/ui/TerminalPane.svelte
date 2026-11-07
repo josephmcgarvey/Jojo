@@ -75,11 +75,19 @@
       reattach: attach,
     });
 
+    // A session with no screen has nothing on the daemon side to receive
+    // input, so keystrokes are not sent. App.svelte keys this pane on
+    // paneKey(), which includes `attachable`, so a session that loses its
+    // screen while mounted is remounted and reaches this check.
     const encoder = new TextEncoder();
-    const onData = term.onData((data) => void sendInput(id, encoder.encode(data)).catch(() => {}));
-    const onBinary = term.onBinary((data) =>
-      void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(() => {}),
-    );
+    const onData = term.onData((data) => {
+      if (!session.attachable) return;
+      void sendInput(id, encoder.encode(data)).catch(() => {});
+    });
+    const onBinary = term.onBinary((data) => {
+      if (!session.attachable) return;
+      void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(() => {});
+    });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(() => {

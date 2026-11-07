@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import neonGlass from "./themes/neon-glass.json";
   import { app, startApp } from "./lib/state/app.svelte";
+  import { paneKey } from "./lib/terminal/pane";
   import { applyTheme, type Theme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
@@ -24,7 +25,7 @@
     <Banner />
     <div class="panes">
       {#if active}
-        {#key active.id}
+        {#key paneKey(active)}
           <TerminalPane session={active} terminalTheme={theme.terminal} />
         {/key}
       {:else if app.selectedProjectId}
