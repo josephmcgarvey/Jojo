@@ -12,6 +12,10 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $dest = 'app/src-tauri/resources/daemon'
     New-Item -ItemType Directory -Force $dest | Out-Null
+    # The bundle takes every file in $dest (the `resources/daemon/*` glob,
+    # which also matches the tracked .gitkeep so unstaged checkouts still
+    # build), so remove anything a previous staging run left behind.
+    Get-ChildItem $dest -File | Where-Object Name -ne '.gitkeep' | Remove-Item -Force
     Copy-Item "target/$Profile/jojod.exe" $dest -Force
     Copy-Item 'resources/conpty/x64/conpty.dll', 'resources/conpty/x64/OpenConsole.exe' $dest -Force
     Get-ChildItem $dest | Format-Table Name, Length
