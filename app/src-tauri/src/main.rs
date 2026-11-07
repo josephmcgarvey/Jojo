@@ -3,6 +3,7 @@
 
 use jojo_app::bridge::Bridge;
 use jojo_app::daemon_manager::DaemonPaths;
+use jojo_app::layout::{self, LayoutFile};
 use jojo_app::settings::{self, Settings};
 use std::sync::Arc;
 use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request};
@@ -34,6 +35,21 @@ fn get_settings() -> Settings {
     settings::load(&settings::default_path())
 }
 
+#[tauri::command]
+fn get_layout() -> LayoutFile {
+    layout::load(&layout::default_path())
+}
+
+/// Async so the file write runs on a blocking worker thread instead of the
+/// main thread. The frontend chains its calls, so two saves never overlap.
+#[tauri::command]
+async fn save_layout(layout: LayoutFile) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || jojo_app::layout::save(&jojo_app::layout::default_path(), &layout))
+        .await
+        .map_err(|e| format!("the layout writer thread failed: {e}"))?
+        .map_err(|e| format!("could not write layout.json: {e}"))
+}
+
 /// Opens a link clicked in a terminal in the default browser. Only
 /// `http://` and `https://` URLs are accepted (see `jojo_app::links`).
 #[tauri::command]
@@ -52,7 +68,15 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(bridge.clone())
-        .invoke_handler(tauri::generate_handler![subscribe, send_frame, restart_daemon, get_settings, open_url])
+        .invoke_handler(tauri::generate_handler![
+            subscribe,
+            send_frame,
+            restart_daemon,
+            get_settings,
+            get_layout,
+            save_layout,
+            open_url
+        ])
         .setup(move |app| {
             // The main window has `"create": false` in tauri.conf.json so it
             // can be built here with a new-window handler. Every request to
