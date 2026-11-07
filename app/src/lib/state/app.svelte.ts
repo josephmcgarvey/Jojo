@@ -28,7 +28,9 @@ function errorMessage(err: unknown): string {
 
 export function startApp(): () => void {
   void invoke<Settings>("get_settings")
-    .then((s) => (app.settings = s))
+    .then((s) => {
+      app.settings = s;
+    })
     .catch(() => {
       // Settings stay at their built-in defaults; nothing in the UI depends
       // on this having succeeded.
