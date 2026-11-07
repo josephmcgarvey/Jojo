@@ -1,0 +1,3 @@
+# ts-rs writes LF line endings; keep the generated protocol types LF on every
+# checkout so regenerating them never shows as a change (core.autocrlf=true).
+app/src/lib/protocol/*.ts text eol=lf
