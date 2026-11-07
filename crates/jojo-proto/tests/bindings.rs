@@ -17,11 +17,17 @@ fn export_typescript_bindings() {
     ControlMsg::export_all(&Config::new().with_out_dir(&dir)).expect("export bindings");
 
     let control = std::fs::read_to_string(dir.join("ControlMsg.ts")).unwrap();
-    assert!(control.contains("\"type\": \"Attach\""), "{control}");
-    assert!(control.contains("cols: number"), "{control}");
+    assert!(
+        control.contains(
+            "{ \"type\": \"Attach\", session_id: SessionId, cols: number, rows: number, }"
+        ),
+        "{control}"
+    );
+    assert!(!control.contains("bigint"), "u64 must be number, not bigint: {control}");
     let session = std::fs::read_to_string(dir.join("SessionInfo.ts")).unwrap();
     assert!(session.contains("created_at: number"), "u64 must be number, not bigint: {session}");
-    assert!(session.contains("attachable: boolean"), "{session}");
+    assert!(session.contains("attachable: boolean,"), "{session}");
+    assert!(!session.contains("bigint"), "u64 must be number, not bigint: {session}");
     let id = std::fs::read_to_string(dir.join("SessionId.ts")).unwrap();
-    assert!(id.contains("string"), "{id}");
+    assert!(id.contains("export type SessionId = string;"), "{id}");
 }
