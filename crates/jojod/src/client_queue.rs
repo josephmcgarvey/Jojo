@@ -16,18 +16,26 @@
 //! actually exists to bound, avoids that loop while still shedding a client
 //! that cannot keep up with live output.
 //!
-//! A second, total cap (`MAX_CLIENT_TOTAL_BYTES`) counts every frame queued
-//! for the client, Snapshot and Control included. The per-session Output
-//! limit above detaches one session's stream from a client that cannot keep
-//! up with it; the total limit means the client has stopped reading from its
-//! connection altogether (every session attached to it, plus whatever
-//! control traffic is queued, is piling up), and the connection itself is
-//! closed rather than just one session's stream.
+//! A second, total cap (`MAX_CLIENT_TOTAL_BYTES`) catches a client that has
+//! stopped reading from its connection altogether: it counts `Output` bytes
+//! plus a flat per-frame weight (`CONTROL_FRAME_WEIGHT`) for every other
+//! frame, `Control` and `Snapshot` alike. Snapshots do not count their real
+//! byte size toward this cap even though one can be tens of MiB: a snapshot
+//! is already bounded per attach (`jojod::session::MAX_SNAPSHOT_BYTES`,
+//! about 16 MiB) and the app keeps at most one outstanding `Attach` per
+//! session, but counting a snapshot's actual size here would let a burst of
+//! re-attaches (several sessions re-attaching at once, for example after a
+//! missed-events reconnect) trip the 64 MiB cap on its own, closing the
+//! connection and sending the client straight back into another round of
+//! re-attaches. The per-session Output limit above detaches one session's
+//! stream from a client that cannot keep up with it; the total limit closes
+//! the whole connection once the client has stopped reading from it at all
+//! (Output plus whatever control traffic, snapshots included, is piling up).
 
 use jojo_proto::Frame;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 
 /// Output bytes that may wait for one client before it is detached.
 pub const MAX_CLIENT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
@@ -37,9 +45,9 @@ pub const MAX_CLIENT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 /// from `MAX_CLIENT_QUEUE_BYTES`.
 pub const MAX_CLIENT_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 
-/// The accounting weight of a control frame that does not carry a byte
-/// payload, used so the total cap still bounds a client that is flooded with
-/// small control messages rather than raw output.
+/// The accounting weight toward the total cap for any frame that does not
+/// count its own byte payload: every frame other than `Output`, `Snapshot`
+/// included (see the module doc for why a snapshot's real size is excluded).
 const CONTROL_FRAME_WEIGHT: usize = 256;
 
 #[derive(Clone)]
@@ -50,6 +58,7 @@ pub struct ClientTx {
     total: Arc<AtomicUsize>,
     total_limit: usize,
     overflow: Arc<AtomicBool>,
+    overflow_notify: Arc<Notify>,
 }
 
 pub struct ClientRx {
@@ -76,6 +85,7 @@ pub fn client_queue_with_total(output_limit: usize, total_limit: usize) -> (Clie
             total: total.clone(),
             total_limit,
             overflow: Arc::new(AtomicBool::new(false)),
+            overflow_notify: Arc::new(Notify::new()),
         },
         ClientRx { rx, queued, total },
     )
@@ -90,12 +100,13 @@ fn output_len(frame: &Frame) -> usize {
     }
 }
 
-/// The accounting length of `frame` toward the total cap: `Output` and
-/// `Snapshot` count their byte payload, every other (control) frame counts a
-/// flat `CONTROL_FRAME_WEIGHT`.
+/// The accounting length of `frame` toward the total cap: `Output` counts
+/// its byte payload; every other frame, `Snapshot` included, counts a flat
+/// `CONTROL_FRAME_WEIGHT` regardless of its actual size (see the module doc
+/// for why a snapshot's real size must not count here).
 fn total_len(frame: &Frame) -> usize {
     match frame {
-        Frame::Output { bytes, .. } | Frame::Snapshot { bytes, .. } => bytes.len(),
+        Frame::Output { bytes, .. } => bytes.len(),
         _ => CONTROL_FRAME_WEIGHT,
     }
 }
@@ -134,7 +145,16 @@ impl ClientTx {
             })
             .is_ok();
         if !total_accepted {
-            self.overflow.store(true, Ordering::Relaxed);
+            // `swap` rather than `store`: only the thread that actually
+            // flips `overflow` from false to true notifies, so a client
+            // already marked overflowed does not keep calling `notify_one`
+            // on every subsequent refused frame. `overflow_notified` relies
+            // on exactly one notification having been issued by the time it
+            // is first observed as true.
+            let was_false = !self.overflow.swap(true, Ordering::Relaxed);
+            if was_false {
+                self.overflow_notify.notify_one();
+            }
             if len > 0 {
                 self.queued.fetch_sub(len, Ordering::Relaxed);
             }
@@ -151,10 +171,21 @@ impl ClientTx {
         true
     }
 
-    /// True once a frame has been refused for exceeding the total cap. The
-    /// server closes the connection once this is set (see the module doc).
+    /// True once the client has stopped reading at all: a frame has been
+    /// refused for exceeding the total cap. The server closes the connection
+    /// once this is set (see the module doc).
     pub fn overflowed(&self) -> bool {
         self.overflow.load(Ordering::Relaxed)
+    }
+
+    /// Resolves once this client has overflowed the total cap (see
+    /// `overflowed`), including if it already has by the time this is
+    /// called. Lets the server react to a client that stops reading
+    /// altogether — never sending another frame itself — instead of only
+    /// noticing overflow the next time it happens to handle one.
+    pub fn overflow_notified(&self) -> impl std::future::Future<Output = ()> {
+        let notify = self.overflow_notify.clone();
+        async move { notify.notified().await }
     }
 }
 
@@ -182,6 +213,7 @@ impl ClientRx {
 mod tests {
     use super::*;
     use jojo_proto::{ControlMsg, SessionId};
+    use std::time::Duration;
 
     fn output(n: usize) -> Frame {
         Frame::Output { session_id: SessionId::new(), bytes: vec![b'x'; n] }
@@ -212,11 +244,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn total_cap_counts_every_frame_and_marks_overflow() {
+    async fn total_cap_counts_output_and_marks_overflow() {
+        // A high output limit isolates this from the per-session Output
+        // check, so only the 300-byte total cap is under test.
         let (tx, _rx) = client_queue_with_total(1_000_000, 300);
-        assert!(tx.send(Frame::Snapshot { session_id: SessionId::new(), bytes: vec![0; 200] }));
+        assert!(tx.send(output(200)));
         assert!(!tx.overflowed());
-        assert!(!tx.send(Frame::Snapshot { session_id: SessionId::new(), bytes: vec![0; 200] }));
+        assert!(!tx.send(output(200)), "second output would exceed the 300-byte total cap");
         assert!(tx.overflowed(), "a refused frame past the total cap marks the client overflowed");
+    }
+
+    #[tokio::test]
+    async fn snapshots_count_as_a_control_frame_toward_the_total_cap() {
+        // A 10,000-byte snapshot would overflow a 600-byte total cap
+        // instantly if it counted its real size; it must instead count no
+        // more than CONTROL_FRAME_WEIGHT (256), the same as any other
+        // control frame, leaving room for one more such frame under 600
+        // (2 * 256 = 512).
+        let (tx, _rx) = client_queue_with_total(1_000_000, 600);
+        assert!(tx.send(Frame::Snapshot { session_id: SessionId::new(), bytes: vec![0; 10_000] }));
+        assert!(!tx.overflowed());
+        assert!(tx.send(Frame::Control(ControlMsg::ListSessions)));
+        assert!(!tx.overflowed(), "a snapshot plus one control frame must not exceed a 600-byte total cap");
+    }
+
+    #[tokio::test]
+    async fn total_cap_is_released_as_frames_are_taken_off_the_queue() {
+        let (tx, mut rx) = client_queue_with_total(1_000_000, 300);
+        assert!(tx.send(output(150)));
+        assert!(tx.send(output(150)));
+        assert!(!tx.send(output(1)), "no room left under the 300-byte total cap");
+
+        // Both ways of taking a frame off the queue must release its total
+        // accounting, not just `recv`.
+        assert!(matches!(rx.recv().await, Some(Frame::Output { .. })));
+        assert!(matches!(rx.try_recv(), Some(Frame::Output { .. })));
+
+        assert!(tx.send(output(300)), "space was freed by recv and try_recv");
+    }
+
+    #[tokio::test]
+    async fn a_refused_output_undoes_its_output_reservation() {
+        // A generous output limit (100) but a tight total cap (300): the
+        // control frame below pre-fills the total cap to 256/300, leaving
+        // room for only 44 more bytes.
+        let (tx, mut rx) = client_queue_with_total(100, 300);
+        assert!(tx.send(Frame::Control(ControlMsg::ListSessions)));
+
+        // This Output fits the 100-byte output limit on its own but not the
+        // 44 bytes of total room left; it must be refused, and must not
+        // leave its 100-byte output reservation in place.
+        assert!(!tx.send(output(100)), "100 bytes of output plus 256 already queued exceeds the 300-byte total cap");
+        assert!(tx.overflowed());
+
+        // If the refused Output's reservation against the 100-byte output
+        // limit were not rolled back, this smaller Output (which fits both
+        // the output limit and the remaining 44 bytes of total room) would
+        // wrongly be refused too.
+        assert!(tx.send(output(40)), "a smaller Output that fits both limits must still succeed");
+        assert!(matches!(rx.try_recv(), Some(Frame::Control(_))));
+        assert!(matches!(rx.try_recv(), Some(Frame::Output { .. })));
+    }
+
+    #[tokio::test]
+    async fn overflow_notified_resolves_only_once_the_total_cap_is_exceeded() {
+        let (tx, _rx) = client_queue_with_total(1_000_000, 300);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), tx.overflow_notified()).await.is_err(),
+            "no frame has overflowed the total cap yet"
+        );
+
+        assert!(tx.send(output(200)));
+        assert!(!tx.send(output(200)), "exceeds the 300-byte total cap");
+
+        tokio::time::timeout(Duration::from_millis(100), tx.overflow_notified())
+            .await
+            .expect("overflow_notified must resolve once the client has overflowed");
     }
 }

@@ -271,7 +271,15 @@ impl Daemon {
                 self.save(&store);
                 self.broadcast(ControlMsg::SessionRemoved { session_id });
                 drop(store);
-                drop(taken);
+                // Explicit, not just relying on `Drop`: makes the kill
+                // unmistakable at the call site, rather than depending on a
+                // reader noticing that letting `taken` go out of scope here
+                // is what ends the process. `Session::drop` still runs too
+                // when `s` is dropped at the end of this block; `kill()` is
+                // safe to call more than once (see its own doc comment).
+                if let Some(s) = taken {
+                    s.kill();
+                }
             }
             ControlMsg::RenameSession { session_id, label } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);

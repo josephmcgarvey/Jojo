@@ -137,6 +137,8 @@ impl Session {
         // launched from inside a Claude Code shell would have every session
         // it spawns inherit CLAUDECODE and appear nested inside Claude Code.
         cmd.env_remove("CLAUDECODE");
+        // Applied after the removal above, so a caller that explicitly sets
+        // CLAUDECODE in `spec.env` (for example a test) still wins.
         for (key, value) in &spec.env {
             cmd.env(key, value);
         }

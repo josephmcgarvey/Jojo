@@ -79,6 +79,7 @@ impl Client {
         }
     }
 
+    /// The daemon's version string, as reported in its `Hello`.
     pub fn daemon_version(&self) -> &str {
         &self.jojod_version
     }

@@ -10,7 +10,9 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn sessions_do_not_inherit_claudecode() {
-    // SAFETY: this test binary is single-threaded at this point and owns its environment.
+    // This test binary is single-threaded at this point and owns its
+    // environment, so setting a process-wide variable here cannot race with
+    // another thread of this process also reading or writing it.
     std::env::set_var("CLAUDECODE", "1");
     #[cfg(windows)]
     let (program, args) = ("cmd.exe", vec!["/d".to_string(), "/k".to_string()]);

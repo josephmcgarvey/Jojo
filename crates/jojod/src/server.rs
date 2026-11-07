@@ -151,6 +151,15 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
             // is being closed.
             _ = lagged.notified() => break,
             _ = writer_done.notified() => break,
+            // Catches a client that has stopped reading altogether and is
+            // no longer sending requests either: without this arm, overflow
+            // would only be noticed the next time `daemon.handle` happened
+            // to run (the check right after it, below), which never happens
+            // for a client that has gone silent.
+            _ = tx.overflow_notified() => {
+                tracing::warn!(client, "client stopped reading; closing");
+                break;
+            }
         }
     }
 
