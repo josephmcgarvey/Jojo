@@ -36,6 +36,7 @@ use jojo_proto::{Frame, SessionId};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc as std_mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -83,6 +84,24 @@ pub struct Session {
     input_tx: std_mpsc::Sender<Vec<u8>>,
     master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    /// Set by the waiter thread, immediately after `child.wait()` returns,
+    /// before it does anything else (close the master, wait for the reader,
+    /// call `on_exit`). `kill()` checks this first and returns without
+    /// calling the killer once it is set: on Unix, portable-pty's killer
+    /// signals the child by its raw PID, and once `wait()` has reaped that
+    /// process the OS is free to recycle the PID for an unrelated process,
+    /// so a `kill()` racing in after reaping could signal the wrong process
+    /// entirely. On Windows the killer holds a process handle rather than a
+    /// PID, so a `kill()` after exit is merely a harmless no-op there, but
+    /// the check is cheap and applies uniformly on both platforms. There is
+    /// a narrow window between the OS reaping the process inside `wait()`
+    /// and this flag being set a moment later; closing it completely would
+    /// need a lock held across `wait()` itself (blocking `kill()` for the
+    /// process's entire lifetime), so it is left open but is far smaller
+    /// than the window this fixes (which spanned the process's exit all the
+    /// way to `on_exit` returning and the `Session` being dropped or
+    /// explicitly closed).
+    exited: Arc<AtomicBool>,
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -208,10 +227,17 @@ impl Session {
             }
         };
 
+        let exited = Arc::new(AtomicBool::new(false));
+
         {
             let master = master.clone();
+            let exited = exited.clone();
             thread::Builder::new().name(format!("pty-wait-{id}")).spawn(move || {
                 let code = child.wait().ok().map(|status| status.exit_code() as i32);
+                // Set before anything else below: see `Session::exited`'s
+                // doc comment for why `kill()` must stop calling the killer
+                // from this point on.
+                exited.store(true, Ordering::SeqCst);
                 // Take the master out of its own mutex and drop the guard
                 // before dropping the master itself (Finding F3): dropping
                 // it is what closes the pseudoconsole (ClosePseudoConsole),
@@ -234,7 +260,7 @@ impl Session {
             })?;
         }
 
-        Ok(Arc::new(Session { id, shared, input_tx, master, killer: Mutex::new(killer) }))
+        Ok(Arc::new(Session { id, shared, input_tx, master, killer: Mutex::new(killer), exited }))
     }
 
     /// Sends one Snapshot laid out for `cols` x `rows`, then live Output.
@@ -282,7 +308,21 @@ impl Session {
     }
 
     pub fn kill(&self) {
+        // See `exited`'s doc comment: once the process has already been
+        // reaped, the killer's PID (on Unix) may since have been recycled
+        // for an unrelated process, so signaling it would be worse than a
+        // no-op.
+        if self.has_exited() {
+            return;
+        }
         let _ = self.killer.lock().expect("killer lock").kill();
+    }
+
+    /// True once the waiter thread has observed the process exit (`wait()`
+    /// returned). Used by `kill()` to skip signaling a reaped process, and
+    /// by tests.
+    pub(crate) fn has_exited(&self) -> bool {
+        self.exited.load(Ordering::SeqCst)
     }
 
     pub fn visible_text(&self) -> String {
@@ -384,6 +424,32 @@ mod tests {
         .unwrap();
         session.kill();
         exit_rx.recv_timeout(Duration::from_secs(15)).expect("exit reported after kill");
+    }
+
+    #[test]
+    fn kill_after_exit_does_not_call_the_killer() {
+        #[cfg(windows)]
+        let args = vec!["/d".into(), "/c".into(), "exit".into(), "0".into()];
+        #[cfg(unix)]
+        let args = vec!["-c".into(), "exit 0".into()];
+        let mut spec = test_spec();
+        spec.args = args;
+
+        let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+        let session = Session::spawn(SessionId::new(), spec, move |code| {
+            let _ = exit_tx.send(code);
+        })
+        .unwrap();
+        assert!(!session.has_exited(), "freshly spawned session should not be reported exited");
+
+        let code = exit_rx.recv_timeout(Duration::from_secs(15)).expect("exit reported");
+        assert_eq!(code, Some(0));
+        assert!(session.has_exited());
+
+        // Neither must panic, even though the process has already been
+        // reaped and `kill()` must not signal its (possibly recycled) PID.
+        session.kill();
+        drop(session);
     }
 
     #[test]
