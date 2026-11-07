@@ -25,7 +25,7 @@ fn send_frame(request: Request<'_>, bridge: State<'_, Arc<Bridge>>) -> Result<()
 
 #[tauri::command]
 fn restart_daemon(bridge: State<'_, Arc<Bridge>>) {
-    bridge.restart.notify_one();
+    bridge.request_restart();
 }
 
 #[tauri::command]
