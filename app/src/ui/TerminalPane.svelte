@@ -34,10 +34,20 @@
     term.loadAddon(new WebLinksAddon());
     suppressQueryReplies(term);
     term.open(host);
+    let webgl: WebglAddon | undefined;
     try {
-      term.loadAddon(new WebglAddon());
+      webgl = new WebglAddon();
+      term.loadAddon(webgl);
+      // xterm.js falls back to its DOM renderer on context loss; the addon
+      // itself does not dispose on loss, so do it here to release the GL
+      // resources instead of leaving a dead context attached.
+      webgl.onContextLoss(() => {
+        webgl?.dispose();
+        webgl = undefined;
+      });
     } catch {
       // WebGL unavailable: xterm.js keeps its DOM renderer.
+      webgl = undefined;
     }
     fit.fit();
 
@@ -47,7 +57,12 @@
     const attach = () => {
       if (!session.attachable) return;
       gate.requestAttach();
-      void sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows });
+      // If this Attach is refused (disconnected), the gate is left awaiting
+      // a snapshot: that is fine, because the store's onStatus handler calls
+      // router.reattachAll() on the next "connected" status, which retries
+      // attach() and the awaited snapshot is satisfied then. No separate
+      // rejection handling of the gate is needed here.
+      void sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
     };
     if (session.attachable) attach();
     else term.write("\x1b[2mThis session has no screen: it ran in a previous jojod. Close it and start a new one.\x1b[0m\r\n");
@@ -61,18 +76,21 @@
     });
 
     const encoder = new TextEncoder();
-    const onData = term.onData((data) => void sendInput(id, encoder.encode(data)));
-    const onBinary = term.onBinary((data) => void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)));
+    const onData = term.onData((data) => void sendInput(id, encoder.encode(data)).catch(() => {}));
+    const onBinary = term.onBinary((data) =>
+      void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(() => {}),
+    );
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(() => {
+      if (!session.attachable) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         fit.fit();
         const next = clampSize(term.cols, term.rows);
         if (next.cols !== size.cols || next.rows !== size.rows) {
           size = next;
-          void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows });
+          void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
         }
       }, 50);
     });
@@ -85,7 +103,8 @@
       unregister();
       onData.dispose();
       onBinary.dispose();
-      if (session.attachable) void sendControl({ type: "Detach", session_id: id });
+      if (session.attachable) void sendControl({ type: "Detach", session_id: id }).catch(() => {});
+      webgl?.dispose();
       term.dispose();
     };
   });

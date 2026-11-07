@@ -11,6 +11,7 @@ interface CsiParser {
 
 const QUERIES = [
   { final: "n" }, // DSR, including cursor position report (CSI 6 n)
+  { prefix: "?", final: "n" }, // DECXCPR, extended cursor position report (CSI ? 6 n)
   { final: "c" }, // DA1
   { prefix: ">", final: "c" }, // DA2
   { intermediates: "$", final: "p" }, // DECRQM, ANSI modes
