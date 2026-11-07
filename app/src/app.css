@@ -1,0 +1,25 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--jojo-bg);
+  color: var(--jojo-fg);
+  font-family: var(--jojo-font-ui);
+  font-size: 12.5px;
+  overflow: hidden;
+  user-select: none;
+}
+* {
+  box-sizing: border-box;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
