@@ -9,7 +9,7 @@ import type { SessionKind } from "../protocol/SessionKind";
 import { router } from "../terminal/router";
 import { sendControl, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
-import { applyControl, emptyModel, type Model } from "./reducer";
+import { applyControl, clearConnectionErrors, emptyModel, type Model } from "./reducer";
 import { nextActiveAfterRemoval, sessionsForProject, sortedProjects } from "./views";
 
 export const app = $state({
@@ -37,6 +37,7 @@ export function startApp(): () => void {
     onStatus(status) {
       app.status = status;
       if (status.state === "connected") {
+        app.model = clearConnectionErrors(app.model);
         void sendControl({ type: "ListProjects" }).catch(() => {});
         void sendControl({ type: "ListSessions" }).catch(() => {});
       }

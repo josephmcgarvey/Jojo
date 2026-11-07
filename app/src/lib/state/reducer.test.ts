@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../protocol/SessionInfo";
-import { applyControl, emptyModel } from "./reducer";
+import { applyControl, clearConnectionErrors, emptyModel } from "./reducer";
 
 const project = { id: "P1", path: "C:\\work\\app", name: "app" };
 function session(id: string, over: Partial<SessionInfo> = {}): SessionInfo {
@@ -49,5 +49,16 @@ describe("applyControl", () => {
     expect(m.lastError).toEqual({ request: "AddProject", message: "nope", session_id: null });
     m = applyControl(m, { type: "ProjectRemoved", id: "P1" });
     expect(m.projects).toEqual({});
+  });
+
+  it("clears only connection errors on reconnect", () => {
+    for (const request of ["Hello", "Events"]) {
+      const m = applyControl(emptyModel(), { type: "Error", request, message: "reconnect", session_id: null });
+      expect(clearConnectionErrors(m).lastError).toBeNull();
+    }
+    const kept = applyControl(emptyModel(), { type: "Error", request: "CreateSession", message: "nope", session_id: "S1" });
+    expect(clearConnectionErrors(kept)).toBe(kept);
+    const empty = emptyModel();
+    expect(clearConnectionErrors(empty)).toBe(empty);
   });
 });

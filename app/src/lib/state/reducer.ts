@@ -49,3 +49,18 @@ export function applyControl(model: Model, msg: ControlMsg): Model {
       return model;
   }
 }
+
+const CONNECTION_ERROR_REQUESTS = new Set(["Hello", "Events"]);
+
+/**
+ * Errors about the connection itself rather than about a request the user
+ * made: jojod sends "Hello" when the protocol versions differ and "Events"
+ * when this client fell behind on events, and closes the connection after
+ * either. A successful reconnect resolves both, so they are cleared when
+ * the status becomes "connected". Any other error is left for the user to
+ * dismiss.
+ */
+export function clearConnectionErrors(model: Model): Model {
+  if (!model.lastError || !CONNECTION_ERROR_REQUESTS.has(model.lastError.request)) return model;
+  return { ...model, lastError: null };
+}
