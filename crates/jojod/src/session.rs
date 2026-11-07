@@ -309,7 +309,7 @@ mod tests {
         let mut grid = TermGrid::new(80, 24, 1000);
         let deadline = Instant::now() + Duration::from_secs(15);
         while !has_line(&grid, "jojo-hi") {
-            match recv_blocking(&mut rx, Duration::from_millis(50)) {
+            match rx.try_recv() {
                 Some(Frame::Output { bytes, .. }) => grid.feed(&bytes),
                 Some(_) => {}
                 None => std::thread::sleep(Duration::from_millis(20)),
@@ -347,7 +347,7 @@ mod tests {
         session.detach(7);
         session.write(b"echo after-detach\r".to_vec());
         std::thread::sleep(Duration::from_millis(1500));
-        while let Some(frame) = recv_blocking(&mut rx, Duration::from_millis(50)) {
+        while let Some(frame) = rx.try_recv() {
             assert!(!matches!(frame, Frame::Output { .. }), "output after detach");
         }
         session.kill();
@@ -400,7 +400,7 @@ mod tests {
             // waiting happens here; that immediacy is the point of the
             // test.
             let mut grid = TermGrid::new(80, 24, 1000);
-            while let Some(frame) = recv_blocking(&mut rx, Duration::from_millis(50)) {
+            while let Some(frame) = rx.try_recv() {
                 match frame {
                     Frame::Snapshot { bytes, .. } | Frame::Output { bytes, .. } => grid.feed(&bytes),
                     _ => {}

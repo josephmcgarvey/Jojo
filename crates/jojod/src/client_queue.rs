@@ -1,8 +1,20 @@
 //! Per-client outbound queue with byte accounting (Plan 1 carry-over 2.3,
 //! item 1). A window that stops reading must not grow daemon memory without
-//! limit: once more than the limit of output is waiting, further Output
-//! frames are refused, and the session drops that subscriber and tells it
-//! to attach again for a fresh snapshot.
+//! limit: once more than the limit of live Output is waiting, further
+//! Output frames are refused, and the session drops that subscriber and
+//! tells it to attach again for a fresh snapshot. The limit is per client
+//! connection, shared across every session that client is attached to (one
+//! `ClientTx`/`ClientRx` pair serves one connection, not one session).
+//!
+//! Only `Output` bytes count toward the limit. `Snapshot` and `Control`
+//! frames are always queued uncounted: a snapshot can be large (bounded by
+//! `jojod::session::MAX_SNAPSHOT_BYTES`, tens of MiB), and counting it would
+//! let one queued snapshot alone exceed the limit, which would refuse every
+//! subsequent Output, which would detach the client, which makes it
+//! re-attach and receive another full snapshot — a re-attach loop that
+//! never lets the client catch up. Counting only Output, which this queue
+//! actually exists to bound, avoids that loop while still shedding a client
+//! that cannot keep up with live output.
 
 use jojo_proto::Frame;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -30,9 +42,11 @@ pub fn client_queue(limit: usize) -> (ClientTx, ClientRx) {
     (ClientTx { tx, queued: queued.clone(), limit }, ClientRx { rx, queued })
 }
 
-fn data_len(frame: &Frame) -> usize {
+/// The queued-byte accounting length of `frame`: only `Output` counts (see
+/// the module doc for why `Snapshot` must not).
+fn output_len(frame: &Frame) -> usize {
     match frame {
-        Frame::Output { bytes, .. } | Frame::Snapshot { bytes, .. } => bytes.len(),
+        Frame::Output { bytes, .. } => bytes.len(),
         _ => 0,
     }
 }
@@ -40,16 +54,31 @@ fn data_len(frame: &Frame) -> usize {
 impl ClientTx {
     /// Queues `frame`. Returns false when the receiver is gone, or when the
     /// frame is Output and would push the queued output past the limit.
-    /// Snapshots and control frames are always queued (a snapshot is the
-    /// recovery path after a refusal).
+    /// Snapshots and control frames are always queued and never counted
+    /// (see the module doc): a snapshot is the recovery path after a
+    /// refusal, and counting it toward the same limit it is meant to
+    /// recover from would make that recovery refuse itself.
     pub fn send(&self, frame: Frame) -> bool {
-        let len = data_len(&frame);
-        if matches!(frame, Frame::Output { .. }) && self.queued.load(Ordering::Relaxed) + len > self.limit {
-            return false;
+        let len = output_len(&frame);
+        if len > 0 {
+            // Exact CAS loop: a plain load-then-add would let two
+            // concurrent senders each observe room for `len` and both add,
+            // overshooting `limit`. `fetch_update` retries on a concurrent
+            // change and only commits the add when it still fits.
+            let accepted = self
+                .queued
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    (current + len <= self.limit).then_some(current + len)
+                })
+                .is_ok();
+            if !accepted {
+                return false;
+            }
         }
-        self.queued.fetch_add(len, Ordering::Relaxed);
         if self.tx.send(frame).is_err() {
-            self.queued.fetch_sub(len, Ordering::Relaxed);
+            if len > 0 {
+                self.queued.fetch_sub(len, Ordering::Relaxed);
+            }
             return false;
         }
         true
@@ -59,7 +88,17 @@ impl ClientTx {
 impl ClientRx {
     pub async fn recv(&mut self) -> Option<Frame> {
         let frame = self.rx.recv().await?;
-        self.queued.fetch_sub(data_len(&frame), Ordering::Relaxed);
+        self.queued.fetch_sub(output_len(&frame), Ordering::Relaxed);
+        Some(frame)
+    }
+
+    /// Non-blocking receive, for tests and loops outside an async wait
+    /// point. Returns `None` both when the queue is momentarily empty and
+    /// when the sender is gone; callers that must distinguish those use
+    /// `recv` instead.
+    pub fn try_recv(&mut self) -> Option<Frame> {
+        let frame = self.rx.try_recv().ok()?;
+        self.queued.fetch_sub(output_len(&frame), Ordering::Relaxed);
         Some(frame)
     }
 }
@@ -84,10 +123,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn snapshots_always_queue_and_count() {
+    async fn snapshots_and_control_do_not_count_toward_the_limit() {
         let (tx, _rx) = client_queue(100);
         assert!(tx.send(Frame::Snapshot { session_id: SessionId::new(), bytes: vec![0; 500] }));
-        assert!(!tx.send(output(1)), "queue already holds 500 bytes");
+        assert!(tx.send(output(60)), "the snapshot must not count toward the 100-byte limit");
     }
 
     #[tokio::test]

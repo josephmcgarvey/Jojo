@@ -375,7 +375,7 @@ impl TermGrid {
         while end > 0 && !text.is_char_boundary(end) {
             end -= 1;
         }
-        out.extend_from_slice(text[..end].as_bytes());
+        out.extend_from_slice(&text.as_bytes()[..end]);
         out
     }
 }
