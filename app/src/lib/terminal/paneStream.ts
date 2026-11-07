@@ -16,17 +16,27 @@ export interface PaneStreamDeps {
 export interface PaneStream extends PaneHandle {
   /** Sends the first Attach. */
   start(): void;
+  /**
+   * Called when the pane unmounts. xterm.js runs write callbacks after
+   * dispose(), so a pane that was behind would otherwise send an Attach
+   * for a hidden pane once its queue drains (spec 5.5).
+   */
+  stop(): void;
 }
 
 export function createPaneStream(deps: PaneStreamDeps): PaneStream {
   const gate = new AttachGate();
   const flow = new WriteFlow();
+  let stopped = false;
   const attach = (): void => {
-    if (!gate.begin()) return;
+    if (stopped || !gate.begin()) return;
     deps.sendAttach().catch(() => gate.abandon());
   };
   return {
     start: attach,
+    stop() {
+      stopped = true;
+    },
     deliver(kind, bytes) {
       const accepted = gate.accept(kind, bytes);
       if (!accepted) return;

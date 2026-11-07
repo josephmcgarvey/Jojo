@@ -20,6 +20,10 @@
     const observer = new ResizeObserver(report);
     observer.observe(maximize);
     window.addEventListener("resize", report);
+    // Moving the window to a monitor with another scale factor changes
+    // devicePixelRatio, and with it the button's physical rectangle, without
+    // necessarily resizing the CSS viewport or the button.
+    const unlistenScale = win.onScaleChanged(report);
     report();
     const unlisten = listen<boolean>("maximize-hover", (event) => {
       hovered = event.payload;
@@ -27,6 +31,7 @@
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", report);
+      void unlistenScale.then((stop) => stop());
       void unlisten.then((stop) => stop());
     };
   });

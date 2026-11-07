@@ -74,15 +74,24 @@
       (event) => resolveShortcut(event, { copyOnSelect: app.settings?.copyOnSelect ?? true, hasSelection: created.hasSelection() }) === null,
     );
     // Spec 9.5 rules 1-2: releasing the left button after a drag, double-click
-    // or triple-click selection copies it. The check waits one task so that
-    // xterm.js's own mouseup handling has finished the selection.
-    const onMouseUp = (event: MouseEvent) => {
-      if (event.button !== 0 || !(app.settings?.copyOnSelect ?? true)) return;
+    // or triple-click selection copies it. xterm.js tracks a drag with
+    // document-level listeners, so the button can be released outside this
+    // host (in the pane padding, or past the pane while autoscrolling); the
+    // mouseup is therefore listened for on window, armed by a left-button
+    // press inside the host. The check waits one task so that xterm.js's own
+    // mouseup handling has finished the selection.
+    const onWindowMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      window.removeEventListener("mouseup", onWindowMouseUp, true);
+      if (!(app.settings?.copyOnSelect ?? true)) return;
       setTimeout(() => {
         if (created.hasSelection()) void copyFromPane(id);
       }, 0);
     };
-    host.addEventListener("mouseup", onMouseUp);
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 0) window.addEventListener("mouseup", onWindowMouseUp, true);
+    };
+    host.addEventListener("mousedown", onMouseDown);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
@@ -155,7 +164,9 @@
 
     return () => {
       host.removeEventListener("contextmenu", onContextMenu, true);
-      host.removeEventListener("mouseup", onMouseUp);
+      host.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onWindowMouseUp, true);
+      stream.stop();
       observer.disconnect();
       clearTimeout(timer);
       unregister();

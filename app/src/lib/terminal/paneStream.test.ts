@@ -80,4 +80,17 @@ describe("createPaneStream", () => {
     stream.deliver("output", b(5));
     expect(writes.slice(3).map((w) => [...w.bytes])).toEqual([[4], [5]]);
   });
+
+  it("never sends an Attach after stop, even when a drained queue would resync", () => {
+    const { stream, writes, attaches } = harness();
+    stream.start();
+    stream.deliver("snapshot", b(0));
+    writes[0].done();
+    stream.deliver("output", new Uint8Array(HIGH_WATERMARK));
+    stream.deliver("output", b(1));
+    stream.stop();
+    writes[1].done();
+    stream.reattach(true);
+    expect(attaches).toHaveLength(1);
+  });
 });

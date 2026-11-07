@@ -3,6 +3,7 @@
 // values, talks to the backend, and keeps layout.json in sync.
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { tick } from "svelte";
 import type { ConnectionStatus } from "../backend/ConnectionStatus";
 import type { LayoutFile } from "../backend/LayoutFile";
 import type { ProjectLayout } from "../backend/ProjectLayout";
@@ -21,6 +22,7 @@ import { router } from "../terminal/router";
 import { sendControl, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { askConfirm } from "./dialog.svelte";
+import { terminalControls } from "../terminal/registry";
 import { applyControl, clearConnectionErrors, emptyModel, type Model } from "./reducer";
 import {
   busyStateText,
@@ -59,6 +61,8 @@ export const app = $state({
   layoutLoaded: false,
   /** True once the first Sessions list has been applied; reconciliation waits for it. */
   sessionsLoaded: false,
+  /** True once the first Projects reply has been applied. */
+  projectsLoaded: false,
   now: Date.now(),
 });
 
@@ -145,7 +149,10 @@ function connect(): void {
 }
 
 function reconcile(): void {
-  if (!app.layoutLoaded || !app.sessionsLoaded) return;
+  // reconcileAll drops the layout of every project missing from the model,
+  // so it must not run before the first Projects reply: ListProjects and
+  // ListSessions are separate IPC calls, and Sessions can arrive first.
+  if (!app.layoutLoaded || !app.projectsLoaded || !app.sessionsLoaded) return;
   commit({ ...app.workspace, layout: reconcileAll(app.workspace.layout, app.model, newUlid) });
 }
 
@@ -167,6 +174,9 @@ function handleControl(msg: ControlMsg): void {
       reconcile();
       break;
     case "Projects":
+      app.projectsLoaded = true;
+      reconcile();
+      break;
     case "ProjectRemoved":
       reconcile();
       break;
@@ -256,6 +266,10 @@ export function focusPane(sessionId: string): void {
   if (!projectId) return;
   app.selectedProjectId = projectId;
   updateProject(projectId, (p) => tabs.focusSession(p, sessionId));
+  // TerminalPane focuses its terminal when its `focused` prop changes; when
+  // the pane was already focused (or is mounted by this change), focus it
+  // here once the DOM has updated, so keys do not stay on the sidebar.
+  void tick().then(() => terminalControls(sessionId)?.focus());
 }
 
 export function focusDirection(direction: FocusDirection): void {
