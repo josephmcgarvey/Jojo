@@ -1,3 +1,4 @@
 .superpowers/
 /target/
 *.stackdump
+/resources/conpty/x64/
