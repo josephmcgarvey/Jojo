@@ -10,6 +10,8 @@
   import { app } from "../lib/state/app.svelte";
   import { noScreenMessage } from "../lib/terminal/pane";
   import { contextMenuTarget } from "../lib/input/mouse";
+  import { resolveShortcut } from "../lib/input/shortcuts";
+  import { copyFromPane } from "../lib/state/clipboard";
   import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
   import { registerTerminal } from "../lib/terminal/registry";
@@ -61,6 +63,22 @@
       if (contextMenuTarget(event.shiftKey, created.modes.mouseTrackingMode) === "jojo") onmenu(event.clientX, event.clientY);
     };
     host.addEventListener("contextmenu", onContextMenu, true);
+    // App.svelte handles application shortcuts on keydown before xterm.js
+    // sees them; returning false here makes xterm.js also ignore the
+    // keypress and keyup events of those keys.
+    created.attachCustomKeyEventHandler(
+      (event) => resolveShortcut(event, { copyOnSelect: app.settings?.copyOnSelect ?? true, hasSelection: created.hasSelection() }) === null,
+    );
+    // Spec 9.5 rules 1-2: releasing the left button after a drag, double-click
+    // or triple-click selection copies it. The check waits one task so that
+    // xterm.js's own mouseup handling has finished the selection.
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0 || !(app.settings?.copyOnSelect ?? true)) return;
+      setTimeout(() => {
+        if (created.hasSelection()) void copyFromPane(id);
+      }, 0);
+    };
+    host.addEventListener("mouseup", onMouseUp);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
@@ -133,6 +151,7 @@
 
     return () => {
       host.removeEventListener("contextmenu", onContextMenu, true);
+      host.removeEventListener("mouseup", onMouseUp);
       observer.disconnect();
       clearTimeout(timer);
       unregister();

@@ -3,6 +3,9 @@
   import neonGlass from "./themes/neon-glass.json";
   import { app, currentTab, focusedSessionId, startApp } from "./lib/state/app.svelte";
   import { closeMenu, ui } from "./lib/state/ui.svelte";
+  import { resolveShortcut } from "./lib/input/shortcuts";
+  import { runAction } from "./lib/state/actions";
+  import { dialog } from "./lib/state/dialog.svelte";
   import { terminalControls } from "./lib/terminal/registry";
   import { applyTheme, type Theme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
@@ -16,8 +19,31 @@
   const theme = neonGlass as Theme;
   onMount(() => {
     applyTheme(theme);
-    return startApp();
+    window.addEventListener("keydown", onKeydown, true);
+    const stopApp = startApp();
+    return () => {
+      window.removeEventListener("keydown", onKeydown, true);
+      stopApp();
+    };
   });
+  /**
+   * Application shortcuts (spec 9.6), handled in the capture phase on window
+   * so they run before xterm.js's keydown handler on its textarea. A matched
+   * shortcut is stopped here, so xterm.js never sends it to the program;
+   * every other key reaches the terminal unchanged. The dialog, menus and
+   * rename fields handle their own keys.
+   */
+  function onKeydown(event: KeyboardEvent): void {
+    if (dialog.confirm || ui.menu || event.target instanceof HTMLInputElement) return;
+    const action = resolveShortcut(event, {
+      copyOnSelect: app.settings?.copyOnSelect ?? true,
+      hasSelection: terminalControls(focusedSessionId())?.hasSelection() ?? false,
+    });
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    runAction(action);
+  }
   const tab = $derived(currentTab());
 
   /** Closing a menu returns keyboard focus to the focused pane's terminal. */
