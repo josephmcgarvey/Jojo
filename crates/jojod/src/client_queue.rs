@@ -63,8 +63,9 @@ impl ClientTx {
         if len > 0 {
             // Exact CAS loop: a plain load-then-add would let two
             // concurrent senders each observe room for `len` and both add,
-            // overshooting `limit`. `fetch_update` retries on a concurrent
-            // change and only commits the add when it still fits.
+            // overshooting `limit`. `try_update` (the stable successor to
+            // `fetch_update`) retries on a concurrent change and only
+            // commits the add when it still fits.
             let accepted = self
                 .queued
                 .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
