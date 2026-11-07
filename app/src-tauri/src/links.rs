@@ -63,6 +63,7 @@ fn shell_open(url: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
+    let _com = ComApartment::enter();
     let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
     let verb = wide("open");
     let file = wide(url);
@@ -79,6 +80,42 @@ fn shell_open(url: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("ShellExecuteW failed with code {code}"))
+    }
+}
+
+/// Initializes COM on the calling thread for as long as the value lives.
+/// ShellExecuteW's documentation requires COM to be initialized before the
+/// call, because the protocol handlers and shell extensions it may run use
+/// COM. `open_url` runs on a blocking worker thread (see main.rs), which has
+/// no COM apartment of its own.
+#[cfg(windows)]
+struct ComApartment {
+    initialized: bool,
+}
+
+#[cfg(windows)]
+impl ComApartment {
+    fn enter() -> ComApartment {
+        use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+        // SAFETY: the reserved pointer must be null, and the flags are the
+        // combination ShellExecuteW's documentation recommends.
+        let hr = unsafe { CoInitializeEx(std::ptr::null(), (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32) };
+        // S_OK (0) and S_FALSE (1, already initialized on this thread) both
+        // need a matching CoUninitialize; a failure such as
+        // RPC_E_CHANGED_MODE (negative) does not, and ShellExecuteW then runs
+        // in the apartment the thread already has.
+        ComApartment { initialized: hr >= 0 }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        if self.initialized {
+            // SAFETY: balances the successful CoInitializeEx in `enter`; the
+            // value is created and dropped inside `shell_open` on one thread.
+            unsafe { windows_sys::Win32::System::Com::CoUninitialize() };
+        }
     }
 }
 
@@ -142,5 +179,22 @@ mod tests {
         assert!(validate_url("https:///path").is_err());
         let long = format!("https://example.com/{}", "a".repeat(MAX_URL_LEN));
         assert!(validate_url(&long).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_worker_thread_gets_a_com_apartment_and_releases_it() {
+        std::thread::spawn(|| {
+            let first = ComApartment::enter();
+            assert!(first.initialized, "CoInitializeEx failed on a fresh thread");
+            // A second enter on the same thread returns S_FALSE, which also
+            // needs its own CoUninitialize, so it also counts as initialized.
+            let second = ComApartment::enter();
+            assert!(second.initialized);
+            drop(second);
+            drop(first);
+        })
+        .join()
+        .unwrap();
     }
 }

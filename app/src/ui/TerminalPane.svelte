@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { Terminal, type ITheme } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -12,6 +11,7 @@
   import { contextMenuTarget } from "../lib/input/mouse";
   import { resolveShortcut } from "../lib/input/shortcuts";
   import { copyFromPane } from "../lib/state/clipboard";
+  import { openLink } from "../lib/terminal/links";
   import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
   import { registerTerminal } from "../lib/terminal/registry";
@@ -40,16 +40,20 @@
       scrollback: Math.max(settings?.scrollbackLines ?? 10_000, 10_000),
       theme: terminalTheme,
       cursorBlink: true,
+      // OSC 8 hyperlinks. xterm.js's default handler calls confirm() and then
+      // window.open(), which the main window denies, so nothing opened.
+      // allowNonHttpProtocols stays false, so links with other schemes are
+      // ignored by xterm.js.
+      linkHandler: { activate: (_event, uri) => void openLink(id, uri, true) },
     });
     term = created;
     const fit = new FitAddon();
     created.loadAddon(fit);
     created.loadAddon(new Unicode11Addon());
     created.unicode.activeVersion = "11";
-    // The addon's default handler calls window.open, which the main webview
-    // denies (see main.rs). The open_url command validates the URL (http and
-    // https only) and opens it in the default browser instead.
-    created.loadAddon(new WebLinksAddon((_event, uri) => void invoke("open_url", { url: uri }).catch(() => {})));
+    // Plain URLs found in the output. Their text is the URL itself, so they
+    // open without a confirmation; open_url validates them.
+    created.loadAddon(new WebLinksAddon((_event, uri) => void openLink(id, uri, false)));
     suppressQueryReplies(created);
     created.open(host);
     // Spec 9.4 mouse reporting rule. This listener runs in the capture phase

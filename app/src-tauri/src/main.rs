@@ -52,9 +52,14 @@ async fn save_layout(layout: LayoutFile) -> Result<(), String> {
 
 /// Opens a link clicked in a terminal in the default browser. Only
 /// `http://` and `https://` URLs are accepted (see `jojo_app::links`).
+/// ShellExecuteW can block, for example while Windows asks which app should
+/// open the link; a synchronous command runs on the main thread, which runs
+/// the window's event loop, so the call is made on a blocking worker thread.
 #[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
-    jojo_app::links::open_url(&url)
+async fn open_url(url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || jojo_app::links::open_url(&url))
+        .await
+        .map_err(|e| format!("the link opener thread failed: {e}"))?
 }
 
 fn main() {
