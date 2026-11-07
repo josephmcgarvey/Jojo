@@ -1,11 +1,13 @@
 //! Starts a real jojod (target/debug/jojod.exe) through the app's daemon
 //! manager. Build it first: `cargo build -p jojod`.
 
+use jojo_app::bridge::{Bridge, ENVELOPE_FRAME, ENVELOPE_STATUS};
 use jojo_app::daemon_manager::{connect_or_start, DaemonPaths};
 use jojo_proto::{ControlMsg, Frame};
 use jojod::client::Client;
 use jojod::paths::Endpoint;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub fn built_jojod_dir() -> Option<PathBuf> {
@@ -91,4 +93,50 @@ async fn starts_the_daemon_when_none_is_running() {
     let exe = paths.bin_dir.join("jojod.exe");
     assert!(exe.exists(), "binaries were staged");
     shutdown_and_wait(client, &exe).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn connection_loop_relays_frames_both_ways() {
+    let Some(source) = built_jojod_dir() else {
+        eprintln!("skipped: run `cargo build -p jojod` first");
+        return;
+    };
+    if jojod::pipe_security_is_elevated().unwrap_or(false) {
+        eprintln!("skipped: jojod refuses to run elevated");
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let paths = test_paths(source, scratch.path());
+    let endpoint = paths.endpoint.clone();
+    let paths_bin_exe = paths.bin_dir.join("jojod.exe");
+    let bridge = Arc::new(Bridge::default());
+    let seen = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let sink = seen.clone();
+    bridge.set_sink(Box::new(move |bytes| sink.lock().unwrap().push(bytes)));
+    let task = tokio::spawn(jojo_app::connection::run(paths, bridge.clone()));
+
+    let connected = wait_for(&seen, |e| e[0] == ENVELOPE_STATUS && e[1..].starts_with(br#"{"state":"connected""#)).await;
+    assert!(connected, "never connected: {:?}", printable(&seen));
+
+    let body = &Frame::Control(ControlMsg::ListProjects).encode()[4..];
+    bridge.send(body.to_vec()).expect("connected bridge accepts frames");
+    let projects = wait_for(&seen, |e| e[0] == ENVELOPE_FRAME && String::from_utf8_lossy(&e[2..]).contains(r#""type":"Projects""#)).await;
+    assert!(projects, "no Projects reply: {:?}", printable(&seen));
+
+    task.abort();
+    shutdown_and_wait(jojod::client::Client::connect(&endpoint).await.unwrap(), &paths_bin_exe).await;
+}
+
+async fn wait_for(seen: &Arc<Mutex<Vec<Vec<u8>>>>, pred: impl Fn(&Vec<u8>) -> bool) -> bool {
+    for _ in 0..300 {
+        if seen.lock().unwrap().iter().any(&pred) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    false
+}
+
+fn printable(seen: &Arc<Mutex<Vec<Vec<u8>>>>) -> Vec<String> {
+    seen.lock().unwrap().iter().map(|e| format!("{}:{}", e[0], String::from_utf8_lossy(&e[1..]))).collect()
 }
