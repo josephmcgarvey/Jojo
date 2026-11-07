@@ -1,25 +1,17 @@
 <script lang="ts">
   import { app, dismissError, restartDaemon } from "../lib/state/app.svelte";
+  import { connectionBanner } from "../lib/state/banner";
 
-  const status = $derived(app.status);
+  const banner = $derived(connectionBanner(app.status, app.everConnected));
   const error = $derived(app.model.lastError);
 </script>
 
-{#if status.state === "starting"}
-  <div class="banner">Starting jojod…</div>
-{:else if status.state === "reconnecting"}
-  <div class="banner">Disconnected from jojod: {status.message}. Reconnecting (attempt {status.attempt}). Sessions keep running.</div>
-{:else if status.state === "elevated"}
-  <div class="banner">Jojo is running as administrator, and jojod will not run elevated. Close Jojo and start it without administrator rights.</div>
-{:else if status.state === "version_mismatch"}
+{#if banner}
   <div class="banner">
-    {status.message}.
-    <button class="action" onclick={restartDaemon}>Restart jojod (ends all running sessions)</button>
-  </div>
-{:else if status.state === "failed"}
-  <div class="banner">
-    Cannot reach jojod: {status.message}. Logs are in %LOCALAPPDATA%\Jojo\logs\jojod.&lt;date&gt;.log.
-    <button class="action" onclick={restartDaemon}>Retry</button>
+    {banner.text}
+    {#if banner.action}
+      <button class="action" onclick={restartDaemon}>{banner.action}</button>
+    {/if}
   </div>
 {/if}
 {#if error}

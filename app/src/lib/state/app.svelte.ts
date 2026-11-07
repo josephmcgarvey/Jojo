@@ -47,6 +47,8 @@ import {
 export const app = $state({
   model: emptyModel() as Model,
   status: { state: "starting" } as ConnectionStatus,
+  /** True once any connection to jojod has succeeded in this app run. */
+  everConnected: false,
   settings: null as Settings | null,
   selectedProjectId: null as string | null,
   workspace: emptyWorkspace() as Workspace,
@@ -113,6 +115,7 @@ function connect(): void {
     onStatus(status) {
       app.status = status;
       if (status.state === "connected") {
+        app.everConnected = true;
         app.model = clearConnectionErrors(app.model);
         void sendControl({ type: "ListProjects" }).catch(() => {});
         void sendControl({ type: "ListSessions" }).catch(() => {});
