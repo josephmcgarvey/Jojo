@@ -6,17 +6,22 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const NAMED = /:\s*(white|black|red|green|blue|yellow|orange|purple|pink|gray|grey|cyan|magenta)\b/gi;
-const LITERAL = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g;
+const LITERAL = /#[0-9a-f]{3,8}(?![0-9a-f])|rgba?\(|hsla?\(/gi;
+// Svelte style directives (style:prop="value" or style:prop={expr}) are not
+// CSS declarations syntactically, but their value is one semantically, so it
+// is checked the same way a `property: value` pair from a style block is.
+const STYLE_DIRECTIVE = /style:[\w-]+=(?:"([^"]*)"|\{([^}]*)\})/g;
 
 /** @param {string} source @returns {string[]} */
 export function findColorLiterals(source) {
   const styles = [
     ...[...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]),
     ...[...source.matchAll(/style="([^"]*)"/g)].map((m) => `:${m[1]}`),
+    ...[...source.matchAll(STYLE_DIRECTIVE)].map((m) => `:${m[1] ?? m[2]}`),
   ];
   const found = [];
   for (const css of styles) {
-    for (const m of css.matchAll(LITERAL)) found.push(m[0]);
+    for (const m of css.matchAll(LITERAL)) found.push(m[0].toLowerCase());
     for (const m of css.matchAll(NAMED)) found.push(m[1].toLowerCase());
   }
   return found;
