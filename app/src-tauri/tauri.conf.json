@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Jojo",
+  "mainBinaryName": "jojo",
+  "version": "0.1.0",
+  "identifier": "com.mcgstrategic.jojo",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Jojo",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 420,
+        "decorations": false,
+        "backgroundColor": "#070a16"
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "resources": { "resources/daemon/*": "daemon/" }
+  }
+}
