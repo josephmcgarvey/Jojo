@@ -269,3 +269,20 @@ fn bounded_snapshot_equals_full_snapshot_when_it_fits() {
     a.feed(b"\x1b[31mhello\x1b[0m\r\nworld");
     assert_eq!(a.snapshot_bounded(1_000_000), a.snapshot());
 }
+
+// --- Task 5 fixtures (task-5-brief.md) ---
+
+#[test]
+fn combined_attributes() {
+    assert_roundtrip(
+        "combined",
+        b"\x1b[1;3;4;7;38;2;1;2;3;48;5;200mcombo\x1b[0m \x1b[2;9;38;5;45mdim-strike\x1b[0m \x1b[1;4:3;31mbold-curl\x1b[0m",
+    );
+}
+
+#[test]
+fn pending_wrap_after_a_wide_character() {
+    let mut s = "x".repeat(78).into_bytes();
+    s.extend_from_slice("漢".as_bytes());
+    assert_roundtrip("pending_wide", &s);
+}

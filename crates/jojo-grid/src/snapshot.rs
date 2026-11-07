@@ -249,19 +249,20 @@ impl TermGrid {
         let cursor = &grid.cursor;
         if cursor.input_needs_wrap {
             let row = &grid[cursor.point.line];
-            let last = Column(cols - 1);
+            let at = cursor.point.column;
             // A wide character's trailing spacer cell carries no content of
             // its own; the glyph is in the cell before it, so re-emitting
             // the spacer's column must instead write the leading cell.
-            let (col, cell) = if row[last].flags.contains(Flags::WIDE_CHAR_SPACER) {
-                (cols - 2, &row[Column(cols - 2)])
+            let (col, cell) = if row[at].flags.contains(Flags::WIDE_CHAR_SPACER) {
+                (at.0 - 1, &row[Column(at.0 - 1)])
             } else {
-                (cols - 1, &row[last])
+                (at.0, &row[at])
             };
             out.extend_from_slice(format!("\x1b[{};{}H", cursor.point.line.0 + 1, col + 1).as_bytes());
             Pen::of(cell).write(&mut out);
+            let c = if cell.c == '\t' { ' ' } else { cell.c };
             let mut buf = [0u8; 4];
-            out.extend_from_slice(cell.c.encode_utf8(&mut buf).as_bytes());
+            out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
             if let Some(extra) = cell.zerowidth() {
                 for z in extra {
                     out.extend_from_slice(z.encode_utf8(&mut buf).as_bytes());
