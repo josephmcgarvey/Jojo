@@ -448,6 +448,21 @@ async fn create_session_with_out_of_range_size_reports_the_requested_session_id(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_connection_that_never_says_hello_is_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let (mut reader, _writer) = jojod::transport::connect(&endpoint).await.unwrap();
+    // The daemon sends its Hello, then waits for ours; it must give up.
+    let first = jojo_proto::read_frame(&mut reader).await.unwrap();
+    assert!(matches!(first, Some(Frame::Control(ControlMsg::Hello { .. }))));
+    let next = tokio::time::timeout(Duration::from_secs(10), jojo_proto::read_frame(&mut reader)).await;
+    assert!(matches!(next, Ok(Ok(None)) | Ok(Err(_))), "daemon kept a silent connection open");
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn close_session_twice_yields_one_removed_and_one_error() {
     // F1: the unknown-id check and the removal happen under one `store`
     // lock acquisition, so closing the same id twice (even back to back,

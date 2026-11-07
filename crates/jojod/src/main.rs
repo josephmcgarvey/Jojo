@@ -48,6 +48,21 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Some(Command::Serve { endpoint, state_dir }) => {
             #[cfg(windows)]
+            {
+                use windows_sys::Win32::System::LibraryLoader::{
+                    SetDefaultDllDirectories, LOAD_LIBRARY_SEARCH_APPLICATION_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32,
+                };
+                // portable-pty loads "conpty.dll" by bare name. Restrict the search to
+                // jojod's own folder and System32, so a missing sideloaded copy falls
+                // back to the system ConPTY instead of a conpty.dll found on PATH or in
+                // the current directory.
+                // SAFETY: plain Win32 call with constant flags.
+                let ok = unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32) };
+                if ok == 0 {
+                    eprintln!("jojod: SetDefaultDllDirectories failed: {}", std::io::Error::last_os_error());
+                }
+            }
+            #[cfg(windows)]
             if jojod::pipe_security_is_elevated()? {
                 anyhow::bail!(
                     "jojod will not run elevated: its pipe would let non-elevated processes drive \

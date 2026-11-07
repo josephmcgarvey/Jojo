@@ -15,31 +15,70 @@
 //! never lets the client catch up. Counting only Output, which this queue
 //! actually exists to bound, avoids that loop while still shedding a client
 //! that cannot keep up with live output.
+//!
+//! A second, total cap (`MAX_CLIENT_TOTAL_BYTES`) counts every frame queued
+//! for the client, Snapshot and Control included. The per-session Output
+//! limit above detaches one session's stream from a client that cannot keep
+//! up with it; the total limit means the client has stopped reading from its
+//! connection altogether (every session attached to it, plus whatever
+//! control traffic is queued, is piling up), and the connection itself is
+//! closed rather than just one session's stream.
 
 use jojo_proto::Frame;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 /// Output bytes that may wait for one client before it is detached.
 pub const MAX_CLIENT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 
+/// Total bytes (every frame kind) that may wait for one client connection
+/// before it is closed outright. See the module doc for how this differs
+/// from `MAX_CLIENT_QUEUE_BYTES`.
+pub const MAX_CLIENT_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+
+/// The accounting weight of a control frame that does not carry a byte
+/// payload, used so the total cap still bounds a client that is flooded with
+/// small control messages rather than raw output.
+const CONTROL_FRAME_WEIGHT: usize = 256;
+
 #[derive(Clone)]
 pub struct ClientTx {
     tx: mpsc::UnboundedSender<Frame>,
     queued: Arc<AtomicUsize>,
     limit: usize,
+    total: Arc<AtomicUsize>,
+    total_limit: usize,
+    overflow: Arc<AtomicBool>,
 }
 
 pub struct ClientRx {
     rx: mpsc::UnboundedReceiver<Frame>,
     queued: Arc<AtomicUsize>,
+    total: Arc<AtomicUsize>,
 }
 
+/// Convenience wrapper over `client_queue_with_total`, using
+/// `MAX_CLIENT_TOTAL_BYTES` as the total cap.
 pub fn client_queue(limit: usize) -> (ClientTx, ClientRx) {
+    client_queue_with_total(limit, MAX_CLIENT_TOTAL_BYTES)
+}
+
+pub fn client_queue_with_total(output_limit: usize, total_limit: usize) -> (ClientTx, ClientRx) {
     let (tx, rx) = mpsc::unbounded_channel();
     let queued = Arc::new(AtomicUsize::new(0));
-    (ClientTx { tx, queued: queued.clone(), limit }, ClientRx { rx, queued })
+    let total = Arc::new(AtomicUsize::new(0));
+    (
+        ClientTx {
+            tx,
+            queued: queued.clone(),
+            limit: output_limit,
+            total: total.clone(),
+            total_limit,
+            overflow: Arc::new(AtomicBool::new(false)),
+        },
+        ClientRx { rx, queued, total },
+    )
 }
 
 /// The queued-byte accounting length of `frame`: only `Output` counts (see
@@ -48,6 +87,16 @@ fn output_len(frame: &Frame) -> usize {
     match frame {
         Frame::Output { bytes, .. } => bytes.len(),
         _ => 0,
+    }
+}
+
+/// The accounting length of `frame` toward the total cap: `Output` and
+/// `Snapshot` count their byte payload, every other (control) frame counts a
+/// flat `CONTROL_FRAME_WEIGHT`.
+fn total_len(frame: &Frame) -> usize {
+    match frame {
+        Frame::Output { bytes, .. } | Frame::Snapshot { bytes, .. } => bytes.len(),
+        _ => CONTROL_FRAME_WEIGHT,
     }
 }
 
@@ -76,13 +125,36 @@ impl ClientTx {
                 return false;
             }
         }
-        if self.tx.send(frame).is_err() {
+
+        let total_len = total_len(&frame);
+        let total_accepted = self
+            .total
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                (current + total_len <= self.total_limit).then_some(current + total_len)
+            })
+            .is_ok();
+        if !total_accepted {
+            self.overflow.store(true, Ordering::Relaxed);
             if len > 0 {
                 self.queued.fetch_sub(len, Ordering::Relaxed);
             }
             return false;
         }
+
+        if self.tx.send(frame).is_err() {
+            if len > 0 {
+                self.queued.fetch_sub(len, Ordering::Relaxed);
+            }
+            self.total.fetch_sub(total_len, Ordering::Relaxed);
+            return false;
+        }
         true
+    }
+
+    /// True once a frame has been refused for exceeding the total cap. The
+    /// server closes the connection once this is set (see the module doc).
+    pub fn overflowed(&self) -> bool {
+        self.overflow.load(Ordering::Relaxed)
     }
 }
 
@@ -90,6 +162,7 @@ impl ClientRx {
     pub async fn recv(&mut self) -> Option<Frame> {
         let frame = self.rx.recv().await?;
         self.queued.fetch_sub(output_len(&frame), Ordering::Relaxed);
+        self.total.fetch_sub(total_len(&frame), Ordering::Relaxed);
         Some(frame)
     }
 
@@ -100,6 +173,7 @@ impl ClientRx {
     pub fn try_recv(&mut self) -> Option<Frame> {
         let frame = self.rx.try_recv().ok()?;
         self.queued.fetch_sub(output_len(&frame), Ordering::Relaxed);
+        self.total.fetch_sub(total_len(&frame), Ordering::Relaxed);
         Some(frame)
     }
 }
@@ -135,5 +209,14 @@ mod tests {
         let (tx, rx) = client_queue(100);
         drop(rx);
         assert!(!tx.send(Frame::Control(ControlMsg::ListSessions)));
+    }
+
+    #[tokio::test]
+    async fn total_cap_counts_every_frame_and_marks_overflow() {
+        let (tx, _rx) = client_queue_with_total(1_000_000, 300);
+        assert!(tx.send(Frame::Snapshot { session_id: SessionId::new(), bytes: vec![0; 200] }));
+        assert!(!tx.overflowed());
+        assert!(!tx.send(Frame::Snapshot { session_id: SessionId::new(), bytes: vec![0; 200] }));
+        assert!(tx.overflowed(), "a refused frame past the total cap marks the client overflowed");
     }
 }

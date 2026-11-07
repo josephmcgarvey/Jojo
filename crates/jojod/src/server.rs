@@ -4,7 +4,12 @@ use crate::daemon::{Daemon, DaemonConfig};
 use crate::transport::{Accept, BoxRead, BoxWrite, Listener};
 use jojo_proto::{read_frame, write_frame, ControlMsg, Frame, PROTOCOL_VERSION};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
+
+/// How long the writer task waits for one `write_frame` to complete before
+/// giving up on a client that has stopped reading from its end of the pipe.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs the daemon until a `Shutdown` request, then kills every session.
 pub async fn run(cfg: DaemonConfig) -> anyhow::Result<()> {
@@ -45,13 +50,17 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
     let client = daemon.next_client_id();
     let (tx, mut rx) = crate::client_queue::client_queue(crate::client_queue::MAX_CLIENT_QUEUE_BYTES);
 
+    let writer_done = Arc::new(tokio::sync::Notify::new());
+    let writer_done_signal = writer_done.clone();
     let writer_task = tokio::spawn(async move {
         let mut writer = writer;
         while let Some(frame) = rx.recv().await {
-            if write_frame(&mut writer, &frame).await.is_err() {
-                break;
+            match tokio::time::timeout(WRITE_TIMEOUT, write_frame(&mut writer, &frame)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) | Err(_) => break,
             }
         }
+        writer_done_signal.notify_one();
     });
 
     tx.send(Frame::Control(ControlMsg::Hello {
@@ -59,16 +68,22 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
         jojod_version: crate::VERSION.to_string(),
     }));
 
-    match read_frame(&mut reader).await {
-        Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. })))
+    match tokio::time::timeout(crate::client::HELLO_TIMEOUT, read_frame(&mut reader)).await {
+        Ok(Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. }))))
             if protocol_version == PROTOCOL_VERSION => {}
-        Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. }))) => {
+        Ok(Ok(Some(Frame::Control(ControlMsg::Hello { protocol_version, .. })))) => {
             tracing::warn!(client, daemon_version = PROTOCOL_VERSION, client_version = protocol_version, "protocol mismatch");
             tx.send(Frame::Control(ControlMsg::Error {
                 request: "Hello".into(),
                 message: format!("protocol mismatch: daemon {PROTOCOL_VERSION}, client {protocol_version}"),
                 session_id: None,
             }));
+            drop(tx);
+            let _ = writer_task.await;
+            return;
+        }
+        Err(_) => {
+            tracing::warn!(client, "client did not say hello");
             drop(tx);
             let _ = writer_task.await;
             return;
@@ -115,7 +130,13 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
     loop {
         tokio::select! {
             read = read_frame(&mut reader) => match read {
-                Ok(Some(frame)) => daemon.handle(client, &tx, frame),
+                Ok(Some(frame)) => {
+                    daemon.handle(client, &tx, frame);
+                    if tx.overflowed() {
+                        tracing::warn!(client, "client stopped reading; closing");
+                        break;
+                    }
+                }
                 Ok(None) => break,
                 Err(e) if jojo_proto::is_bad_payload(&e) => {
                     tx.send(Frame::Control(ControlMsg::Error {
@@ -129,6 +150,7 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
             // Cancelling a partly read frame is safe here: the connection
             // is being closed.
             _ = lagged.notified() => break,
+            _ = writer_done.notified() => break,
         }
     }
 

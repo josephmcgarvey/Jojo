@@ -258,14 +258,20 @@ impl Daemon {
                     drop(store);
                     return Self::error_for(reply, "CloseSession", Some(session_id), "unknown session");
                 }
-                if let Some(s) = sessions.remove(&session_id) {
-                    s.kill();
-                }
+                // Take the session out of the live map instead of killing it
+                // here: `kill()` can block briefly on the OS call that ends
+                // the process, and must not run while either lock is held,
+                // or it would stall every other request this daemon is
+                // handling for that long. `taken` is dropped only after both
+                // locks are released below; `Session::drop` is what actually
+                // calls `kill()`.
+                let taken = sessions.remove(&session_id);
                 drop(sessions);
                 store.data.sessions.retain(|s| s.id != session_id);
                 self.save(&store);
                 self.broadcast(ControlMsg::SessionRemoved { session_id });
                 drop(store);
+                drop(taken);
             }
             ControlMsg::RenameSession { session_id, label } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
