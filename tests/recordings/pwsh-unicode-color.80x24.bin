@@ -1,8 +1,8 @@
-[6n[?9001h[?1004h[m]0;C:\Program Files\PowerShell\7\pwsh.exe[?25hPS C:\Users\mcgst> [?25l[92m$PSStyle[37m.OutputRendering[97m[2m[3m = 'Ansi'[1;44H[?25h[?25l[m[1;18H> [92m$PSStyle[37m.OutputRendering [90m= [36m'Ansi'
-[?25h[mPS C:\Users\mcgst> [?25l[2;18H> [93mWrite-Output [36m'日本語テキスト 🎉 é'[K[m
-        [?25h日本語テキスト 🎉 é
-PS C:\Users\mcgst> [?25l[93mW[97m[2m[3mrite-Output '日本語テキスト 🎉 é'[4;21H[?25h[m[93mWrite-Host [36m'warning' [90m-ForegroundColor [37mYellow [90m-BackgroundColor[m [37mDarkBlu[97m[2m[3me[?25l[m[93m[4;20HWrite-Host [36m'warning' [90m-ForegroundColor [37mYellow [90m-BackgroundColor[m [37mDarkBlue[38;5;11m[48;5;4m
-warning[m
-PS C:\Users\mcgst> [?25h[?25l[7;18H> [93mWrite-Output [37m([36m"`e[44m" [90m+ [37m([36m'x' [90m* [97m200[37m) [90m+ [36m"`e[0m"[37m)[K[m
-[9X[?25h[44mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[m
+[6n[?9001h[?1004h[m]0;C:\Program Files\PowerShell\7\pwsh.exe[?25hPS C:\Users\mcgst> [?25l[93mSet-PSReadLineOption [90m-PredictionSourc[97m[2m[3me None[m[93m[1;20HSet-PSReadLineOption [90m-PredictionSource [37mNone
+[?25h[mPS C:\Users\mcgst> [?25l[2;18H> [93mWrite-Output [36m'日本語テキスト 🎉 é'
+[?25h[m日本語テキスト 🎉 é
+PS C:\Users\mcgst> [?25l[93mWrite-Host [36m'warning' [90m-ForegroundColor [37mYellow [90m-BackgroundColor[m [37mDarkBlue
+[?25h[m[38;5;11m[48;5;4mwarning[m
+PS C:\Users\mcgst> [?25l[93mW[?25h[?25l[m[7;18H> [93mWrite-Output [37m([36m"`e[44m" [90m+ [37m([36m'x' [90m* [97m200[37m) [90m+ [36m"`e[0m"[37m)
+[?25h[m[44mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[m
 PS C:\Users\mcgst> 

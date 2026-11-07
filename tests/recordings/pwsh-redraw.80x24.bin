@@ -1,6 +1,7 @@
-[6n[?9001h[?1004h[m]0;C:\Program Files\PowerShell\7\pwsh.exe[?25hPS C:\Users\mcgst> [?25l[93mW[97m[2m[3mrite-Host 'warning' -ForegroundColor Yellow -BackgroundColor DarkBlue[1;21H[?25h[m[?25l[93mWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa[?25h[m[?25l[93m[1;20HWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [?25h[m[?25l[93m[1;20HWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa                [m                                                                                
-[21X[1;65H[?25h[?25l[93m[1;20HWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  [1;63H[?25h[m[?25l[1;20H[43X[?25h[?25l[93mWrite-Output [37mdone[K[m
-[9X[?25hdone
-PS C:\Users\mcgst> [?25l[93mWrite-Output [37manother_line_to_pad_the_recording_a_bit_more_than_[m[93m[3;20HWrite-Output [37manother_line_to_pad_the_recording_a_bit_more_than_before
-[?25h[manother_line_to_pad_the_recording_a_bit_more_than_before
+[6n[?9001h[?1004h[m]0;C:\Program Files\PowerShell\7\pwsh.exe[?25hPS C:\Users\mcgst> [?25l[93mSet-PSReadLineOption [90m-PredictionSource                       [1;58H[?25h[?25l[m[93m[1;20HSet-PSReadLineOption [90m-PredictionSource [37mNone
+[?25h[mPS C:\Users\mcgst> [?25l[93mW[?25h[m[?25l[93mWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa[?25h[m[?25l[93m[2;20HWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [?25h[?25l[m[93m[2;20HWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa                 [m                                                                                
+[21X[2;64H[?25h[?25l[93m[2;20HWrite-Output [37maaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [?25h[m[?25l[2;20H[43X[?25h[?25l[93mWrite-Output [37mdone
+[?25h[mdone
+PS C:\Users\mcgst> [?25l[93mW[?25h[m[93mWrite-Output [37manother_line_to_pad_the_recording_a_bit_more_than_before
+[manother_line_to_pad_the_recording_a_bit_more_than_before
 PS C:\Users\mcgst> 

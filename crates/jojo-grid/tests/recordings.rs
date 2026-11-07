@@ -20,6 +20,11 @@ fn parse_name(file: &str) -> Option<(String, u16, u16)> {
 fn every_recording_round_trips_and_cross_check_inputs_are_written() {
     let dir = recordings_dir();
     let out = dir.join("out");
+    // Clear stale outputs first: a recording renamed or deleted since the
+    // last run must not leave its old .snap/.txt/.size behind for
+    // tests/xterm-crosscheck to cross-check against a recording that no
+    // longer exists.
+    let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out).unwrap();
     let mut count = 0;
     for entry in std::fs::read_dir(&dir).unwrap() {

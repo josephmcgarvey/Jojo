@@ -71,6 +71,14 @@ fn main() -> anyhow::Result<()> {
     cmd.args(&program[1..]);
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    // Recordings must not depend on the launching tool's color preference:
+    // Claude Code's PowerShell tool (and some CI runners) injects NO_COLOR=1
+    // into every command it runs, and pwsh honors that by selecting
+    // PlainText output rendering instead of the Host rendering (with VT
+    // support) it would otherwise pick under ConPTY. A real Jojo session is
+    // never launched that way, so a recording made under NO_COLOR would not
+    // reflect what the daemon actually sees.
+    cmd.env_remove("NO_COLOR");
     let mut child = pair.slave.spawn_command(cmd)?;
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader()?;
@@ -105,11 +113,16 @@ fn main() -> anyhow::Result<()> {
     let remaining = Duration::from_millis(duration).saturating_sub(start.elapsed());
     std::thread::sleep(remaining);
 
+    // Write what has been captured so far to disk before joining the reader
+    // thread: if the child never closes its end of the pty (so `reader`
+    // never sees EOF) the join below can block indefinitely, and the
+    // capture must already be safely on disk by then rather than lost in
+    // memory while the process hangs.
     let bytes = captured.lock().unwrap().clone();
+    std::fs::write(&out, &bytes)?;
+    println!("wrote {} bytes to {out}", bytes.len());
     let _ = child.kill();
     drop(pair.master);
     let _ = reader_thread.join();
-    std::fs::write(&out, &bytes)?;
-    println!("wrote {} bytes to {out}", bytes.len());
     Ok(())
 }
