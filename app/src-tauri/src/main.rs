@@ -6,7 +6,8 @@ use jojo_app::daemon_manager::DaemonPaths;
 use jojo_app::settings::{self, Settings};
 use std::sync::Arc;
 use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request};
-use tauri::{Manager, State};
+use tauri::webview::NewWindowResponse;
+use tauri::{Manager, State, WebviewWindowBuilder};
 
 #[tauri::command]
 fn subscribe(events: Channel<InvokeResponseBody>, bridge: State<'_, Arc<Bridge>>) {
@@ -33,6 +34,13 @@ fn get_settings() -> Settings {
     settings::load(&settings::default_path())
 }
 
+/// Opens a link clicked in a terminal in the default browser. Only
+/// `http://` and `https://` URLs are accepted (see `jojo_app::links`).
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    jojo_app::links::open_url(&url)
+}
+
 fn main() {
     let bridge = Arc::new(Bridge::default());
     tauri::Builder::default()
@@ -44,8 +52,14 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(bridge.clone())
-        .invoke_handler(tauri::generate_handler![subscribe, send_frame, restart_daemon, get_settings])
+        .invoke_handler(tauri::generate_handler![subscribe, send_frame, restart_daemon, get_settings, open_url])
         .setup(move |app| {
+            // The main window has `"create": false` in tauri.conf.json so it
+            // can be built here with a new-window handler. Every request to
+            // open a new webview window (window.open, target="_blank") is
+            // denied; links leave the app only through the open_url command.
+            let config = app.config().app.windows.iter().find(|w| w.label == "main").ok_or("no main window in tauri.conf.json")?.clone();
+            WebviewWindowBuilder::from_config(app.handle(), &config)?.on_new_window(|_, _| NewWindowResponse::Deny).build()?;
             let source = app.path().resource_dir()?.join("daemon");
             let paths = DaemonPaths::for_app(source);
             tauri::async_runtime::spawn(jojo_app::connection::run(paths, bridge.clone()));

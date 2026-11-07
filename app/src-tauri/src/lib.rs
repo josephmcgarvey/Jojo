@@ -4,4 +4,5 @@
 pub mod bridge;
 pub mod connection;
 pub mod daemon_manager;
+pub mod links;
 pub mod settings;

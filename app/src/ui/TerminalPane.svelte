@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { Terminal, type ITheme } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -31,7 +32,10 @@
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
-    term.loadAddon(new WebLinksAddon());
+    // The addon's default handler calls window.open, which the main webview
+    // denies (see main.rs). The open_url command validates the URL (http and
+    // https only) and opens it in the default browser instead.
+    term.loadAddon(new WebLinksAddon((_event, uri) => void invoke("open_url", { url: uri }).catch(() => {})));
     suppressQueryReplies(term);
     term.open(host);
     let webgl: WebglAddon | undefined;
