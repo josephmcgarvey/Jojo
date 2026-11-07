@@ -2,3 +2,5 @@
 /target/
 *.stackdump
 /resources/conpty/x64/
+/tests/recordings/out/
+/tests/xterm-crosscheck/node_modules/
