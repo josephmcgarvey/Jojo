@@ -55,7 +55,9 @@ async fn add_project(c: &mut Client, dir: &std::path::Path) -> ProjectInfo {
 }
 
 async fn create_shell(c: &mut Client, project: &ProjectInfo) -> SessionInfo {
+    let session_id = jojo_proto::SessionId::new();
     c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id,
         project_id: project.id,
         kind: SessionKind::Shell,
         cols: 80,
@@ -65,7 +67,10 @@ async fn create_shell(c: &mut Client, project: &ProjectInfo) -> SessionInfo {
     .await
     .unwrap();
     match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionCreated { .. }))).await.unwrap() {
-        Frame::Control(ControlMsg::SessionCreated { session }) => session,
+        Frame::Control(ControlMsg::SessionCreated { session }) => {
+            assert_eq!(session.id, session_id, "daemon must use the client-chosen session id");
+            session
+        }
         _ => unreachable!(),
     }
 }
@@ -240,7 +245,9 @@ async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
     let (endpoint, server) = start(dir.path()).await;
     let mut c = Client::connect(&endpoint).await.unwrap();
     let project = add_project(&mut c, dir.path()).await;
+    let requested_id = jojo_proto::SessionId::new();
     c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id: requested_id,
         project_id: project.id,
         kind: SessionKind::Shell,
         cols: 80,
@@ -272,6 +279,7 @@ async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
     }
     let created = created.unwrap();
     let (request, message, session_id) = error.unwrap();
+    assert_eq!(created.id, requested_id, "the echoed session id must equal the requested one");
     assert!(!created.attachable);
     assert_eq!(request, "CreateSession");
     assert_eq!(session_id, Some(created.id));
@@ -360,6 +368,125 @@ async fn live_sessions_are_attachable_and_attach_validates_size() {
         Frame::Control(ControlMsg::Error { request, .. }) => assert_eq!(request, "Attach"),
         _ => unreachable!(),
     }
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn create_session_rejects_a_duplicate_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let id = jojo_proto::SessionId::new();
+
+    c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id: id,
+        project_id: project.id,
+        kind: SessionKind::Shell,
+        cols: 80,
+        rows: 24,
+        shell: Some(test_shell()),
+    }))
+    .await
+    .unwrap();
+    c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionCreated { .. }))).await.unwrap();
+
+    // A second CreateSession with the same client-chosen id, live this time
+    // (not just a row in state.json), must be rejected rather than silently
+    // taking over the running session.
+    c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id: id,
+        project_id: project.id,
+        kind: SessionKind::Shell,
+        cols: 80,
+        rows: 24,
+        shell: Some(test_shell()),
+    }))
+    .await
+    .unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, message, session_id }) => {
+            assert_eq!(request, "CreateSession");
+            assert_eq!(session_id, Some(id));
+            assert!(message.contains("already in use"), "{message}");
+        }
+        _ => unreachable!(),
+    }
+
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn create_session_with_out_of_range_size_reports_the_requested_session_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let id = jojo_proto::SessionId::new();
+
+    c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id: id,
+        project_id: jojo_proto::ProjectId::new(),
+        kind: SessionKind::Shell,
+        cols: 0,
+        rows: 0,
+        shell: Some(test_shell()),
+    }))
+    .await
+    .unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, session_id, .. }) => {
+            assert_eq!(request, "CreateSession");
+            assert_eq!(session_id, Some(id));
+        }
+        _ => unreachable!(),
+    }
+
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn close_session_twice_yields_one_removed_and_one_error() {
+    // F1: the unknown-id check and the removal happen under one `store`
+    // lock acquisition, so closing the same id twice (even back to back,
+    // with no reply awaited in between) must produce exactly one
+    // `SessionRemoved` broadcast and exactly one `Error` reply, never two of
+    // either.
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+
+    c.send(Frame::Control(ControlMsg::CloseSession { session_id: session.id })).await.unwrap();
+    c.send(Frame::Control(ControlMsg::CloseSession { session_id: session.id })).await.unwrap();
+
+    let (mut removed, mut errors) = (0, 0);
+    for _ in 0..2 {
+        match c
+            .recv_until(WAIT, |f| {
+                matches!(f, Frame::Control(ControlMsg::SessionRemoved { .. } | ControlMsg::Error { .. }))
+            })
+            .await
+            .unwrap()
+        {
+            Frame::Control(ControlMsg::SessionRemoved { session_id }) => {
+                assert_eq!(session_id, session.id);
+                removed += 1;
+            }
+            Frame::Control(ControlMsg::Error { request, session_id, .. }) => {
+                assert_eq!(request, "CloseSession");
+                assert_eq!(session_id, Some(session.id));
+                errors += 1;
+            }
+            _ => unreachable!(),
+        }
+    }
+    assert_eq!(removed, 1, "expected exactly one SessionRemoved");
+    assert_eq!(errors, 1, "expected exactly one Error for the second close");
+
     c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
 }

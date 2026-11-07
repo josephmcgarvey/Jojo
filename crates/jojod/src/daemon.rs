@@ -24,6 +24,18 @@ pub struct DaemonConfig {
 
 pub type Reply = crate::client_queue::ClientTx;
 
+/// The fields of `ControlMsg::CreateSession`, bundled so `create_session`
+/// takes one argument for them instead of five (clippy's
+/// `too_many_arguments`).
+struct NewSession<'a> {
+    id: SessionId,
+    project_id: ProjectId,
+    kind: SessionKind,
+    cols: u16,
+    rows: u16,
+    shell: Option<&'a str>,
+}
+
 pub struct Daemon {
     pub cfg: DaemonConfig,
     store: Mutex<Store>,
@@ -136,8 +148,11 @@ impl Daemon {
                 let project = ProjectInfo { id: ProjectId::new(), path, name };
                 store.data.projects.push(project.clone());
                 self.save(&store);
-                drop(store);
+                // Broadcast while still holding `store` (tokio's
+                // broadcast::Sender::send does not block), so broadcast order
+                // always matches the order of store changes.
                 self.broadcast(ControlMsg::ProjectAdded { project });
+                drop(store);
             }
             ControlMsg::RemoveProject { id } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
@@ -158,11 +173,12 @@ impl Daemon {
                 store.data.projects.retain(|p| p.id != id);
                 store.data.sessions.retain(|s| s.project_id != id);
                 self.save(&store);
-                drop(store);
                 // Lock order: store, then sessions. The removed session rows
                 // have already exited (checked above), so dropping their
                 // `Session` objects here only cleans up state the process
-                // itself no longer needs.
+                // itself no longer needs. Both kinds of broadcast happen
+                // below while `store` is still held, so their order always
+                // matches the order of the store changes above.
                 {
                     let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
                     for session_id in &removed_sessions {
@@ -173,6 +189,7 @@ impl Daemon {
                     self.broadcast(ControlMsg::SessionRemoved { session_id });
                 }
                 self.broadcast(ControlMsg::ProjectRemoved { id });
+                drop(store);
             }
             ControlMsg::ListDir { path } => match list_dirs(&path) {
                 Ok(entries) => {
@@ -184,11 +201,14 @@ impl Daemon {
                 let sessions = self.session_infos();
                 let _ = reply.send(Frame::Control(ControlMsg::Sessions { sessions }));
             }
-            ControlMsg::CreateSession { project_id, kind, cols, rows, shell } => {
+            ControlMsg::CreateSession { session_id, project_id, kind, cols, rows, shell } => {
                 if !size_in_range(cols, rows) {
-                    return Self::error(reply, "CreateSession", size_error_message(cols, rows));
+                    return Self::error_for(reply, "CreateSession", Some(session_id), size_error_message(cols, rows));
                 }
-                self.create_session(reply, project_id, kind, cols, rows, shell.as_deref())
+                self.create_session(
+                    reply,
+                    NewSession { id: session_id, project_id, kind, cols, rows, shell: shell.as_deref() },
+                )
             }
             ControlMsg::Attach { session_id, cols, rows } => {
                 if !size_in_range(cols, rows) {
@@ -211,7 +231,7 @@ impl Daemon {
             }
             ControlMsg::Resize { session_id, cols, rows } => {
                 if !size_in_range(cols, rows) {
-                    return Self::error(reply, "Resize", size_error_message(cols, rows));
+                    return Self::error_for(reply, "Resize", Some(session_id), size_error_message(cols, rows));
                 }
                 if let Some(s) = self.session(session_id) {
                     s.resize(cols, rows);
@@ -223,56 +243,50 @@ impl Daemon {
                 }
             }
             ControlMsg::CloseSession { session_id } => {
-                let in_store =
-                    self.store.lock().unwrap_or_else(PoisonError::into_inner).data.sessions.iter().any(|s| s.id == session_id);
-                let in_live = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&session_id);
+                // The unknown-id check and the removal happen under one
+                // `store` lock acquisition (lock order: store, then
+                // sessions), so two concurrent `CloseSession` calls for the
+                // same id cannot both see it present and both broadcast
+                // `SessionRemoved`: the second to acquire `store` finds the
+                // row already gone and reports "unknown session" instead.
+                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                let in_store = store.data.sessions.iter().any(|s| s.id == session_id);
+                let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+                let in_live = sessions.contains_key(&session_id);
                 if !in_store && !in_live {
+                    drop(sessions);
+                    drop(store);
                     return Self::error_for(reply, "CloseSession", Some(session_id), "unknown session");
                 }
-                if let Some(s) = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).remove(&session_id) {
+                if let Some(s) = sessions.remove(&session_id) {
                     s.kill();
                 }
-                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                drop(sessions);
                 store.data.sessions.retain(|s| s.id != session_id);
                 self.save(&store);
-                drop(store);
                 self.broadcast(ControlMsg::SessionRemoved { session_id });
+                drop(store);
             }
             ControlMsg::RenameSession { session_id, label } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 let Some(info) = store.session_mut(session_id) else {
-                    return Self::error(reply, "RenameSession", "unknown session");
+                    return Self::error_for(reply, "RenameSession", Some(session_id), "unknown session");
                 };
                 info.label = label;
                 let mut session = info.clone();
                 session.attachable = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&session_id);
                 self.save(&store);
-                drop(store);
                 self.broadcast(ControlMsg::SessionUpdated { session });
+                drop(store);
             }
             ControlMsg::Shutdown => self.shutdown.notify_one(),
             other => Self::error(reply, &variant_name(&other), "not a client request"),
         }
     }
 
-    fn create_session(
-        self: &Arc<Self>,
-        reply: &Reply,
-        project_id: ProjectId,
-        kind: SessionKind,
-        cols: u16,
-        rows: u16,
-        shell: Option<&str>,
-    ) {
-        let project = {
-            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
-            store.data.projects.iter().find(|p| p.id == project_id).cloned()
-        };
-        let Some(project) = project else {
-            return Self::error(reply, "CreateSession", "unknown project");
-        };
+    fn create_session(self: &Arc<Self>, reply: &Reply, req: NewSession<'_>) {
+        let NewSession { id, project_id, kind, cols, rows, shell } = req;
         let (program, args) = command_for(kind, shell);
-        let id = SessionId::new();
         let now = now_ms();
         let info = SessionInfo {
             id,
@@ -288,11 +302,26 @@ impl Daemon {
             claude_session_id: None,
             attachable: false,
         };
-        // Hold the store lock across spawn and the SessionCreated broadcast.
-        // `on_session_exit` also takes the store lock, so even a program that
-        // exits immediately cannot have its SessionExited broadcast before
-        // SessionCreated. Lock order: store, then sessions.
+        // Hold the store lock across the duplicate-id check, the project
+        // lookup, spawn, and the SessionCreated broadcast. Checking the
+        // live map too (lock order: store, then sessions) means a session
+        // id that is still attached from a previous daemon instance (not
+        // yet in `store` because the row was removed, but still running)
+        // is also rejected. `on_session_exit` also takes the store lock, so
+        // even a program that exits immediately cannot have its
+        // SessionExited broadcast before SessionCreated. The project lookup
+        // happens inside this same acquisition (not a separate earlier
+        // one), so a concurrent RemoveProject cannot remove the project
+        // between the lookup and the session row being inserted.
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        if store.data.sessions.iter().any(|s| s.id == id)
+            || self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&id)
+        {
+            return Self::error_for(reply, "CreateSession", Some(id), "session id already in use");
+        }
+        let Some(project) = store.data.projects.iter().find(|p| p.id == project_id).cloned() else {
+            return Self::error_for(reply, "CreateSession", Some(id), "unknown project");
+        };
         store.data.sessions.push(info.clone());
         let spec = SpawnSpec {
             program: program.clone(),

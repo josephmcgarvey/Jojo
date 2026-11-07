@@ -141,7 +141,7 @@ impl Session {
             .with_context(|| format!("start {}", spec.program))?;
         drop(pair.slave);
 
-        let killer = child.clone_killer();
+        let mut killer = child.clone_killer();
 
         // `child` must not be moved into this closure: if any `?` inside it
         // fails after `spawn_command` has already started the process
@@ -232,7 +232,15 @@ impl Session {
         {
             let master = master.clone();
             let exited = exited.clone();
-            thread::Builder::new().name(format!("pty-wait-{id}")).spawn(move || {
+            // `child` (and so the only handle able to reap the process) is
+            // moved into this closure. If spawning the thread itself fails,
+            // the closure is dropped unrun and `child` goes with it, without
+            // ever being waited on or killed: the process would otherwise
+            // keep running with nothing left in `Session` able to stop it.
+            // `killer` was cloned from `child` earlier and is still owned
+            // here (not yet moved into the `Session` being built), so it is
+            // used to kill the process before returning the error.
+            if let Err(e) = thread::Builder::new().name(format!("pty-wait-{id}")).spawn(move || {
                 let code = child.wait().ok().map(|status| status.exit_code() as i32);
                 // Set before anything else below: see `Session::exited`'s
                 // doc comment for why `kill()` must stop calling the killer
@@ -257,7 +265,10 @@ impl Session {
                 // the alternative is a `SessionExited` that never arrives.
                 let _ = reader_done_rx.recv_timeout(READER_DRAIN_TIMEOUT);
                 on_exit(code);
-            })?;
+            }) {
+                let _ = killer.kill();
+                return Err(e.into());
+            }
         }
 
         Ok(Arc::new(Session { id, shared, input_tx, master, killer: Mutex::new(killer), exited }))
@@ -568,20 +579,48 @@ mod tests {
         session.kill();
     }
 
+    /// The flood writes a sentinel line after its loop, and this test polls
+    /// `session.visible_text()` (fed by the reader thread regardless of
+    /// whether any subscriber is still attached) for that sentinel instead
+    /// of sleeping a fixed duration, so the test does not depend on the
+    /// flood actually finishing within an arbitrary wall-clock guess: a
+    /// loaded CI runner or a slow shell start can make 3000 lines take
+    /// longer than a fixed sleep would allow, which is what made the
+    /// previous 3-second-sleep version of this test flaky in a full
+    /// workspace run.
     #[test]
     fn a_client_that_falls_behind_is_detached_with_an_error() {
         let session = Session::spawn(SessionId::new(), test_spec(), |_| {}).unwrap();
         let (tx, mut rx) = crate::client_queue::client_queue(4096);
         session.attach(1, tx, 80, 24);
         #[cfg(windows)]
-        session.write(b"for /L %i in (1,1,3000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r".to_vec());
+        session.write(
+            b"for /L %i in (1,1,3000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\necho jojo-flood-done\r"
+                .to_vec(),
+        );
         #[cfg(unix)]
-        session.write(b"i=0; while [ $i -lt 3000 ]; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; i=$((i+1)); done\n".to_vec());
-        // Do not read until the session has produced far more than 4 KiB.
-        std::thread::sleep(Duration::from_secs(3));
+        session.write(
+            b"i=0; while [ $i -lt 3000 ]; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; i=$((i+1)); done; echo jojo-flood-done\n"
+                .to_vec(),
+        );
+
+        // Do not read from `rx` while the flood is in flight, so the
+        // client's 4 KiB queue fills and the session detaches it. The grid
+        // is fed unconditionally by the reader thread regardless of
+        // subscriber state, so polling it here does not race the detach.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !has_line_text(&session.visible_text(), "jojo-flood-done") {
+            assert!(
+                Instant::now() < deadline,
+                "flood did not complete within 60s; screen:\n{}",
+                session.visible_text()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
         let mut saw_error = false;
         let mut output_after_error = false;
-        while let Some(frame) = recv_blocking(&mut rx, Duration::from_millis(500)) {
+        while let Some(frame) = rx.try_recv() {
             match frame {
                 Frame::Control(jojo_proto::ControlMsg::Error { request, .. }) if request == "Output" => saw_error = true,
                 Frame::Output { .. } if saw_error => output_after_error = true,

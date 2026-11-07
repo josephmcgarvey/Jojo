@@ -144,6 +144,7 @@ mod tests {
     #[tokio::test]
     async fn control_frame_roundtrips() {
         let msg = ControlMsg::CreateSession {
+            session_id: SessionId::new(),
             project_id: ProjectId::new(),
             kind: SessionKind::Claude,
             cols: 120,

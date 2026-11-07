@@ -10,6 +10,16 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 /// the newest 7. Keep the returned guard alive for the life of the process;
 /// dropping it flushes and stops the background writer.
 pub fn init(log_dir: &Path) -> anyhow::Result<WorkerGuard> {
+    // On Unix, `log_dir` is `<state_dir>/logs`; create the state directory
+    // itself (its parent) with mode 0700 before `logs/` goes into it, so a
+    // daemon whose state directory did not already exist never has a window
+    // where it is world- or group-readable. On Windows, ACLs on the pipe
+    // (see `pipe_security.rs`) are the access-control mechanism instead, so
+    // this is a no-op there.
+    #[cfg(unix)]
+    if let Some(state_dir) = log_dir.parent() {
+        create_private_dir(state_dir)?;
+    }
     std::fs::create_dir_all(log_dir)?;
     let appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
@@ -27,4 +37,50 @@ pub fn init(log_dir: &Path) -> anyhow::Result<WorkerGuard> {
         .try_init()
         .map_err(|e| anyhow::anyhow!("install log subscriber: {e}"))?;
     Ok(guard)
+}
+
+/// Creates `dir` (and any missing parents) with mode 0700, and forces that
+/// mode even when `dir` already existed with something looser: `DirBuilder`
+/// only applies `mode` to a directory it actually creates, so a directory
+/// created earlier by different code (or a different umask) would otherwise
+/// keep whatever permissions it already had.
+#[cfg(unix)]
+fn create_private_dir(dir: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+// `init` itself is not unit-tested: it calls `tracing_subscriber::fmt()...
+// try_init()`, which installs a process-global subscriber and errors if one
+// is already installed, so a second test in the same process would fail
+// regardless of this change. `create_private_dir` carries the behavior this
+// fix adds, so it is tested directly here instead.
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    fn mode_of(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn creates_a_missing_directory_as_0700() {
+        let base = tempfile::tempdir().unwrap();
+        let state_dir = base.path().join("state");
+        create_private_dir(&state_dir).unwrap();
+        assert_eq!(mode_of(&state_dir), 0o700);
+    }
+
+    #[test]
+    fn tightens_an_existing_looser_directory_to_0700() {
+        let base = tempfile::tempdir().unwrap();
+        let state_dir = base.path().join("state");
+        std::fs::DirBuilder::new().mode(0o755).create(&state_dir).unwrap();
+        assert_eq!(mode_of(&state_dir), 0o755);
+        create_private_dir(&state_dir).unwrap();
+        assert_eq!(mode_of(&state_dir), 0o700);
+    }
 }
