@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use ts_rs::TS;
 use ulid::Ulid;
 
 /// Identifies one terminal session. Serialized as a ULID string in JSON and
 /// as 16 raw bytes in data frames.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(transparent)]
-pub struct SessionId(pub Ulid);
+pub struct SessionId(#[ts(as = "String")] pub Ulid);
 
 impl SessionId {
     pub fn new() -> Self {
@@ -35,9 +36,9 @@ impl fmt::Display for SessionId {
 }
 
 /// Identifies one project. Unique only within one daemon.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(transparent)]
-pub struct ProjectId(pub Ulid);
+pub struct ProjectId(#[ts(as = "String")] pub Ulid);
 
 impl ProjectId {
     pub fn new() -> Self {

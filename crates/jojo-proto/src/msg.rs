@@ -1,7 +1,8 @@
 use crate::{ProjectId, SessionId};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionKind {
     Claude,
@@ -10,7 +11,7 @@ pub enum SessionKind {
 
 /// Session state shown as a badge (spec section 7.2). `Running` is used for
 /// shell sessions, which have no hook-driven states.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentState {
     Starting,
@@ -23,7 +24,7 @@ pub enum AgentState {
     Exited,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ProjectInfo {
     pub id: ProjectId,
     /// Absolute path on the daemon's machine.
@@ -31,7 +32,7 @@ pub struct ProjectInfo {
     pub name: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct SessionInfo {
     pub id: SessionId,
     pub project_id: ProjectId,
@@ -40,9 +41,11 @@ pub struct SessionInfo {
     pub args: Vec<String>,
     pub label: String,
     /// Unix time in milliseconds.
+    #[ts(type = "number")]
     pub created_at: u64,
     pub state: AgentState,
     /// Unix time in milliseconds.
+    #[ts(type = "number")]
     pub state_changed_at: u64,
     pub exit_code: Option<i32>,
     pub claude_session_id: Option<String>,
@@ -55,7 +58,7 @@ pub struct SessionInfo {
 
 /// Every control message. Serialized as JSON with a `type` tag naming the
 /// variant, for example `{"type":"ListSessions"}`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type")]
 pub enum ControlMsg {
     Hello { protocol_version: u32, jojod_version: String },
