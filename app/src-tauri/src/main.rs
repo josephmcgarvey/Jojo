@@ -83,7 +83,12 @@ fn main() {
             // open a new webview window (window.open, target="_blank") is
             // denied; links leave the app only through the open_url command.
             let config = app.config().app.windows.iter().find(|w| w.label == "main").ok_or("no main window in tauri.conf.json")?.clone();
-            WebviewWindowBuilder::from_config(app.handle(), &config)?.on_new_window(|_, _| NewWindowResponse::Deny).build()?;
+            // enable_clipboard_access makes wry allow WebView2's clipboard-read
+            // permission, which navigator.clipboard.readText (Paste) needs.
+            WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .on_new_window(|_, _| NewWindowResponse::Deny)
+                .enable_clipboard_access()
+                .build()?;
             let source = app.path().resource_dir()?.join("daemon");
             let paths = DaemonPaths::for_app(source);
             tauri::async_runtime::spawn(jojo_app::connection::run(paths, bridge.clone()));

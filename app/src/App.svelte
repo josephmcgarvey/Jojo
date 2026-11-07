@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import neonGlass from "./themes/neon-glass.json";
-  import { app, currentTab, startApp } from "./lib/state/app.svelte";
+  import { app, currentTab, focusedSessionId, startApp } from "./lib/state/app.svelte";
+  import { closeMenu, ui } from "./lib/state/ui.svelte";
+  import { terminalControls } from "./lib/terminal/registry";
   import { applyTheme, type Theme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
+  import ContextMenu from "./ui/ContextMenu.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
@@ -16,6 +19,12 @@
     return startApp();
   });
   const tab = $derived(currentTab());
+
+  /** Closing a menu returns keyboard focus to the focused pane's terminal. */
+  function closeMenuAndRefocus(): void {
+    closeMenu();
+    terminalControls(focusedSessionId())?.focus();
+  }
 </script>
 
 <div class="window">
@@ -36,6 +45,11 @@
   </section>
 </div>
 <ConfirmDialog />
+{#if ui.menu}
+  {#key ui.menu}
+    <ContextMenu entries={ui.menu.entries} x={ui.menu.x} y={ui.menu.y} onclose={closeMenuAndRefocus} />
+  {/key}
+{/if}
 
 <style>
   .window {

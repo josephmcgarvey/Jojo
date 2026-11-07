@@ -9,6 +9,7 @@
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app } from "../lib/state/app.svelte";
   import { noScreenMessage } from "../lib/terminal/pane";
+  import { contextMenuTarget } from "../lib/input/mouse";
   import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
   import { registerTerminal } from "../lib/terminal/registry";
@@ -16,7 +17,12 @@
   import { clampSize } from "../lib/terminal/size";
   import { sendControl, sendInput } from "../lib/wire/bridge";
 
-  let { session, terminalTheme, focused }: { session: SessionInfo; terminalTheme: ITheme; focused: boolean } = $props();
+  let {
+    session,
+    terminalTheme,
+    focused,
+    onmenu,
+  }: { session: SessionInfo; terminalTheme: ITheme; focused: boolean; onmenu: (x: number, y: number) => void } = $props();
   let host: HTMLDivElement;
   /** Set in onMount and cleared on unmount; read by the focus effect below. */
   let term: Terminal | undefined;
@@ -44,6 +50,17 @@
     created.loadAddon(new WebLinksAddon((_event, uri) => void invoke("open_url", { url: uri }).catch(() => {})));
     suppressQueryReplies(created);
     created.open(host);
+    // Spec 9.4 mouse reporting rule. This listener runs in the capture phase
+    // on the host, before xterm.js's handlers on its child elements. The
+    // browser's own context menu is always suppressed. When the program has
+    // mouse reporting on and Shift is not held, xterm.js has already
+    // reported the right-button press to the program and nothing else
+    // happens here.
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (contextMenuTarget(event.shiftKey, created.modes.mouseTrackingMode) === "jojo") onmenu(event.clientX, event.clientY);
+    };
+    host.addEventListener("contextmenu", onContextMenu, true);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
@@ -115,6 +132,7 @@
     observer.observe(host);
 
     return () => {
+      host.removeEventListener("contextmenu", onContextMenu, true);
       observer.disconnect();
       clearTimeout(timer);
       unregister();

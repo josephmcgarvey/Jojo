@@ -1,14 +1,26 @@
 <script lang="ts">
-  import { addProject, app, focusPane, focusedSessionId, newSession, selectProject } from "../lib/state/app.svelte";
+  import { addProject, app, focusPane, focusedSessionId, newSession, renameSession, selectProject } from "../lib/state/app.svelte";
+  import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
+  import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
   import Badge from "./Badge.svelte";
+  import RenameField from "./RenameField.svelte";
 
   let menuFor = $state<string | null>(null);
   const projects = $derived(sortedProjects(app.model));
 
   function isInsideOpenMenu(target: EventTarget | null): boolean {
     return target instanceof Element && target.closest(`[data-session-menu="${menuFor}"]`) !== null;
+  }
+
+  function isRenaming(sessionId: string): boolean {
+    return ui.renaming?.kind === "session" && ui.renaming.where === "sidebar" && ui.renaming.sessionId === sessionId;
+  }
+
+  function onSessionMenu(event: MouseEvent, sessionId: string): void {
+    event.preventDefault();
+    openMenu(event.clientX, event.clientY, sessionMenu(sessionId));
   }
 
   // The Claude/Shell menu is a single piece of state (menuFor), so only one
@@ -61,11 +73,32 @@
       </div>
     {/if}
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
-      <button class="session" class:active={focusedSessionId() === session.id} onclick={() => focusPane(session.id)}>
-        <Badge agentState={session.state} />
-        <span class="label">{session.label}</span>
-        <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
-      </button>
+      {#if isRenaming(session.id)}
+        <div class="session renaming">
+          <Badge agentState={session.state} />
+          <RenameField
+            value={session.label}
+            label="Session name"
+            onCommit={(value) => {
+              endRename();
+              renameSession(session.id, value);
+            }}
+            onCancel={endRename}
+          />
+        </div>
+      {:else}
+        <button
+          class="session"
+          class:active={focusedSessionId() === session.id}
+          onclick={() => focusPane(session.id)}
+          ondblclick={() => beginRename({ kind: "session", sessionId: session.id, where: "sidebar" })}
+          oncontextmenu={(e) => onSessionMenu(e, session.id)}
+        >
+          <Badge agentState={session.state} />
+          <span class="label">{session.label}</span>
+          <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
+        </button>
+      {/if}
     {/each}
   {/each}
 </aside>
