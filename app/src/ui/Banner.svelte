@@ -10,7 +10,7 @@
   <div class="banner">
     {banner.text}
     {#if banner.action}
-      <button class="action" onclick={restartDaemon}>{banner.action}</button>
+      <button class="action" onclick={() => restartDaemon()}>{banner.action}</button>
     {/if}
   </div>
 {/if}

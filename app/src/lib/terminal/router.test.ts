@@ -13,6 +13,8 @@ describe("router", () => {
     expect(pane.reattach).toHaveBeenLastCalledWith(false);
     router.reattachAll();
     expect(pane.reattach).toHaveBeenLastCalledWith(true);
+    router.reattachAll((id) => id === "OTHER");
+    expect(pane.reattach).toHaveBeenCalledTimes(2);
     router.attachFailed("S1");
     expect(pane.attachFailed).toHaveBeenCalledTimes(1);
     unregister();

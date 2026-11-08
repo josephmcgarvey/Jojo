@@ -5,12 +5,15 @@
   import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
   import { shellChoices } from "../lib/state/shells";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
+  import { emptyModel } from "../lib/state/reducer";
+  import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
   import RenameField from "./RenameField.svelte";
 
   let menuFor = $state<string | null>(null);
-  const projects = $derived(sortedProjects(app.model));
+  /** A machine's projects, sorted by name; empty until its first Projects reply. */
+  const projectsOf = (machineId: string) => sortedProjects(app.models[machineId] ?? emptyModel());
   const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
 
   function isInsideOpenMenu(target: EventTarget | null): boolean {
@@ -53,12 +56,18 @@
 
 <aside class="side">
   <div class="brand" data-tauri-drag-region>jojo</div>
-  <div class="machine">
-    <span class="dot" class:ok={app.status.state === "connected"}></span>
-    <span class="grow">This PC</span>
-    <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}>+</button>
+  {#each app.machines as machine (machine.id)}
+  {@const status = app.statuses[machine.id]}
+  {@const statusText = machineStatusText(machine, status)}
+  <div class="machine-group" class:offline={status?.state !== "connected"}>
+  <div class="machine" title={statusText ?? machine.label}>
+    <span class="dot" class:ok={status?.state === "connected"}></span>
+    <span class="grow">{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</span>
+    {#if machine.kind === "local"}
+      <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}>+</button>
+    {/if}
   </div>
-  {#each projects as project (project.id)}
+  {#each projectsOf(machine.id) as project (project.id)}
     <div class="project" class:selected={app.selectedProjectId === project.id}>
       <button class="name" onclick={() => selectProject(project.id)}>{project.name}</button>
       <button
@@ -108,6 +117,8 @@
       {/if}
     {/each}
   {/each}
+  </div>
+  {/each}
 </aside>
 
 <style>
@@ -139,6 +150,15 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--jojo-muted);
+  }
+  /* Spec 8.3 rule 1: a machine that is not connected keeps its sessions
+     and their last badges, dimmed. */
+  .machine-group.offline {
+    opacity: 0.55;
+  }
+  .state {
+    text-transform: none;
+    letter-spacing: 0;
   }
   .dot {
     width: 6px;

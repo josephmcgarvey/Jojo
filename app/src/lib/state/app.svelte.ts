@@ -8,13 +8,14 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { tick } from "svelte";
 import type { ConnectionStatus } from "../backend/ConnectionStatus";
 import type { LayoutFile } from "../backend/LayoutFile";
+import type { Machine } from "../backend/Machine";
 import type { ProjectLayout } from "../backend/ProjectLayout";
 import type { Settings } from "../backend/Settings";
 import type { ShellOption } from "../backend/ShellOption";
 import type { TabLayout } from "../backend/TabLayout";
 import { errorText } from "../errors";
 import { focusNeighbor, layoutRects, type FocusDirection } from "../layout/geometry";
-import { reconcileAll } from "../layout/reconcile";
+import { reconcileMachine } from "../layout/reconcile";
 import * as tabs from "../layout/tabs";
 import { isFull, paneIds, type LayoutNode, type LayoutPreset, type SplitDirection } from "../layout/tree";
 import type { ControlMsg } from "../protocol/ControlMsg";
@@ -52,8 +53,18 @@ import {
 } from "./workspace";
 
 export const app = $state({
+  /** Every machine's projects and sessions merged (ids are ULIDs, unique across machines). */
   model: emptyModel() as Model,
+  /** Each machine's own model, as its daemon reported it. */
+  models: {} as Record<string, Model>,
+  /** This PC's connection status (the banner). */
   status: { state: "starting" } as ConnectionStatus,
+  /** Every machine's connection status. */
+  statuses: {} as Record<string, ConnectionStatus>,
+  /** machines.toml, This PC first. */
+  machines: [] as Machine[],
+  /** Machines whose first Projects and Sessions replies have arrived. */
+  loaded: {} as Record<string, { projects: boolean; sessions: boolean }>,
   /** True once any connection to jojod has succeeded in this app run. */
   everConnected: false,
   settings: null as Settings | null,
@@ -71,6 +82,43 @@ export const app = $state({
   /** Whether the Jojo window is the foreground window (spec 7.3 rule 2, 7.4 rule 1). */
   windowFocused: typeof document === "undefined" ? true : document.hasFocus(),
 });
+
+/** Which machine each project and session is on, rebuilt with `app.model`. */
+let projectMachines: Record<string, string> = {};
+let sessionMachines: Record<string, string> = {};
+
+/** The machine a project is on (This PC when unknown). */
+export function machineOfProject(projectId: string): string {
+  return projectMachines[projectId] ?? LOCAL_MACHINE;
+}
+
+/** The machine a session is on (This PC when unknown). */
+export function machineOfSession(sessionId: string): string {
+  return sessionMachines[sessionId] ?? LOCAL_MACHINE;
+}
+
+/** True when `machine` is connected; input and requests to it are possible. */
+export function machineConnected(machine: string): boolean {
+  return app.statuses[machine]?.state === "connected";
+}
+
+/** Rebuilds the merged model and the machine lookups after a machine's model changed. */
+function mergeModels(): void {
+  const merged = emptyModel();
+  const projects: Record<string, string> = {};
+  const sessions: Record<string, string> = {};
+  for (const [machine, model] of Object.entries(app.models)) {
+    Object.assign(merged.projects, model.projects);
+    Object.assign(merged.sessions, model.sessions);
+    for (const id of Object.keys(model.projects)) projects[id] = machine;
+    for (const id of Object.keys(model.sessions)) sessions[id] = machine;
+    // The banner shows one error: This PC's, or else a remote machine's.
+    if (model.lastError && (machine === LOCAL_MACHINE || !merged.lastError)) merged.lastError = model.lastError;
+  }
+  projectMachines = projects;
+  sessionMachines = sessions;
+  app.model = merged;
+}
 
 /** Unix ms of each session's last toast (spec 7.4 rule 4). Not rendered, so not reactive. */
 const lastToastAt = new Map<string, number>();
@@ -98,6 +146,13 @@ function commit(next: Workspace): void {
 }
 
 export function startApp(): () => void {
+  void invoke<Machine[]>("list_machines")
+    .then((machines) => {
+      app.machines = machines;
+    })
+    .catch(() => {
+      app.machines = [{ id: LOCAL_MACHINE, label: "This PC", kind: "local", ssh_host: null, enabled: true }];
+    });
   void invoke<ShellOption[]>("available_shells")
     .then((shells) => {
       app.shells = shells;
@@ -156,19 +211,18 @@ async function loadLayout(): Promise<void> {
 function connect(): void {
   void subscribe({
     onStatus(machine, status) {
-      // Remote machines arrive with Plan 5's per-machine models (Task 5).
-      if (machine !== LOCAL_MACHINE) return;
-      app.status = status;
+      app.statuses[machine] = status;
+      if (machine === LOCAL_MACHINE) app.status = status;
       if (status.state === "connected") {
-        app.everConnected = true;
-        app.model = clearConnectionErrors(app.model);
-        void sendControl({ type: "ListProjects" }).catch(() => {});
-        void sendControl({ type: "ListSessions" }).catch(() => {});
+        if (machine === LOCAL_MACHINE) app.everConnected = true;
+        app.models[machine] = clearConnectionErrors(app.models[machine] ?? emptyModel());
+        mergeModels();
+        void sendControl({ type: "ListProjects" }, machine).catch(() => {});
+        void sendControl({ type: "ListSessions" }, machine).catch(() => {});
       }
     },
     onFrame(machine, frame) {
-      if (machine !== LOCAL_MACHINE) return;
-      if (frame.kind === "control") handleControl(frame.msg);
+      if (frame.kind === "control") handleControl(machine, frame.msg);
       else router.deliver(frame);
     },
   }).catch((err: unknown) => {
@@ -179,15 +233,26 @@ function connect(): void {
   });
 }
 
-function reconcile(): void {
-  // reconcileAll drops the layout of every project missing from the model,
-  // so it must not run before the first Projects reply: ListProjects and
-  // ListSessions are separate IPC calls, and Sessions can arrive first.
-  if (!app.layoutLoaded || !app.projectsLoaded || !app.sessionsLoaded) return;
-  commit({ ...app.workspace, layout: reconcileAll(app.workspace.layout, app.model, newUlid) });
+function reconcile(machine: string): void {
+  // reconcileMachine drops the layout of every project of `machine` missing
+  // from its model, so it must not run before that machine's first Projects
+  // reply: ListProjects and ListSessions are separate IPC calls, and
+  // Sessions can arrive first.
+  const loaded = app.loaded[machine];
+  if (!app.layoutLoaded || !loaded?.projects || !loaded.sessions) return;
+  const model = app.models[machine] ?? emptyModel();
+  commit({ ...app.workspace, layout: reconcileMachine(app.workspace.layout, machine, model, newUlid) });
 }
 
-function handleControl(msg: ControlMsg): void {
+function markLoaded(machine: string, part: "projects" | "sessions"): void {
+  app.loaded[machine] = { ...(app.loaded[machine] ?? { projects: false, sessions: false }), [part]: true };
+  if (machine === LOCAL_MACHINE) {
+    if (part === "projects") app.projectsLoaded = true;
+    else app.sessionsLoaded = true;
+  }
+}
+
+function handleControl(machine: string, msg: ControlMsg): void {
   if (msg.type === "Error" && msg.request === "Output") {
     router.fellBehind(msg.session_id);
     return;
@@ -198,23 +263,24 @@ function handleControl(msg: ControlMsg): void {
   }
 
   const previousState = msg.type === "SessionUpdated" ? app.model.sessions[msg.session.id]?.state : undefined;
-  app.model = applyControl(app.model, msg);
+  app.models[machine] = applyControl(app.models[machine] ?? emptyModel(), msg);
+  mergeModels();
   if (msg.type === "SessionUpdated") maybeToast(previousState, msg.session);
 
   switch (msg.type) {
     case "Sessions":
-      app.sessionsLoaded = true;
-      reconcile();
+      markLoaded(machine, "sessions");
+      reconcile(machine);
       break;
     case "Projects":
-      app.projectsLoaded = true;
-      reconcile();
+      markLoaded(machine, "projects");
+      reconcile(machine);
       break;
     case "ProjectRemoved":
-      reconcile();
+      reconcile(machine);
       break;
     case "SessionCreated": {
-      const result = sessionCreated(app.workspace, msg.session, newUlid);
+      const result = sessionCreated(app.workspace, msg.session, newUlid, machine);
       commit(result.workspace);
       if (result.requested) app.selectedProjectId = msg.session.project_id;
       if (result.closeSessionId) sendClose(result.closeSessionId);
@@ -240,7 +306,7 @@ function handleControl(msg: ControlMsg): void {
   // Sessions carries every session's current attachable value; reattach only
   // once it has been applied, so a reconnect does not race an Attach against
   // stale attachable state from before the daemon restarted.
-  if (msg.type === "Sessions") router.reattachAll();
+  if (msg.type === "Sessions") router.reattachAll((sessionId) => machineOfSession(sessionId) === machine);
 }
 
 /** Spec 7.4: shows a toast when a session newly needs attention and the user is not looking at it. */
@@ -270,11 +336,11 @@ function maybeToast(previous: SessionInfo["state"] | undefined, session: Session
 export function markFocusedSessionSeen(): void {
   const id = focusedSessionId();
   if (!id || !app.windowFocused || app.model.sessions[id]?.state !== "done") return;
-  void sendControl({ type: "MarkSeen", session_id: id }).catch(() => {});
+  void sendControl({ type: "MarkSeen", session_id: id }, machineOfSession(id)).catch(() => {});
 }
 
 export function projectLayout(projectId: string): ProjectLayout {
-  return projectOf(app.workspace.layout, projectId);
+  return projectOf(app.workspace.layout, projectId, machineOfProject(projectId));
 }
 
 export function currentProjectLayout(): ProjectLayout | null {
@@ -292,7 +358,7 @@ export function focusedSessionId(): string | null {
 
 /** Applies a tab operation to one project; false when the operation was refused (returned null). */
 function updateProject(projectId: string, update: (project: ProjectLayout) => ProjectLayout | null): boolean {
-  const layout = withProject(app.workspace.layout, projectId, update);
+  const layout = withProject(app.workspace.layout, projectId, update, machineOfProject(projectId));
   if (!layout) return false;
   if (layout !== app.workspace.layout) commit({ ...app.workspace, layout });
   return true;
@@ -358,7 +424,7 @@ export function newSession(
   const id = newUlid();
   commit(requestCreate(app.workspace, id, { projectId, placement }));
   const program = shell !== undefined ? shell : kind === "shell" ? (app.settings?.defaultShell ?? null) : null;
-  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume }).catch(() => {
+  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume }, machineOfProject(projectId)).catch(() => {
     // Refused (for example, not connected): the reconnecting banner already
     // explains why. Stop waiting for a SessionCreated that is never coming.
     commit(createFailed(app.workspace, id));
@@ -380,7 +446,7 @@ export function splitFocused(direction: SplitDirection, kind: SessionKind): void
 }
 
 function sendClose(sessionId: string): void {
-  void sendControl({ type: "CloseSession", session_id: sessionId }).catch(() => {});
+  void sendControl({ type: "CloseSession", session_id: sessionId }, machineOfSession(sessionId)).catch(() => {});
 }
 
 /** Spec 9.3 rule 6: closing a pane ends its session, after confirmation for a busy session. */
@@ -431,12 +497,12 @@ export function renameSession(sessionId: string, label: string): void {
   const session = app.model.sessions[sessionId];
   const trimmed = label.trim();
   if (!session || trimmed === "" || trimmed === session.label) return;
-  void sendControl({ type: "RenameSession", session_id: sessionId, label: trimmed }).catch(() => {});
+  void sendControl({ type: "RenameSession", session_id: sessionId, label: trimmed }, machineOfSession(sessionId)).catch(() => {});
 }
 
 /** Kill ends the process; jojod keeps the row as exited so the final output stays readable. */
 export function killSession(sessionId: string): void {
-  void sendControl({ type: "Kill", session_id: sessionId }).catch(() => {});
+  void sendControl({ type: "Kill", session_id: sessionId }, machineOfSession(sessionId)).catch(() => {});
 }
 
 /**
@@ -500,9 +566,13 @@ export async function addProject(): Promise<void> {
 }
 
 export function dismissError(): void {
-  app.model = { ...app.model, lastError: null };
+  for (const [machine, model] of Object.entries(app.models)) {
+    if (model.lastError) app.models[machine] = { ...model, lastError: null };
+  }
+  mergeModels();
 }
 
-export function restartDaemon(): void {
-  void invoke("restart_daemon").catch(() => {});
+/** This PC: restarts jojod. A remote machine: reconnects now. */
+export function restartDaemon(machine: string = LOCAL_MACHINE): void {
+  void invoke("restart_daemon", { machine }).catch(() => {});
 }
