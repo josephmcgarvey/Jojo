@@ -144,6 +144,12 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
 
     loop {
         tokio::select! {
+            // Frames the client already sent are handled before a closed
+            // writer or a lag ends the connection. The hook relay sends its
+            // HookEvent and disconnects at once; without `biased`, a failed
+            // write of a broadcast to that closed pipe could win the race
+            // and drop the event.
+            biased;
             read = read_frame(&mut reader) => match read {
                 Ok(Some(frame)) => {
                     daemon.handle(client, &tx, frame);

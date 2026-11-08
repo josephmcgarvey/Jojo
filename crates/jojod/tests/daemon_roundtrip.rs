@@ -593,3 +593,42 @@ async fn a_renamed_session_keeps_its_label_on_the_first_prompt() {
     assert_eq!(working.label, "mine");
     assert_eq!(working.state, jojo_proto::AgentState::Working);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_keeps_the_label_of_the_session_it_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let original = create_shell(&mut c, &project).await;
+    relay(&endpoint, original.id, r#"{"hook_event_name":"SessionStart","session_id":"0f3c2a9e-1b2c-4d5e-8f90-123456789abc"}"#).await;
+    next_update(&mut c, original.id).await;
+    c.send(Frame::Control(ControlMsg::RenameSession { session_id: original.id, label: "mine".into() })).await.unwrap();
+    next_update(&mut c, original.id).await;
+
+    // The resumed session runs claude, which may not be installed here; the
+    // SessionCreated that answers the request carries the row either way.
+    let resumed_id = jojo_proto::SessionId::new();
+    c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id: resumed_id,
+        project_id: project.id,
+        kind: SessionKind::Claude,
+        cols: 80,
+        rows: 24,
+        shell: None,
+        resume: Some("0f3c2a9e-1b2c-4d5e-8f90-123456789abc".into()),
+    }))
+    .await
+    .unwrap();
+    let resumed = match c
+        .recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionCreated { session }) if session.id == resumed_id))
+        .await
+        .unwrap()
+    {
+        Frame::Control(ControlMsg::SessionCreated { session }) => session,
+        _ => unreachable!(),
+    };
+    assert_eq!(resumed.label, "mine");
+    assert!(resumed.renamed);
+    assert_eq!(resumed.claude_session_id.as_deref(), Some("0f3c2a9e-1b2c-4d5e-8f90-123456789abc"));
+}

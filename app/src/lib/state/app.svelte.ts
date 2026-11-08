@@ -122,6 +122,15 @@ export function startApp(): () => void {
   const unlistenFocus = window.onFocusChanged(({ payload: focused }) => {
     app.windowFocused = focused;
   });
+  // document.hasFocus() at module load can be false while the native window
+  // is already in front (the window is shown before the page has focus), and
+  // no focus event follows until the user switches away and back.
+  void window
+    .isFocused()
+    .then((focused) => {
+      app.windowFocused = focused;
+    })
+    .catch(() => {});
   // Spec 7.4 rule 3: the backend has already brought the window forward.
   const unlistenToast = listen<string>("toast-activated", ({ payload: sessionId }) => focusPane(sessionId));
   return () => {

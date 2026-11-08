@@ -54,8 +54,8 @@ pub struct SessionInfo {
     /// for `error`. `None` for every other state.
     #[serde(default)]
     pub state_detail: Option<String>,
-    /// True once the user has renamed the session; a first prompt then no
-    /// longer replaces the label (spec 7.2).
+    /// True once the label is settled: the user renamed the session, or its
+    /// first prompt named it (spec 7.2). A later prompt does not replace it.
     #[serde(default)]
     pub renamed: bool,
     /// True when this daemon still holds a screen for the session, so

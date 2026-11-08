@@ -46,9 +46,17 @@ pub fn default_settings_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
-/// The hook command for the jojod at `jojod`: `"C:/.../jojod.exe" hook`.
+/// The hook command for the jojod at `jojod`: `C:/.../jojod.exe hook`. The
+/// path is quoted only when it contains a character a shell would split or
+/// interpret: an unquoted path works in Git Bash, cmd.exe and PowerShell,
+/// while a quoted one followed by `hook` is a parse error in PowerShell.
 pub fn hook_command(jojod: &Path) -> String {
-    format!("\"{}\" hook", jojod.to_string_lossy().replace('\\', "/"))
+    let path = jojod.to_string_lossy().replace('\\', "/");
+    if path.chars().all(|c| c.is_ascii_alphanumeric() || "/:._-".contains(c)) {
+        format!("{path} hook")
+    } else {
+        format!("\"{path}\" hook")
+    }
 }
 
 /// True for a command string that runs a jojod hook relay.
@@ -126,7 +134,10 @@ pub fn without_hooks(mut settings: Value) -> Value {
 /// an error, so a file the user is editing is never overwritten.
 fn read_settings(path: &Path) -> anyhow::Result<Value> {
     match std::fs::read_to_string(path) {
-        Ok(text) if text.trim().is_empty() => Ok(Value::Object(Map::new())),
+        // Notepad saves UTF-8 with a byte order mark, which serde_json rejects.
+        Ok(text) if text.trim_start_matches('\u{feff}').trim().is_empty() => Ok(Value::Object(Map::new())),
+        Ok(text) if text.starts_with('\u{feff}') => serde_json::from_str(&text['\u{feff}'.len_utf8()..])
+            .map_err(|e| anyhow::anyhow!("{} is not valid JSON: {e}", path.display())),
         Ok(text) => serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{} is not valid JSON: {e}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Object(Map::new())),
         Err(e) => Err(anyhow::anyhow!("cannot read {}: {e}", path.display())),
@@ -195,7 +206,8 @@ mod tests {
 
     #[test]
     fn builds_a_quoted_forward_slash_command() {
-        assert_eq!(hook_command(Path::new(r"C:\Users\me\AppData\Local\Jojo\bin\jojod.exe")), CMD);
+        assert_eq!(hook_command(Path::new(r"C:\Users\me\AppData\Local\Jojo\bin\jojod.exe")), "C:/Users/me/AppData/Local/Jojo/bin/jojod.exe hook");
+        assert_eq!(hook_command(Path::new(r"C:\Users\Jo Smith\jojod.exe")), "\"C:/Users/Jo Smith/jojod.exe\" hook");
         assert!(is_jojo_command(CMD));
         assert!(is_jojo_command("/home/me/.local/bin/jojod hook"));
         assert!(!is_jojo_command("npx notify-me"));
@@ -265,6 +277,16 @@ mod tests {
         let installed = with_hooks(settings, CMD);
         let keys: Vec<&String> = installed.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["zeta", "alpha", "hooks", "middle"]);
+    }
+
+    #[test]
+    fn reads_a_settings_file_with_a_byte_order_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, "\u{feff}{\"theme\":\"dark\"}").unwrap();
+        assert!(install(&path, CMD).unwrap());
+        let after: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(after["theme"], "dark");
     }
 
     #[test]

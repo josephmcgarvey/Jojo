@@ -50,7 +50,6 @@ export function closeTabNeedsConfirmation(summary: CloseTabSummary): boolean {
   return summary.count > 1 || summary.busy > 0;
 }
 
-/** Spec 5.4: Restart is offered for sessions in `exited`. */
 /**
  * Spec 5.4: Resume is offered for an exited session with a recorded
  * claude_session_id. That includes a shell session in which `claude` was
@@ -60,6 +59,7 @@ export function canResume(session: Pick<SessionInfo, "state" | "claude_session_i
   return session.state === "exited" && !!session.claude_session_id;
 }
 
+/** Spec 5.4: Restart is offered for sessions in `exited`. */
 export function canRestart(session: Pick<SessionInfo, "state">): boolean {
   return session.state === "exited";
 }

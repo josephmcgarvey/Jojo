@@ -58,9 +58,27 @@ enum Command {
     },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    // The hook relay runs for every Claude Code hook event, also outside
+    // Jojo. Spec 7.1: return at once when JOJO_SESSION_ID is unset, before
+    // building any runtime; otherwise one thread is enough to send one frame.
+    if let Some(Command::Hook { endpoint }) = cli.command {
+        let Ok(session) = std::env::var("JOJO_SESSION_ID") else { return Ok(()) };
+        let mut payload = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload).is_err() {
+            return Ok(());
+        }
+        let endpoint = endpoint.map(Endpoint).unwrap_or_else(default_endpoint);
+        if let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            runtime.block_on(jojod::hooks::relay(&endpoint, Some(&session), payload));
+        }
+        return Ok(());
+    }
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(cli))
+}
+
+async fn run(cli: Cli) -> anyhow::Result<()> {
     if cli.version {
         println!("jojod {} (protocol {})", jojod::VERSION, PROTOCOL_VERSION);
         return Ok(());
@@ -127,20 +145,8 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Some(Command::Hook { endpoint }) => {
-            // Spec 7.1: return at once outside Jojo, never print, always exit 0.
-            let session = std::env::var("JOJO_SESSION_ID").ok();
-            if session.is_none() {
-                return Ok(());
-            }
-            let mut payload = String::new();
-            if std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload).is_err() {
-                return Ok(());
-            }
-            let endpoint = endpoint.map(Endpoint).unwrap_or_else(default_endpoint);
-            jojod::hooks::relay(&endpoint, session.as_deref(), payload).await;
-            Ok(())
-        }
+        // Handled in `main` before a multi-thread runtime exists.
+        Some(Command::Hook { .. }) => Ok(()),
         Some(Command::InstallHooks { settings, command }) => {
             let settings = settings.or_else(jojod::hooks::default_settings_path).ok_or_else(|| anyhow::anyhow!("no home directory"))?;
             let jojod = match command {

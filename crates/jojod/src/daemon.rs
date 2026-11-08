@@ -312,6 +312,9 @@ impl Daemon {
 
     fn create_session(self: &Arc<Self>, reply: &Reply, req: NewSession<'_>) {
         let NewSession { id, project_id, kind, cols, rows, shell, resume } = req;
+        // Resume applies to claude sessions with a plain session id only (the
+        // id reaches a command line; see jojo_agent::is_valid_claude_session_id).
+        let resume = resume.filter(|id| kind == SessionKind::Claude && jojo_agent::is_valid_claude_session_id(id));
         let (program, args) = command_for(kind, shell, resume);
         let now = now_ms();
         let info = SessionInfo {
@@ -343,6 +346,13 @@ impl Daemon {
         // one), so a concurrent RemoveProject cannot remove the project
         // between the lookup and the session row being inserted.
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        // Spec 5.4: a resumed session replaces the row it continues, so it keeps
+        // that row's label, including a name the user chose.
+        let mut info = info;
+        if let Some(previous) = resume.and_then(|r| store.data.sessions.iter().find(|s| s.claude_session_id.as_deref() == Some(r))) {
+            info.label = previous.label.clone();
+            info.renamed = previous.renamed;
+        }
         if store.data.sessions.iter().any(|s| s.id == id)
             || self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&id)
         {
@@ -454,7 +464,9 @@ impl Daemon {
         self.update_session(id, |info| {
             let mut changed = false;
             match &event {
-                HookEvent::SessionStart { claude_session_id: Some(claude_id) } if info.claude_session_id.as_ref() != Some(claude_id) => {
+                HookEvent::SessionStart { claude_session_id: Some(claude_id), .. }
+                    if info.claude_session_id.as_ref() != Some(claude_id) && jojo_agent::is_valid_claude_session_id(claude_id) =>
+                {
                     info.claude_session_id = Some(claude_id.clone());
                     changed = true;
                 }

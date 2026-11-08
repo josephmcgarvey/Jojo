@@ -56,6 +56,8 @@ impl Store {
                 s.state = AgentState::Exited;
                 s.exit_code = None;
                 s.state_changed_at = now;
+                // The pending tool or error belonged to a process that is gone.
+                s.state_detail = None;
             }
         }
         Ok(Store { path: path.to_path_buf(), data })

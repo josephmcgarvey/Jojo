@@ -20,8 +20,8 @@ state_changed_at: number, exit_code: number | null, claude_session_id: string | 
  */
 state_detail: string | null, 
 /**
- * True once the user has renamed the session; a first prompt then no
- * longer replaces the label (spec 7.2).
+ * True once the label is settled: the user renamed the session, or its
+ * first prompt named it (spec 7.2). A later prompt does not replace it.
  */
 renamed: boolean, 
 /**

@@ -29,7 +29,8 @@ const NEEDS_YOU_NOTIFICATIONS: [&str; 4] = ["permission_prompt", "elicitation_di
 /// The parts of a Claude Code hook payload that Jojo uses.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HookEvent {
-    SessionStart { claude_session_id: Option<String> },
+    /// `source` is `startup`, `resume`, `clear` or `compact`.
+    SessionStart { claude_session_id: Option<String>, source: Option<String> },
     UserPromptSubmit { prompt: Option<String> },
     PreToolUse,
     PostToolUse,
@@ -51,7 +52,7 @@ impl HookEvent {
         let name = value.get("hook_event_name")?.as_str()?;
         let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
         Some(match name {
-            "SessionStart" => HookEvent::SessionStart { claude_session_id: text("session_id") },
+            "SessionStart" => HookEvent::SessionStart { claude_session_id: text("session_id"), source: text("source") },
             "UserPromptSubmit" => HookEvent::UserPromptSubmit { prompt: text("prompt") },
             "PreToolUse" => HookEvent::PreToolUse,
             "PostToolUse" => HookEvent::PostToolUse,
@@ -113,7 +114,15 @@ pub fn apply(current: AgentState, event: &HookEvent) -> Option<Transition> {
         return None;
     }
     let next = match event {
+        // Auto-compaction fires SessionStart with source "compact" in the
+        // middle of a turn; the turn goes on, so the state stays.
+        HookEvent::SessionStart { source: Some(source), .. } if source == "compact" => None,
         HookEvent::SessionStart { .. } => to(AgentState::Idle),
+        // A pending permission prompt is resolved only by PostToolUse (the
+        // tool ran) or Stop. PreToolUse while needs_you comes from another
+        // tool call, for example a parallel subagent, and must not hide the
+        // prompt behind working.
+        HookEvent::PreToolUse if current == AgentState::NeedsYou => None,
         HookEvent::UserPromptSubmit { .. } | HookEvent::PreToolUse | HookEvent::PostToolUse => to(AgentState::Working),
         HookEvent::PermissionRequest { tool } => Some(Transition {
             state: AgentState::NeedsYou,
@@ -146,6 +155,14 @@ pub fn apply(current: AgentState, event: &HookEvent) -> Option<Transition> {
     next.filter(|t| t.state != current || current == AgentState::NeedsYou)
 }
 
+/// True for a Claude Code session id that is safe to pass on a command
+/// line: 1 to 128 ASCII letters, digits and hyphens (Claude Code uses UUIDs).
+/// Ids come from hook payloads, which any process in a pane can send, and
+/// Resume runs `cmd.exe /d /c claude --resume <id>` for npm installs.
+pub fn is_valid_claude_session_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
 /// The label set from a first prompt: its first `PROMPT_LABEL_CHARS`
 /// characters on one line, or `None` for an empty prompt.
 pub fn label_from_prompt(prompt: &str) -> Option<String> {
@@ -176,7 +193,7 @@ mod tests {
     fn parses_the_fields_jojo_uses_and_ignores_the_rest() {
         assert_eq!(
             ev(r#"{"hook_event_name":"SessionStart","session_id":"abc","source":"startup","extra":1}"#),
-            HookEvent::SessionStart { claude_session_id: Some("abc".into()) }
+            HookEvent::SessionStart { claude_session_id: Some("abc".into()), source: Some("startup".into()) }
         );
         assert_eq!(ev(r#"{"hook_event_name":"UserPromptSubmit","prompt":"fix it"}"#), HookEvent::UserPromptSubmit { prompt: Some("fix it".into()) });
         assert_eq!(ev(r#"{"hook_event_name":"SomethingNew"}"#), HookEvent::Other);
@@ -245,6 +262,22 @@ mod tests {
         assert_eq!(state_after(Exited, r#"{"hook_event_name":"UserPromptSubmit"}"#), None);
         assert_eq!(state_after(Working, r#"{"hook_event_name":"SomethingNew"}"#), None);
         assert_eq!(state_after(Working, r#"{"hook_event_name":"PreToolUse"}"#), None);
+    }
+
+    #[test]
+    fn keeps_needs_you_through_other_tool_calls_and_compaction() {
+        assert_eq!(state_after(NeedsYou, r#"{"hook_event_name":"PreToolUse","tool_name":"Read"}"#), None);
+        assert_eq!(state_after(NeedsYou, r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#), Some(Working));
+        assert_eq!(state_after(Working, r#"{"hook_event_name":"SessionStart","source":"compact"}"#), None);
+        assert_eq!(state_after(Working, r#"{"hook_event_name":"SessionStart","source":"clear"}"#), Some(Idle));
+    }
+
+    #[test]
+    fn accepts_only_plain_claude_session_ids() {
+        assert!(is_valid_claude_session_id("0f3c2a9e-1b2c-4d5e-8f90-123456789abc"));
+        assert!(!is_valid_claude_session_id("x&calc"));
+        assert!(!is_valid_claude_session_id(""));
+        assert!(!is_valid_claude_session_id(&"a".repeat(129)));
     }
 
     #[test]
