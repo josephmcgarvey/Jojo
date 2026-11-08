@@ -490,6 +490,12 @@ mod tests {
         session.attach(7, tx, 80, 24);
         let _snapshot = recv_blocking(&mut rx, Duration::from_secs(15));
         session.detach(7);
+        // Output the shell produced before the detach (for example the rest
+        // of its first prompt, which can follow the snapshot) was queued
+        // legitimately. The reader sends while holding the lock `detach`
+        // takes, so nothing can be queued after `detach` returns; drop what
+        // was queued before it, then check that nothing more arrives.
+        while rx.try_recv().is_some() {}
         session.write(b"echo after-detach\r".to_vec());
         std::thread::sleep(Duration::from_millis(1500));
         while let Some(frame) = rx.try_recv() {

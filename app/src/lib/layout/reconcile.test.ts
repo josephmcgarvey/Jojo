@@ -3,7 +3,7 @@ import type { LayoutFile } from "../backend/LayoutFile";
 import type { ProjectLayout } from "../backend/ProjectLayout";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import { applyControl, emptyModel } from "../state/reducer";
-import { layoutKey, LOCAL_MACHINE_ID, reconcileAll, reconcileProject } from "./reconcile";
+import { layoutKey, LOCAL_MACHINE_ID, reconcileAll, reconcileMachine, reconcileProject } from "./reconcile";
 import { newTab } from "./tabs";
 import { pane, paneIds, split } from "./tree";
 
@@ -115,5 +115,16 @@ describe("reconcileAll", () => {
     expect(result.projects["server1:P9"]).toBe(remote);
     expect(result.projects["local:P1"]!.tabs.map((t) => paneIds(t.root))).toEqual([["S1"], ["S2"]]);
     expect(result.version).toBe(1);
+  });
+
+  it("reconciles one remote machine's projects and leaves This PC's untouched", () => {
+    let model = applyControl(emptyModel(), { type: "Projects", projects: [{ id: "P9", path: "/srv/app", name: "app" }] });
+    model = applyControl(model, { type: "Sessions", sessions: [session("S9", "P9", 10)] });
+    const local: ProjectLayout = { tabs: [newTab("L1", "S1")], active_tab: "L1" };
+    const file: LayoutFile = { version: 1, projects: { "local:P1": local, "server1:GONE": { tabs: [newTab("G1", "Q")], active_tab: "G1" } } };
+    const result = reconcileMachine(file, "server1", model, ids());
+    expect(Object.keys(result.projects).sort()).toEqual(["local:P1", "server1:P9"]);
+    expect(result.projects["local:P1"]).toBe(local);
+    expect(result.projects["server1:P9"]!.tabs.map((t) => paneIds(t.root))).toEqual([["S9"]]);
   });
 });

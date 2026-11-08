@@ -30,6 +30,19 @@ enum Command {
         /// Directory for state.json. Defaults to %LOCALAPPDATA%\Jojo or ~/.jojo.
         #[arg(long)]
         state_dir: Option<PathBuf>,
+        /// Linux: detach from the terminal and the SSH session and run in the
+        /// background; returns once the daemon accepts connections.
+        #[arg(long)]
+        daemonize: bool,
+    },
+    /// Relay stdin and stdout to the running daemon (the remote end of the
+    /// app's SSH connection).
+    Attach {
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Required; the only mode.
+        #[arg(long)]
+        stdio: bool,
     },
     /// Ask the running daemon to end all sessions and exit.
     Shutdown {
@@ -75,6 +88,29 @@ fn main() -> anyhow::Result<()> {
         }
         return Ok(());
     }
+    #[cfg(unix)]
+    let _lock = match &cli.command {
+        Some(Command::Serve { endpoint, state_dir, daemonize }) => {
+            let state_dir = state_dir.clone().unwrap_or_else(default_state_dir);
+            if *daemonize {
+                let socket = endpoint.clone().map(Endpoint).unwrap_or_else(default_endpoint);
+                match jojod::unix::daemonize(std::path::Path::new(&socket.0))? {
+                    jojod::unix::Role::Parent(ready) => return ready.map_err(Into::into),
+                    jojod::unix::Role::Daemon => {}
+                }
+            }
+            // Spec 8.2 step 5: a second `serve` finds the lock held and exits
+            // cleanly; the running daemon keeps its sessions.
+            match jojod::unix::lock_state_dir(&state_dir)? {
+                Some(lock) => Some(lock),
+                None => {
+                    eprintln!("jojod is already running for {}", state_dir.display());
+                    return Ok(());
+                }
+            }
+        }
+        _ => None,
+    };
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(cli))
 }
 
@@ -84,7 +120,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         return Ok(());
     }
     match cli.command {
-        Some(Command::Serve { endpoint, state_dir }) => {
+        Some(Command::Serve { endpoint, state_dir, daemonize }) => {
+            #[cfg(windows)]
+            if daemonize {
+                anyhow::bail!("--daemonize is for Linux; the app starts jojod detached on Windows");
+            }
+            #[cfg(unix)]
+            let _ = daemonize;
             #[cfg(windows)]
             {
                 use windows_sys::Win32::System::LibraryLoader::{
@@ -147,6 +189,22 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         // Handled in `main` before a multi-thread runtime exists.
         Some(Command::Hook { .. }) => Ok(()),
+        Some(Command::Attach { endpoint, stdio }) => {
+            if !stdio {
+                anyhow::bail!("attach needs --stdio");
+            }
+            let endpoint = endpoint.map(Endpoint).unwrap_or_else(default_endpoint);
+            let result = jojod::attach::relay_stdio(&endpoint).await;
+            if let Err(e) = &result {
+                eprintln!("Error: {e}");
+            }
+            // tokio reads stdin with a blocking read on its blocking pool,
+            // which cannot be cancelled; returning would drop the runtime,
+            // which waits for that read, so stdout (and the SSH channel)
+            // would stay open after the daemon closed the socket and the app
+            // would not notice until the next keystroke. Exit at once.
+            std::process::exit(if result.is_ok() { 0 } else { 1 });
+        }
         Some(Command::InstallHooks { settings, command }) => {
             let settings = settings.or_else(jojod::hooks::default_settings_path).ok_or_else(|| anyhow::anyhow!("no home directory"))?;
             let jojod = match command {

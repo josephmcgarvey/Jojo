@@ -6,7 +6,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { WebglAddon } from "@xterm/addon-webgl";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
-  import { app } from "../lib/state/app.svelte";
+  import { app, machineOfSession } from "../lib/state/app.svelte";
   import { noScreenMessage } from "../lib/terminal/pane";
   import { contextMenuTarget } from "../lib/input/mouse";
   import { resolveShortcut } from "../lib/input/shortcuts";
@@ -32,6 +32,8 @@
   onMount(() => {
     const settings = app.settings;
     const id = session.id;
+    // The session's machine; every request and keystroke for it goes there.
+    const machine = machineOfSession(id);
     const created = new Terminal({
       allowProposedApi: true,
       fontFamily: settings?.terminalFontFamily ?? "Geist Mono",
@@ -112,7 +114,7 @@
     let size = clampSize(created.cols, created.rows);
     const stream = createPaneStream({
       write: (bytes, done) => created.write(bytes, done),
-      sendAttach: () => sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }),
+      sendAttach: () => sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }, machine),
     });
     // A session with no screen is never attached, so it is not registered
     // with the router: reattachAll() after a reconnect must not send an
@@ -136,11 +138,11 @@
     const encoder = new TextEncoder();
     const onData = created.onData((data) => {
       if (!session.attachable) return;
-      void sendInput(id, encoder.encode(data)).catch(() => {});
+      void sendInput(id, encoder.encode(data), machine).catch(() => {});
     });
     const onBinary = created.onBinary((data) => {
       if (!session.attachable) return;
-      void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(() => {});
+      void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff), machine).catch(() => {});
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -155,7 +157,7 @@
         if (next.cols !== size.cols || next.rows !== size.rows) {
           size = next;
           if (session.attachable) {
-            void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
+            void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }, machine).catch(() => {});
           }
         }
       }, 50);
@@ -173,7 +175,7 @@
       unregisterControls();
       onData.dispose();
       onBinary.dispose();
-      if (session.attachable) void sendControl({ type: "Detach", session_id: id }).catch(() => {});
+      if (session.attachable) void sendControl({ type: "Detach", session_id: id }, machine).catch(() => {});
       webgl?.dispose();
       term = undefined;
       created.dispose();

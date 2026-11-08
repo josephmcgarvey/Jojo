@@ -1,5 +1,6 @@
 //! jojod: the Jojo session daemon.
 
+pub mod attach;
 pub mod client;
 pub mod client_queue;
 pub mod command;
@@ -13,6 +14,8 @@ pub mod server;
 pub mod session;
 pub mod store;
 pub mod transport;
+#[cfg(unix)]
+pub mod unix;
 
 /// Daemon version reported in `Hello` and by `jojod --version`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

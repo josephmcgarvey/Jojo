@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { ITheme } from "@xterm/xterm";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
-  import { focusPane, renameSession } from "../lib/state/app.svelte";
+  import { app, focusPane, machineOfSession, renameSession } from "../lib/state/app.svelte";
+  import { disconnectedOverlay } from "../lib/state/machines";
   import { paneMenu } from "../lib/state/contextMenus";
   import { notices } from "../lib/state/notices.svelte";
   import { endRename, openMenu, ui } from "../lib/state/ui.svelte";
@@ -14,6 +15,8 @@
 
   const renaming = $derived(ui.renaming?.kind === "session" && ui.renaming.where === "pane" && ui.renaming.sessionId === session.id);
   const notice = $derived(notices[session.id]);
+  const machineId = $derived(machineOfSession(session.id));
+  const overlay = $derived(disconnectedOverlay(app.machines.find((m) => m.id === machineId), app.statuses[machineId]));
 
   function showMenu(x: number, y: number): void {
     focusPane(session.id);
@@ -52,6 +55,11 @@
   </header>
   <div class="body">
     <TerminalPane {session} {terminalTheme} {focused} onmenu={showMenu} />
+    {#if overlay}
+      <!-- Spec 8.3 rules 2 and 4: keystrokes are discarded while the machine
+           is disconnected (the backend has no connection to send them on). -->
+      <div class="overlay" role="status">{overlay}</div>
+    {/if}
   </div>
 </div>
 
@@ -99,6 +107,19 @@
   }
   .notice.error {
     color: var(--jojo-error);
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    text-align: center;
+    background: var(--jojo-scrim);
+    color: var(--jojo-fg2);
+    font-family: var(--jojo-font-ui);
+    font-size: 12.5px;
   }
   .body {
     position: relative;

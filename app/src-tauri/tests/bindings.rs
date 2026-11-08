@@ -4,6 +4,8 @@
 
 use jojo_app::bridge::ConnectionStatus;
 use jojo_app::layout::LayoutFile;
+use jojo_app::install::InstallStep;
+use jojo_app::machines::Machine;
 use jojo_app::settings::Settings;
 use jojo_app::shells::ShellOption;
 use std::path::PathBuf;
@@ -17,6 +19,8 @@ fn export_backend_bindings() {
     Settings::export_all(&cfg).unwrap();
     LayoutFile::export_all(&cfg).unwrap();
     ShellOption::export_all(&cfg).unwrap();
+    Machine::export_all(&cfg).unwrap();
+    InstallStep::export_all(&cfg).unwrap();
     let status = std::fs::read_to_string(dir.join("ConnectionStatus.ts")).unwrap();
     assert!(status.contains("\"state\": \"version_mismatch\""), "{status}");
     let settings = std::fs::read_to_string(dir.join("Settings.ts")).unwrap();
@@ -31,6 +35,10 @@ fn export_backend_bindings() {
     let file = std::fs::read_to_string(dir.join("LayoutFile.ts")).unwrap();
     assert!(file.contains("ProjectLayout"), "{file}");
     assert!(!file.contains("bigint"), "{file}");
+    let machine = std::fs::read_to_string(dir.join("Machine.ts")).unwrap();
+    assert!(machine.contains("ssh_host: string | null"), "{machine}");
+    let status_auth = std::fs::read_to_string(dir.join("ConnectionStatus.ts")).unwrap();
+    assert!(status_auth.contains("\"state\": \"auth_failed\""), "{status_auth}");
     let shell = std::fs::read_to_string(dir.join("ShellOption.ts")).unwrap();
     assert!(shell.contains("label: string,") && shell.contains("program: string,"), "{shell}");
 }

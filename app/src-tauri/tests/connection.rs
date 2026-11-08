@@ -118,12 +118,12 @@ async fn connection_loop_relays_frames_both_ways() {
     bridge.set_sink(Box::new(move |bytes| sink.lock().unwrap().push(bytes)));
     let task = tokio::spawn(jojo_app::connection::run(paths, bridge.clone()));
 
-    let connected = wait_for(&seen, |e| e[0] == ENVELOPE_STATUS && e[1..].starts_with(br#"{"state":"connected""#)).await;
+    let connected = wait_for(&seen, |e| e[0] == ENVELOPE_STATUS && jojo_app::bridge::envelope_body(e).starts_with(br#"{"state":"connected""#)).await;
     assert!(connected, "never connected: {:?}", printable(&seen));
 
     let body = &Frame::Control(ControlMsg::ListProjects).encode()[4..];
     bridge.send(body.to_vec()).expect("connected bridge accepts frames");
-    let projects = wait_for(&seen, |e| e[0] == ENVELOPE_FRAME && String::from_utf8_lossy(&e[2..]).contains(r#""type":"Projects""#)).await;
+    let projects = wait_for(&seen, |e| e[0] == ENVELOPE_FRAME && String::from_utf8_lossy(&jojo_app::bridge::envelope_body(e)[1..]).contains(r#""type":"Projects""#)).await;
     assert!(projects, "no Projects reply: {:?}", printable(&seen));
 
     task.abort();
@@ -169,7 +169,7 @@ async fn concurrent_input_and_output_keep_the_connection_alive() {
     let task = tokio::spawn(jojo_app::connection::run(paths, bridge.clone()));
 
     assert!(
-        wait_for(&seen, |e| e[0] == ENVELOPE_STATUS && e[1..].starts_with(br#"{"state":"connected""#)).await,
+        wait_for(&seen, |e| e[0] == ENVELOPE_STATUS && jojo_app::bridge::envelope_body(e).starts_with(br#"{"state":"connected""#)).await,
         "never connected: {:?}",
         printable(&seen)
     );
@@ -220,12 +220,12 @@ async fn concurrent_input_and_output_keep_the_connection_alive() {
     }
 
     let saw_last_line = wait_for_long(&seen, Duration::from_secs(60), |e| {
-        e[0] == ENVELOPE_FRAME && String::from_utf8_lossy(&e[2..]).contains("line2000")
+        e[0] == ENVELOPE_FRAME && String::from_utf8_lossy(&jojo_app::bridge::envelope_body(e)[1..]).contains("line2000")
     })
     .await;
     assert!(saw_last_line, "never saw the loop's last line: {:?}", printable(&seen).iter().rev().take(20).collect::<Vec<_>>());
 
-    let ever_reconnected = seen.lock().unwrap().iter().any(|e| e[0] == ENVELOPE_STATUS && e[1..].starts_with(br#"{"state":"reconnecting""#));
+    let ever_reconnected = seen.lock().unwrap().iter().any(|e| e[0] == ENVELOPE_STATUS && jojo_app::bridge::envelope_body(e).starts_with(br#"{"state":"reconnecting""#));
     assert!(!ever_reconnected, "the connection dropped under load: {:?}", printable(&seen));
 
     task.abort();
@@ -243,7 +243,7 @@ fn control_messages(seen: &Arc<Mutex<Vec<Vec<u8>>>>) -> Vec<ControlMsg> {
         .unwrap()
         .iter()
         .filter(|e| e[0] == ENVELOPE_FRAME)
-        .filter_map(|e| serde_json::from_slice::<ControlMsg>(&e[2..]).ok())
+        .filter_map(|e| serde_json::from_slice::<ControlMsg>(&jojo_app::bridge::envelope_body(e)[1..]).ok())
         .collect()
 }
 
@@ -284,5 +284,5 @@ async fn wait_for(seen: &Arc<Mutex<Vec<Vec<u8>>>>, pred: impl Fn(&Vec<u8>) -> bo
 }
 
 fn printable(seen: &Arc<Mutex<Vec<Vec<u8>>>>) -> Vec<String> {
-    seen.lock().unwrap().iter().map(|e| format!("{}:{}", e[0], String::from_utf8_lossy(&e[1..]))).collect()
+    seen.lock().unwrap().iter().map(|e| format!("{}:{}", e[0], String::from_utf8_lossy(jojo_app::bridge::envelope_body(e)))).collect()
 }

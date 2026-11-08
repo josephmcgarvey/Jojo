@@ -81,13 +81,23 @@ export function reconcileProject(stored: ProjectLayout | undefined, sessionIds: 
  * unchanged (Plan 5 reconciles them against their own daemons).
  */
 export function reconcileAll(file: LayoutFile, model: Model, newTabId: () => string): LayoutFile {
-  const prefix = `${LOCAL_MACHINE_ID}:`;
+  return reconcileMachine(file, LOCAL_MACHINE_ID, model, newTabId);
+}
+
+/**
+ * Reconciles the layouts of one machine's projects with that machine's model
+ * (spec 4): every `<machineId>:` key is rebuilt from `model`, and the keys of
+ * other machines are kept unchanged, so a machine that is not connected yet
+ * keeps its stored tabs.
+ */
+export function reconcileMachine(file: LayoutFile, machineId: string, model: Model, newTabId: () => string): LayoutFile {
+  const prefix = `${machineId}:`;
   const projects: Record<string, ProjectLayout> = {};
   for (const [key, value] of Object.entries(file.projects)) {
     if (value && !key.startsWith(prefix)) projects[key] = value;
   }
   for (const project of Object.values(model.projects)) {
-    const key = layoutKey(LOCAL_MACHINE_ID, project.id);
+    const key = layoutKey(machineId, project.id);
     const sessionIds = sessionsForProject(model, project.id).map((s) => s.id);
     projects[key] = reconcileProject(file.projects[key], sessionIds, newTabId);
   }

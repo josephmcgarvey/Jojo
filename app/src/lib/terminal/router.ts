@@ -26,8 +26,11 @@ export function createRouter() {
       if (sessionId) panes.get(sessionId)?.reattach(false);
     },
     /** After a reconnect, every mounted pane attaches again. */
-    reattachAll(): void {
-      for (const pane of panes.values()) pane.reattach(true);
+    /** After a reconnect: attaches again every pane, or only those `only` accepts (one machine's sessions). */
+    reattachAll(only?: (sessionId: string) => boolean): void {
+      for (const [sessionId, pane] of panes) {
+        if (!only || only(sessionId)) pane.reattach(true);
+      }
     },
     attachFailed(sessionId: string): void {
       panes.get(sessionId)?.attachFailed();

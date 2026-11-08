@@ -1,13 +1,18 @@
 //! Carries daemon frames and connection status to the frontend, and frame
 //! bodies from the frontend to the daemon.
 //!
+//! There is one `Bridge` per machine (spec 8) and one `Frontend`, the
+//! window's Tauri Channel, shared by all of them.
+//!
 //! Envelope sent to the frontend (one Tauri Channel message each): byte 0 is
-//! the kind, the rest is the body. `ENVELOPE_FRAME`: a daemon frame without
-//! its length prefix (`[u8 type][payload]`). `ENVELOPE_STATUS`: UTF-8 JSON
+//! the kind, byte 1 the length of the machine id, then the machine id in
+//! UTF-8, then the body. `ENVELOPE_FRAME`: a daemon frame without its length
+//! prefix (`[u8 type][payload]`). `ENVELOPE_STATUS`: UTF-8 JSON
 //! `ConnectionStatus`.
 
 use serde::Serialize;
-use std::sync::Mutex;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, watch};
 use ts_rs::TS;
 
@@ -23,28 +28,91 @@ pub enum ConnectionStatus {
     Elevated,
     VersionMismatch { message: String },
     Failed { message: String },
+    /// SSH refused the key (spec 8.3 rule 5). The loop stops retrying until
+    /// the user asks to reconnect.
+    AuthFailed { message: String },
 }
 
-pub fn envelope(kind: u8, body: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(1 + body.len());
+/// The machine id of This PC (spec 8.1).
+pub const LOCAL_MACHINE: &str = "local";
+
+pub fn envelope(kind: u8, machine: &str, body: &[u8]) -> Vec<u8> {
+    let id = &machine.as_bytes()[..machine.len().min(u8::MAX as usize)];
+    let mut out = Vec::with_capacity(2 + id.len() + body.len());
     out.push(kind);
+    out.push(id.len() as u8);
+    out.extend_from_slice(id);
     out.extend_from_slice(body);
     out
 }
 
+/// The machine id of an envelope.
+pub fn envelope_machine(envelope: &[u8]) -> &str {
+    let len = envelope[1] as usize;
+    std::str::from_utf8(&envelope[2..2 + len]).unwrap_or("")
+}
+
+/// The body of an envelope (after the kind and the machine id).
+pub fn envelope_body(envelope: &[u8]) -> &[u8] {
+    &envelope[2 + envelope[1] as usize..]
+}
+
 type Sink = Box<dyn Fn(Vec<u8>) + Send + Sync>;
 
-/// `sink` and `last_status` share one lock so a status change can never be
-/// lost to a `set_sink`/`emit_status` race: whichever call wins the lock
-/// either fully replays-then-installs or fully updates-then-sends before the
-/// other can observe the state (Task 4 fix round 1, Important #2).
-struct Inner {
+/// `sink` and every machine's last status share one lock, so a status
+/// change can never be lost to a `set_sink`/`emit_status` race: whichever
+/// call wins the lock either fully replays-then-installs or fully
+/// updates-then-sends before the other can observe the state (Plan 2b Task 4
+/// fix round 1, Important #2).
+#[derive(Default)]
+struct FrontendInner {
     sink: Option<Sink>,
-    last_status: ConnectionStatus,
+    statuses: BTreeMap<String, ConnectionStatus>,
+}
+
+/// The window's channel, shared by every machine's `Bridge`.
+#[derive(Default)]
+pub struct Frontend {
+    inner: Mutex<FrontendInner>,
+}
+
+impl Frontend {
+    /// Installs the window's channel and sends it every machine's latest
+    /// status, so a window that subscribes late still learns them.
+    pub fn set_sink(&self, sink: Sink) {
+        let mut inner = self.inner.lock().unwrap();
+        for (machine, status) in &inner.statuses {
+            sink(envelope(ENVELOPE_STATUS, machine, &serde_json::to_vec(status).expect("status serializes")));
+        }
+        inner.sink = Some(sink);
+    }
+
+    fn emit_status(&self, machine: &str, status: ConnectionStatus) {
+        let bytes = envelope(ENVELOPE_STATUS, machine, &serde_json::to_vec(&status).expect("status serializes"));
+        let mut inner = self.inner.lock().unwrap();
+        inner.statuses.insert(machine.to_owned(), status);
+        if let Some(sink) = inner.sink.as_ref() {
+            sink(bytes);
+        }
+    }
+
+    fn emit_frame(&self, machine: &str, body: &[u8]) {
+        let inner = self.inner.lock().unwrap();
+        if let Some(sink) = inner.sink.as_ref() {
+            sink(envelope(ENVELOPE_FRAME, machine, body));
+        }
+    }
+
+    /// Drops a removed machine's status, so a later subscribe does not
+    /// replay it.
+    pub fn forget(&self, machine: &str) {
+        self.inner.lock().unwrap().statuses.remove(machine);
+    }
 }
 
 pub struct Bridge {
-    inner: Mutex<Inner>,
+    machine: String,
+    frontend: Arc<Frontend>,
     outbound: Mutex<Option<mpsc::UnboundedSender<Vec<u8>>>>,
     /// A generation counter bumped by `request_restart`. Waiters capture the
     /// generation in effect when they start waiting and only react to a
@@ -56,40 +124,37 @@ pub struct Bridge {
     restart: watch::Sender<u64>,
 }
 
+/// This PC's bridge with a frontend of its own (tests and single-machine use).
 impl Default for Bridge {
     fn default() -> Self {
-        let (restart, _rx) = watch::channel(0u64);
-        Bridge {
-            inner: Mutex::new(Inner { sink: None, last_status: ConnectionStatus::Starting }),
-            outbound: Mutex::new(None),
-            restart,
-        }
+        Bridge::new(LOCAL_MACHINE, Arc::new(Frontend::default()))
     }
 }
 
 impl Bridge {
-    /// Installs the frontend's channel and sends it the latest status, so a
-    /// frontend that subscribes late still learns the connection state.
+    /// The bridge for `machine`, whose status starts as `Starting`.
+    pub fn new(machine: &str, frontend: Arc<Frontend>) -> Bridge {
+        let (restart, _rx) = watch::channel(0u64);
+        frontend.emit_status(machine, ConnectionStatus::Starting);
+        Bridge { machine: machine.to_owned(), frontend, outbound: Mutex::new(None), restart }
+    }
+
+    pub fn machine(&self) -> &str {
+        &self.machine
+    }
+
+    /// Installs the window's channel on this bridge's frontend (see
+    /// `Frontend::set_sink`).
     pub fn set_sink(&self, sink: Sink) {
-        let mut inner = self.inner.lock().unwrap();
-        sink(envelope(ENVELOPE_STATUS, &serde_json::to_vec(&inner.last_status).expect("status serializes")));
-        inner.sink = Some(sink);
+        self.frontend.set_sink(sink);
     }
 
     pub fn emit_status(&self, status: ConnectionStatus) {
-        let bytes = envelope(ENVELOPE_STATUS, &serde_json::to_vec(&status).expect("status serializes"));
-        let mut inner = self.inner.lock().unwrap();
-        inner.last_status = status;
-        if let Some(sink) = inner.sink.as_ref() {
-            sink(bytes);
-        }
+        self.frontend.emit_status(&self.machine, status);
     }
 
     pub fn emit_frame(&self, body: &[u8]) {
-        let inner = self.inner.lock().unwrap();
-        if let Some(sink) = inner.sink.as_ref() {
-            sink(envelope(ENVELOPE_FRAME, body));
-        }
+        self.frontend.emit_frame(&self.machine, body);
     }
 
     pub fn set_outbound(&self, tx: Option<mpsc::UnboundedSender<Vec<u8>>>) {
@@ -149,7 +214,7 @@ impl Bridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
     use std::time::Duration;
 
     fn collecting_bridge() -> (Bridge, Arc<Mutex<Vec<Vec<u8>>>>) {
@@ -162,7 +227,10 @@ mod tests {
 
     #[test]
     fn envelope_prefixes_the_kind() {
-        assert_eq!(envelope(ENVELOPE_FRAME, &[3, 9]), vec![0, 3, 9]);
+        let e = envelope(ENVELOPE_FRAME, "m1", &[3, 9]);
+        assert_eq!(e, vec![0, 2, b'm', b'1', 3, 9]);
+        assert_eq!(envelope_machine(&e), "m1");
+        assert_eq!(envelope_body(&e), &[3, 9]);
     }
 
     #[test]
@@ -174,7 +242,7 @@ mod tests {
         bridge.set_sink(Box::new(move |bytes| sink.lock().unwrap().push(bytes)));
         let first = seen.lock().unwrap()[0].clone();
         assert_eq!(first[0], ENVELOPE_STATUS);
-        let json: serde_json::Value = serde_json::from_slice(&first[1..]).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(envelope_body(&first)).unwrap();
         assert_eq!(json["state"], "connected");
         assert_eq!(json["jojod_version"], "1.2.3");
     }
@@ -198,11 +266,11 @@ mod tests {
         let sink = seen.clone();
         bridge.set_sink(Box::new(move |bytes| sink.lock().unwrap().push(bytes)));
 
-        let replay: serde_json::Value = serde_json::from_slice(&seen.lock().unwrap()[0][1..]).unwrap();
+        let replay: serde_json::Value = serde_json::from_slice(envelope_body(&seen.lock().unwrap()[0])).unwrap();
         assert_eq!(replay["state"], "connected", "the replay on subscribe must be the latest status, not stale");
 
         bridge.emit_status(ConnectionStatus::Reconnecting { attempt: 1, message: "x".into() });
-        let delivered: serde_json::Value = serde_json::from_slice(&seen.lock().unwrap()[1][1..]).unwrap();
+        let delivered: serde_json::Value = serde_json::from_slice(envelope_body(&seen.lock().unwrap()[1])).unwrap();
         assert_eq!(delivered["state"], "reconnecting", "a status emitted after subscribing must still be delivered");
     }
 

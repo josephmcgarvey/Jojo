@@ -42,6 +42,7 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
     let hooks_installed = std::sync::atomic::AtomicBool::new(false);
     let hooks_installed = &hooks_installed;
     run_with(
+        kill_daemons_async,
         move || async move {
             let result = connect_or_start(paths).await;
             if result.is_ok() && paths.register_hooks && !hooks_installed.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -59,10 +60,22 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
     .await
 }
 
+/// A remote machine's connection loop (spec 8.3): `ssh <host> jojod attach
+/// --stdio`, reconnecting with the same backoff as This PC. A restart request
+/// (the user's Reconnect) only cuts the wait short; nothing is killed.
+pub async fn run_ssh(host: String, bridge: Arc<Bridge>) {
+    let host = &host;
+    run_with(|| async {}, move || crate::ssh::connect(host), bridge).await
+}
+
 /// The connection loop, with the connect step passed in so tests can drive
-/// the loop without starting a daemon.
-pub async fn run_with<F, Fut>(mut connect: F, bridge: Arc<Bridge>)
+/// the loop without starting a daemon. `restart` runs when the user asks to
+/// restart the daemon (This PC: end every jojod process so a fresh one
+/// starts; a remote machine: nothing, the loop reconnects).
+pub async fn run_with<R, RFut, F, Fut>(mut restart: R, mut connect: F, bridge: Arc<Bridge>)
 where
+    R: FnMut() -> RFut,
+    RFut: std::future::Future<Output = ()>,
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<Client, ConnectError>>,
 {
@@ -77,7 +90,7 @@ where
         match connect().await {
             Ok(client) => {
                 let started = Instant::now();
-                let reason = serve(client, &bridge).await;
+                let reason = serve(client, &bridge, &mut restart).await;
                 bridge.set_outbound(None);
                 if started.elapsed() < SHORT_CONNECTION {
                     attempt += 1;
@@ -107,8 +120,15 @@ where
             Err(e @ ConnectError::Mismatch { .. }) => {
                 bridge.emit_status(ConnectionStatus::VersionMismatch { message: e.to_string() });
                 bridge.wait_for_restart_after(since).await;
-                kill_daemons_async().await;
+                restart().await;
                 tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            Err(ConnectError::AuthFailed(message)) => {
+                // Spec 8.3 rule 5: retrying cannot help until the key is
+                // loaded; wait for the user's Reconnect.
+                bridge.emit_status(ConnectionStatus::AuthFailed { message });
+                bridge.wait_for_restart_after(since).await;
+                attempt = 0;
             }
             Err(ConnectError::Io(e)) => {
                 attempt += 1;
@@ -143,7 +163,11 @@ where
 /// always polled by `.await`ing the *same* future (the `JoinHandle`) across
 /// loop iterations, so a `read_exact` in progress is never abandoned
 /// mid-frame by this loop selecting another branch.
-async fn serve(client: Client, bridge: &Arc<Bridge>) -> String {
+async fn serve<R, RFut>(client: Client, bridge: &Arc<Bridge>, restart: &mut R) -> String
+where
+    R: FnMut() -> RFut,
+    RFut: std::future::Future<Output = ()>,
+{
     let jojod_version = client.daemon_version().to_string();
     let (reader, mut writer) = client.into_parts();
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -154,7 +178,7 @@ async fn serve(client: Client, bridge: &Arc<Bridge>) -> String {
     bridge.emit_status(ConnectionStatus::Connected { jojod_version });
 
     let reader_bridge = bridge.clone();
-    let mut reader_task = tokio::spawn(async move {
+    let reader_task = tokio::spawn(async move {
         let mut reader = reader;
         loop {
             match read_frame(&mut reader).await {
@@ -167,6 +191,12 @@ async fn serve(client: Client, bridge: &Arc<Bridge>) -> String {
             }
         }
     });
+    // Aborts the reader when `serve` ends on any path, including when the
+    // whole connection loop is aborted (Hub::stop, a removed machine), which
+    // drops this future without running the code after the loop below. A
+    // reader left running would keep the ssh process and keep emitting
+    // frames under the machine's id.
+    let mut reader_task = AbortOnDrop(reader_task);
 
     // Captured once, right before the loop starts waiting: a restart
     // requested earlier (for example while the previous attempt was still
@@ -176,7 +206,7 @@ async fn serve(client: Client, bridge: &Arc<Bridge>) -> String {
 
     let reason = loop {
         tokio::select! {
-            result = &mut reader_task => {
+            result = &mut reader_task.0 => {
                 break match result {
                     Ok(reason) => reason,
                     Err(e) => format!("the reader task failed: {e}"),
@@ -195,17 +225,22 @@ async fn serve(client: Client, bridge: &Arc<Bridge>) -> String {
                 }
             }
             _ = bridge.wait_for_restart_after(since) => {
-                kill_daemons_async().await;
+                restart().await;
                 break "restarting jojod".into();
             }
         }
     };
-    // Every exit path lands here: the reader task is aborted whether it was
-    // the one that ended the connection (a harmless no-op abort on an
-    // already-finished task) or whether the write or restart arm ended it
-    // instead (where the reader task is otherwise still running).
-    reader_task.abort();
+    drop(reader_task);
     reason
+}
+
+/// Aborts a task when dropped.
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 #[cfg(test)]
@@ -258,7 +293,7 @@ mod tests {
         bridge.set_sink(Box::new(move |bytes| sink.lock().unwrap().push(bytes)));
 
         let serve_bridge = bridge.clone();
-        let serve_task = tokio::spawn(async move { serve(client, &serve_bridge).await });
+        let serve_task = tokio::spawn(async move { serve(client, &serve_bridge, &mut || async {}).await });
 
         // `serve` installs the outbound channel and emits Connected
         // synchronously before its first read; wait for that status so the
@@ -267,7 +302,7 @@ mod tests {
             let mut ok = false;
             for _ in 0..100 {
                 if seen.lock().unwrap().iter().any(|e| {
-                    e[0] == crate::bridge::ENVELOPE_STATUS && e[1..].starts_with(br#"{"state":"connected""#)
+                    e[0] == crate::bridge::ENVELOPE_STATUS && crate::bridge::envelope_body(e).starts_with(br#"{"state":"connected""#)
                 }) {
                     ok = true;
                     break;
@@ -303,7 +338,7 @@ mod tests {
             let mut ok = false;
             for _ in 0..100 {
                 if seen.lock().unwrap().iter().any(|e| {
-                    e[0] == crate::bridge::ENVELOPE_FRAME && String::from_utf8_lossy(&e[2..]).contains("marker-bytes")
+                    e[0] == crate::bridge::ENVELOPE_FRAME && String::from_utf8_lossy(&crate::bridge::envelope_body(e)[1..]).contains("marker-bytes")
                 }) {
                     ok = true;
                     break;
@@ -343,7 +378,7 @@ mod tests {
                 }
             }
         };
-        let task = tokio::spawn(run_with(connect, bridge.clone()));
+        let task = tokio::spawn(run_with(|| async {}, connect, bridge.clone()));
         let deadline = Instant::now() + Duration::from_secs(5);
         while starts.lock().unwrap().len() < 2 && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;

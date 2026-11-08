@@ -76,8 +76,16 @@ async fn create_shell(c: &mut Client, project: &ProjectInfo) -> SessionInfo {
     }
 }
 
+/// True when a screen line is exactly `want`, or `want` after a `$ ` prompt.
+/// Input sent before `sh` has printed its first prompt is echoed by the
+/// terminal first; `sh` then prints `$ ` and the command's output lands on
+/// the same line (`$ jojo-hi`). The echoed command line (`echo jojo-hi`)
+/// never matches.
 fn has_line(grid: &TermGrid, want: &str) -> bool {
-    grid.visible_text().lines().any(|l| l.trim() == want)
+    grid.visible_text().lines().any(|l| {
+        let line = l.trim();
+        line == want || line.strip_prefix("$ ").is_some_and(|rest| rest.trim() == want)
+    })
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -631,4 +639,18 @@ async fn resume_keeps_the_label_of_the_session_it_continues() {
     assert_eq!(resumed.label, "mine");
     assert!(resumed.renamed);
     assert_eq!(resumed.claude_session_id.as_deref(), Some("0f3c2a9e-1b2c-4d5e-8f90-123456789abc"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_project_path_starting_with_a_tilde_is_the_home_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    c.send(Frame::Control(ControlMsg::AddProject { path: "~".into(), name: "home".into() })).await.unwrap();
+    let added = match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::ProjectAdded { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::ProjectAdded { project }) => project,
+        _ => unreachable!(),
+    };
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap();
+    assert_eq!(added.path, home);
 }

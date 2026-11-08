@@ -5,6 +5,7 @@ import type { MenuEntry } from "../menu/types";
 import { terminalControls } from "../terminal/registry";
 import {
   app,
+  machineOfProject,
   applyTabPreset,
   closePane,
   closeTab,
@@ -25,6 +26,7 @@ import {
 import { copyFromPane, pasteIntoPane } from "./clipboard";
 import { shellChoices } from "./shells";
 import { beginRename } from "./ui.svelte";
+import { LOCAL_MACHINE } from "../wire/bridge";
 
 const labelOf = (sessionId: string): string | undefined => app.model.sessions[sessionId]?.label;
 
@@ -42,7 +44,9 @@ export function paneMenu(sessionId: string): MenuEntry[] {
       otherTabs: project.tabs.filter((t) => t.id !== tab.id),
       labelOf: (id) => labelOf(id) ?? id,
       tabLabelOf: (t) => tabLabel(t, labelOf),
-      shells: shellChoices(app.shells, app.settings?.defaultShell),
+      // The detected shells are Windows programs; a remote project's New
+      // shell starts the server's login shell.
+      shells: machineOfProject(projectId) === LOCAL_MACHINE ? shellChoices(app.shells, app.settings?.defaultShell) : [],
     },
     {
       copy: () => void copyFromPane(sessionId),

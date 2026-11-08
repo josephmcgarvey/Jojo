@@ -52,6 +52,8 @@ pub enum ConnectError {
     Elevated,
     /// A jojod with another protocol version is running.
     Mismatch { daemon: u32 },
+    /// SSH refused the key (spec 8.3 rule 5); ssh's stderr.
+    AuthFailed(String),
     Io(io::Error),
 }
 
@@ -64,6 +66,7 @@ impl std::fmt::Display for ConnectError {
                 "the running jojod speaks protocol {daemon}; this Jojo needs protocol {}",
                 jojo_proto::PROTOCOL_VERSION
             ),
+            ConnectError::AuthFailed(stderr) => write!(f, "SSH refused the key: {stderr}"),
             ConnectError::Io(e) => write!(f, "{e}"),
         }
     }

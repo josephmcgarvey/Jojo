@@ -31,21 +31,23 @@ export function emptyWorkspace(): Workspace {
   return { layout: { version: LAYOUT_VERSION, projects: {} }, pending: {} };
 }
 
-export function projectOf(layout: LayoutFile, projectId: string): ProjectLayout {
-  return layout.projects[layoutKey(LOCAL_MACHINE_ID, projectId)] ?? emptyProject();
+/** The stored layout of a project on `machineId` (This PC by default). */
+export function projectOf(layout: LayoutFile, projectId: string, machineId: string = LOCAL_MACHINE_ID): ProjectLayout {
+  return layout.projects[layoutKey(machineId, projectId)] ?? emptyProject();
 }
 
 /**
- * Applies `update` to one local project's layout. Returns the same
- * LayoutFile when `update` returns its input unchanged, and null when
- * `update` returns null (the operation was refused).
+ * Applies `update` to the layout of a project on `machineId` (This PC by
+ * default). Returns the same LayoutFile when `update` returns its input
+ * unchanged, and null when `update` returns null (the operation was refused).
  */
 export function withProject(
   layout: LayoutFile,
   projectId: string,
   update: (project: ProjectLayout) => ProjectLayout | null,
+  machineId: string = LOCAL_MACHINE_ID,
 ): LayoutFile | null {
-  const key = layoutKey(LOCAL_MACHINE_ID, projectId);
+  const key = layoutKey(machineId, projectId);
   const current = layout.projects[key] ?? emptyProject();
   const next = update(current);
   if (next === null) return null;
@@ -79,11 +81,16 @@ export interface CreatedResult {
  * to a new tab. A session nobody requested gets a new tab that is not
  * activated. A session that is already placed is left where it is.
  */
-export function sessionCreated(ws: Workspace, session: SessionInfo, newTabId: () => string): CreatedResult {
+export function sessionCreated(
+  ws: Workspace,
+  session: SessionInfo,
+  newTabId: () => string,
+  machineId: string = LOCAL_MACHINE_ID,
+): CreatedResult {
   const request = ws.pending[session.id];
   const requested = request !== undefined;
   const base = createFailed(ws, session.id);
-  if (tabOf(projectOf(base.layout, session.project_id), session.id)) {
+  if (tabOf(projectOf(base.layout, session.project_id, machineId), session.id)) {
     return { workspace: base, requested, closeSessionId: null };
   }
   const placement: Placement = request?.placement ?? { kind: "tab" };
@@ -98,7 +105,7 @@ export function sessionCreated(ws: Workspace, session: SessionInfo, newTabId: ()
       case "tab":
         return asNewTab(project);
     }
-  });
+  }, machineId);
   return { workspace: { ...base, layout: layout ?? base.layout }, requested, closeSessionId };
 }
 
