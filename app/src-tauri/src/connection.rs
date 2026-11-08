@@ -2,7 +2,7 @@
 //! (spec sections 8.1 and 10).
 
 use crate::bridge::{Bridge, ConnectionStatus};
-use crate::daemon_manager::{connect_or_start, kill_daemons, ConnectError, DaemonPaths};
+use crate::daemon_manager::{connect_or_start, install_hooks, kill_daemons, ConnectError, DaemonPaths};
 use jojo_proto::read_frame;
 use jojod::client::Client;
 use std::sync::Arc;
@@ -36,7 +36,27 @@ async fn kill_daemons_async() {
 /// Runs until the task is aborted.
 pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
     let paths = &paths;
-    run_with(move || connect_or_start(paths), bridge).await
+    // After the first successful connection, the staged jojod.exe matches
+    // the daemon's protocol (a mismatched daemon is replaced before this
+    // succeeds), so the hooks are registered to run that file.
+    let hooks_installed = std::sync::atomic::AtomicBool::new(false);
+    let hooks_installed = &hooks_installed;
+    run_with(
+        move || async move {
+            let result = connect_or_start(paths).await;
+            if result.is_ok() && !hooks_installed.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                let jojod = paths.bin_dir.join("jojod.exe");
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = install_hooks(&jojod) {
+                        eprintln!("jojo: could not register Claude Code hooks with {}: {e}", jojod.display());
+                    }
+                });
+            }
+            result
+        },
+        bridge,
+    )
+    .await
 }
 
 /// The connection loop, with the connect step passed in so tests can drive

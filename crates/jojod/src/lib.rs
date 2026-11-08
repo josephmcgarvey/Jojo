@@ -4,6 +4,7 @@ pub mod client;
 pub mod client_queue;
 pub mod command;
 pub mod daemon;
+pub mod hooks;
 pub mod logging;
 pub mod paths;
 #[cfg(windows)]
