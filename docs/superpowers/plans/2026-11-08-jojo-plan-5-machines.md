@@ -38,3 +38,5 @@ Out of scope: the settings screen, the switcher and the "+ opens a terminal" flo
 ## Progress
 
 - Task 0: branch `plan-5-machines` from master `7eb04dc` (test-hook fix).
+- Task 1: complete (088b698, 6d985b7). The Linux code needed no changes; two test races fixed. Linux tests run with `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- bash /mnt/c/.../scripts/run-linux-tests.sh` after `cargo zigbuild --tests --bins --target x86_64-unknown-linux-musl`.
+- Task 2: complete (see git log: serve --daemonize, state lock, attach --stdio; tests/remote_entry.rs passes on Windows and in WSL).

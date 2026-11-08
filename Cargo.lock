@@ -2059,6 +2059,7 @@ dependencies = [
  "jojo-agent",
  "jojo-grid",
  "jojo-proto",
+ "libc",
  "portable-pty",
  "serde",
  "serde_json",

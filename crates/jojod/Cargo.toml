@@ -28,6 +28,10 @@ tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+# fork, setsid and flock for `serve --daemonize` (already in the build through portable-pty).
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
 
