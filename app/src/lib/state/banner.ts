@@ -36,5 +36,8 @@ export function connectionBanner(status: ConnectionStatus, everConnected: boolea
       return everConnected
         ? { text: `Cannot reach jojod: ${status.message}. Logs are in ${LOG_PATH}.`, action: "Retry" }
         : { text: `jojod did not start: ${status.message}. Logs are in ${LOG_PATH}.`, action: "Retry" };
+    case "auth_failed":
+      // Spec 8.3 rule 5 (remote machines only).
+      return { text: "Auth failed. Load your key with ssh-add, then Reconnect.", action: "Reconnect" };
   }
 }

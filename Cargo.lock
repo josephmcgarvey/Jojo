@@ -2027,6 +2027,7 @@ dependencies = [
  "tauri-winrt-notification",
  "tempfile",
  "tokio",
+ "toml 1.2.1+spec-1.1.0",
  "ts-rs",
  "windows-sys 0.59.0",
 ]

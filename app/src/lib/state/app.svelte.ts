@@ -21,7 +21,7 @@ import type { ControlMsg } from "../protocol/ControlMsg";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
 import { router } from "../terminal/router";
-import { sendControl, subscribe } from "../wire/bridge";
+import { LOCAL_MACHINE, sendControl, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { askConfirm } from "./dialog.svelte";
 import { terminalControls } from "../terminal/registry";
@@ -155,7 +155,9 @@ async function loadLayout(): Promise<void> {
 
 function connect(): void {
   void subscribe({
-    onStatus(status) {
+    onStatus(machine, status) {
+      // Remote machines arrive with Plan 5's per-machine models (Task 5).
+      if (machine !== LOCAL_MACHINE) return;
       app.status = status;
       if (status.state === "connected") {
         app.everConnected = true;
@@ -164,7 +166,8 @@ function connect(): void {
         void sendControl({ type: "ListSessions" }).catch(() => {});
       }
     },
-    onFrame(frame) {
+    onFrame(machine, frame) {
+      if (machine !== LOCAL_MACHINE) return;
       if (frame.kind === "control") handleControl(frame.msg);
       else router.deliver(frame);
     },

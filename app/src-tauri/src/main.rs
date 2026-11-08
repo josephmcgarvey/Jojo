@@ -1,7 +1,9 @@
 // Hide the console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use jojo_app::bridge::Bridge;
+use jojo_app::bridge::LOCAL_MACHINE;
+use jojo_app::hub::Hub;
+use jojo_app::machines::{self, Machine};
 use jojo_app::daemon_manager::DaemonPaths;
 use jojo_app::layout::{self, LayoutFile};
 use jojo_app::settings::{self, Settings};
@@ -12,23 +14,36 @@ use tauri::webview::NewWindowResponse;
 use tauri::{Manager, State, WebviewWindowBuilder};
 
 #[tauri::command]
-fn subscribe(events: Channel<InvokeResponseBody>, bridge: State<'_, Arc<Bridge>>) {
-    bridge.set_sink(Box::new(move |bytes| {
+fn subscribe(events: Channel<InvokeResponseBody>, hub: State<'_, Arc<Hub>>) {
+    hub.frontend.set_sink(Box::new(move |bytes| {
         let _ = events.send(InvokeResponseBody::Raw(bytes));
     }));
 }
 
 #[tauri::command]
-fn send_frame(request: Request<'_>, bridge: State<'_, Arc<Bridge>>) -> Result<(), String> {
+/// Sends one frame body to the machine named in the `jojo-machine` header
+/// (This PC when the header is missing).
+fn send_frame(request: Request<'_>, hub: State<'_, Arc<Hub>>) -> Result<(), String> {
     let InvokeBody::Raw(body) = request.body() else {
         return Err("send_frame expects raw frame bytes".into());
     };
+    let machine = request.headers().get("jojo-machine").and_then(|v| v.to_str().ok()).unwrap_or(LOCAL_MACHINE);
+    let bridge = hub.bridge(machine).ok_or_else(|| format!("unknown machine {machine}"))?;
     bridge.send(body.clone()).map_err(str::to_owned)
 }
 
 #[tauri::command]
-fn restart_daemon(bridge: State<'_, Arc<Bridge>>) {
-    bridge.request_restart();
+/// This PC: restarts jojod. A remote machine: reconnects now.
+fn restart_daemon(machine: Option<String>, hub: State<'_, Arc<Hub>>) {
+    if let Some(bridge) = hub.bridge(machine.as_deref().unwrap_or(LOCAL_MACHINE)) {
+        bridge.request_restart();
+    }
+}
+
+/// The machines in `machines.toml`, This PC first.
+#[tauri::command]
+fn list_machines() -> Vec<Machine> {
+    machines::load(&machines::default_path())
 }
 
 #[tauri::command]
@@ -99,7 +114,7 @@ fn set_maximize_button_rect(x: i32, y: i32, width: i32, height: i32) {
 }
 
 fn main() {
-    let bridge = Arc::new(Bridge::default());
+    let hub = Arc::new(Hub::default());
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -108,11 +123,12 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .manage(bridge.clone())
+        .manage(hub.clone())
         .invoke_handler(tauri::generate_handler![
             subscribe,
             send_frame,
             restart_daemon,
+            list_machines,
             get_settings,
             available_shells,
             get_layout,
@@ -144,8 +160,9 @@ fn main() {
             #[cfg(not(windows))]
             drop(window);
             let source = app.path().resource_dir()?.join("daemon");
-            let paths = DaemonPaths::for_app(source);
-            tauri::async_runtime::spawn(jojo_app::connection::run(paths, bridge.clone()));
+            for machine in machines::load(&machines::default_path()) {
+                hub.start(&machine, || DaemonPaths::for_app(source.clone()));
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
