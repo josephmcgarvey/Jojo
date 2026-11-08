@@ -5,6 +5,7 @@
   import { paneMenu } from "../lib/state/contextMenus";
   import { notices } from "../lib/state/notices.svelte";
   import { endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
   import RenameField from "./RenameField.svelte";
   import TerminalPane from "./TerminalPane.svelte";
@@ -31,7 +32,7 @@
   <!-- Spec 9.4: right-click on the header strip opens the pane menu, whatever the mouse mode. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="strip" oncontextmenu={onHeaderMenu}>
-    <Badge agentState={session.state} size={10} />
+    <Badge agentState={session.state} title={stateTooltip(session)} size={10} />
     {#if renaming}
       <RenameField
         value={session.label}

@@ -36,11 +36,49 @@ enum Command {
         #[arg(long)]
         endpoint: Option<String>,
     },
+    /// Hook relay run by Claude Code: forwards the hook JSON on stdin to the
+    /// daemon for the session in JOJO_SESSION_ID. Prints nothing; exits 0.
+    Hook {
+        #[arg(long)]
+        endpoint: Option<String>,
+    },
+    /// Register Jojo's hooks in Claude Code's settings.json.
+    InstallHooks {
+        /// Defaults to ~/.claude/settings.json.
+        #[arg(long)]
+        settings: Option<PathBuf>,
+        /// The jojod the hooks run. Defaults to this executable.
+        #[arg(long)]
+        command: Option<PathBuf>,
+    },
+    /// Remove Jojo's hooks from Claude Code's settings.json.
+    UninstallHooks {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    // The hook relay runs for every Claude Code hook event, also outside
+    // Jojo. Spec 7.1: return at once when JOJO_SESSION_ID is unset, before
+    // building any runtime; otherwise one thread is enough to send one frame.
+    if let Some(Command::Hook { endpoint }) = cli.command {
+        let Ok(session) = std::env::var("JOJO_SESSION_ID") else { return Ok(()) };
+        let mut payload = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload).is_err() {
+            return Ok(());
+        }
+        let endpoint = endpoint.map(Endpoint).unwrap_or_else(default_endpoint);
+        if let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            runtime.block_on(jojod::hooks::relay(&endpoint, Some(&session), payload));
+        }
+        return Ok(());
+    }
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(cli))
+}
+
+async fn run(cli: Cli) -> anyhow::Result<()> {
     if cli.version {
         println!("jojod {} (protocol {})", jojod::VERSION, PROTOCOL_VERSION);
         return Ok(());
@@ -105,6 +143,24 @@ async fn main() -> anyhow::Result<()> {
                 eprintln!("jojod: timed out waiting for the daemon to exit");
                 std::process::exit(1);
             }
+            Ok(())
+        }
+        // Handled in `main` before a multi-thread runtime exists.
+        Some(Command::Hook { .. }) => Ok(()),
+        Some(Command::InstallHooks { settings, command }) => {
+            let settings = settings.or_else(jojod::hooks::default_settings_path).ok_or_else(|| anyhow::anyhow!("no home directory"))?;
+            let jojod = match command {
+                Some(path) => path,
+                None => std::env::current_exe()?,
+            };
+            let changed = jojod::hooks::install(&settings, &jojod::hooks::hook_command(&jojod))?;
+            println!("{} {}", if changed { "Registered Jojo's hooks in" } else { "Jojo's hooks are already registered in" }, settings.display());
+            Ok(())
+        }
+        Some(Command::UninstallHooks { settings }) => {
+            let settings = settings.or_else(jojod::hooks::default_settings_path).ok_or_else(|| anyhow::anyhow!("no home directory"))?;
+            let changed = jojod::hooks::uninstall(&settings)?;
+            println!("{} {}", if changed { "Removed Jojo's hooks from" } else { "No Jojo hooks in" }, settings.display());
             Ok(())
         }
         None => {

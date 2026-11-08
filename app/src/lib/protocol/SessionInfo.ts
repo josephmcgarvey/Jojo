@@ -14,6 +14,17 @@ created_at: number, state: AgentState,
  */
 state_changed_at: number, exit_code: number | null, claude_session_id: string | null, 
 /**
+ * Shown in the badge tooltip and toast: the pending tool for
+ * `needs_you` ("Needs permission: Bash(git push)") or the error type
+ * for `error`. `None` for every other state.
+ */
+state_detail: string | null, 
+/**
+ * True once the label is settled: the user renamed the session, or its
+ * first prompt named it (spec 7.2). A later prompt does not replace it.
+ */
+renamed: boolean, 
+/**
  * True when this daemon still holds a screen for the session, so
  * `Attach` will succeed. Computed by the daemon for every message that
  * carries a `SessionInfo`; the value stored in state.json is ignored.

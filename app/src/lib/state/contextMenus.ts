@@ -17,6 +17,7 @@ import {
   openSessionInSplit,
   projectLayout,
   restartSession,
+  resumeSession,
   splitSession,
   swapSessions,
   zoomSession,
@@ -84,6 +85,7 @@ export function sessionMenu(sessionId: string): MenuEntry[] {
       moveToNewTab: () => moveSessionToNewTab(sessionId),
       rename: () => beginRename({ kind: "session", sessionId, where: "sidebar" }),
       restart: () => restartSession(sessionId),
+      resume: () => resumeSession(sessionId),
       kill: () => killSession(sessionId),
     },
   );

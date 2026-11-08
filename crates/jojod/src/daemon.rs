@@ -6,6 +6,7 @@ use crate::command::{command_for, default_label};
 use crate::paths::Endpoint;
 use crate::session::{ClientId, Session, SpawnSpec};
 use crate::store::{now_ms, Store};
+use jojo_agent::HookEvent;
 use jojo_grid::{MAX_COLS, MAX_ROWS, MIN_COLS, MIN_ROWS};
 use jojo_proto::{
     AgentState, ControlMsg, Frame, ProjectId, ProjectInfo, SessionId, SessionInfo, SessionKind,
@@ -34,6 +35,7 @@ struct NewSession<'a> {
     cols: u16,
     rows: u16,
     shell: Option<&'a str>,
+    resume: Option<&'a str>,
 }
 
 pub struct Daemon {
@@ -201,13 +203,13 @@ impl Daemon {
                 let sessions = self.session_infos();
                 let _ = reply.send(Frame::Control(ControlMsg::Sessions { sessions }));
             }
-            ControlMsg::CreateSession { session_id, project_id, kind, cols, rows, shell } => {
+            ControlMsg::CreateSession { session_id, project_id, kind, cols, rows, shell, resume } => {
                 if !size_in_range(cols, rows) {
                     return Self::error_for(reply, "CreateSession", Some(session_id), size_error_message(cols, rows));
                 }
                 self.create_session(
                     reply,
-                    NewSession { id: session_id, project_id, kind, cols, rows, shell: shell.as_deref() },
+                    NewSession { id: session_id, project_id, kind, cols, rows, shell: shell.as_deref(), resume: resume.as_deref() },
                 )
             }
             ControlMsg::Attach { session_id, cols, rows } => {
@@ -286,11 +288,22 @@ impl Daemon {
                     return Self::error_for(reply, "RenameSession", Some(session_id), "unknown session");
                 };
                 info.label = label;
+                info.renamed = true;
                 let mut session = info.clone();
                 session.attachable = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&session_id);
                 self.save(&store);
                 self.broadcast(ControlMsg::SessionUpdated { session });
                 drop(store);
+            }
+            ControlMsg::HookEvent { session_id, payload } => self.on_hook_event(session_id, &payload),
+            ControlMsg::MarkSeen { session_id } => {
+                self.update_session(session_id, |info| {
+                    if info.state != AgentState::Done {
+                        return false;
+                    }
+                    info.state = AgentState::Idle;
+                    true
+                });
             }
             ControlMsg::Shutdown => self.shutdown.notify_one(),
             other => Self::error(reply, &variant_name(&other), "not a client request"),
@@ -298,8 +311,11 @@ impl Daemon {
     }
 
     fn create_session(self: &Arc<Self>, reply: &Reply, req: NewSession<'_>) {
-        let NewSession { id, project_id, kind, cols, rows, shell } = req;
-        let (program, args) = command_for(kind, shell);
+        let NewSession { id, project_id, kind, cols, rows, shell, resume } = req;
+        // Resume applies to claude sessions with a plain session id only (the
+        // id reaches a command line; see jojo_agent::is_valid_claude_session_id).
+        let resume = resume.filter(|id| kind == SessionKind::Claude && jojo_agent::is_valid_claude_session_id(id));
+        let (program, args) = command_for(kind, shell, resume);
         let now = now_ms();
         let info = SessionInfo {
             id,
@@ -312,7 +328,9 @@ impl Daemon {
             state: if kind == SessionKind::Claude { AgentState::Starting } else { AgentState::Running },
             state_changed_at: now,
             exit_code: None,
-            claude_session_id: None,
+            claude_session_id: resume.map(str::to_owned),
+            state_detail: None,
+            renamed: false,
             attachable: false,
         };
         // Hold the store lock across the duplicate-id check, the project
@@ -328,6 +346,13 @@ impl Daemon {
         // one), so a concurrent RemoveProject cannot remove the project
         // between the lookup and the session row being inserted.
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        // Spec 5.4: a resumed session replaces the row it continues, so it keeps
+        // that row's label, including a name the user chose.
+        let mut info = info;
+        if let Some(previous) = resume.and_then(|r| store.data.sessions.iter().find(|s| s.claude_session_id.as_deref() == Some(r))) {
+            info.label = previous.label.clone();
+            info.renamed = previous.renamed;
+        }
         if store.data.sessions.iter().any(|s| s.id == id)
             || self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&id)
         {
@@ -397,12 +422,106 @@ impl Daemon {
         if let Some(info) = store.session_mut(id) {
             info.state = AgentState::Exited;
             info.exit_code = exit_code;
+            info.state_detail = None;
             info.state_changed_at = now_ms();
             self.save(&store);
             // Broadcast while still holding `store`, matching every other
             // handler in this file, so event order always matches store order.
             self.broadcast(ControlMsg::SessionExited { session_id: id, exit_code });
             drop(store);
+        }
+    }
+
+    /// Applies `change` to a session row; when it returns true, stamps
+    /// `state_changed_at` if the state changed, saves, and broadcasts
+    /// `SessionUpdated` while holding the store lock (the order of events
+    /// matches the order of changes, as in every other handler).
+    fn update_session(&self, id: SessionId, change: impl FnOnce(&mut SessionInfo) -> bool) {
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(info) = store.session_mut(id) else { return };
+        let before = info.state;
+        if !change(info) {
+            return;
+        }
+        if info.state != before {
+            info.state_changed_at = now_ms();
+        }
+        let mut session = info.clone();
+        session.attachable = self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&id);
+        self.save(&store);
+        self.broadcast(ControlMsg::SessionUpdated { session });
+        drop(store);
+    }
+
+    /// Spec 7.1-7.2: interprets one hook payload for a session. Unknown
+    /// sessions and payloads that are not hook JSON are ignored; the relay
+    /// has already disconnected and expects no reply.
+    fn on_hook_event(&self, id: SessionId, payload: &str) {
+        let Some(event) = HookEvent::parse(payload) else {
+            tracing::debug!(session = %id, "ignored a hook payload without hook_event_name");
+            return;
+        };
+        self.update_session(id, |info| {
+            let mut changed = false;
+            match &event {
+                HookEvent::SessionStart { claude_session_id: Some(claude_id), .. }
+                    if info.claude_session_id.as_ref() != Some(claude_id) && jojo_agent::is_valid_claude_session_id(claude_id) =>
+                {
+                    info.claude_session_id = Some(claude_id.clone());
+                    changed = true;
+                }
+                HookEvent::UserPromptSubmit { prompt: Some(prompt) } if !info.renamed => {
+                    if let Some(label) = jojo_agent::label_from_prompt(prompt) {
+                        // Only the first prompt names the session: after it,
+                        // the label is treated like a user's choice.
+                        info.label = label;
+                        info.renamed = true;
+                        changed = true;
+                    }
+                }
+                _ => {}
+            }
+            if let Some(transition) = jojo_agent::apply(info.state, &event) {
+                info.state = transition.state;
+                info.state_detail = transition.detail;
+                changed = true;
+            }
+            // Claude Code exited inside a shell session: the pane is a shell
+            // again, which shows `running` (spec 7.2).
+            if matches!(event, HookEvent::SessionEnd) && info.kind == SessionKind::Shell && info.state == AgentState::Idle {
+                info.state = AgentState::Running;
+                changed = true;
+            }
+            changed
+        });
+    }
+
+    /// Spec 7.3 rule 3, run once a second by the server: a `working` session
+    /// whose PTY has been silent for `jojo_agent::SILENCE_MS` becomes `idle`.
+    pub fn tick(&self) {
+        let now = now_ms();
+        let silent: Vec<SessionId> = {
+            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            store
+                .data
+                .sessions
+                .iter()
+                .filter(|info| {
+                    sessions.get(&info.id).is_some_and(|s| jojo_agent::silence(info.state, s.last_output_ms(), now).is_some())
+                })
+                .map(|info| info.id)
+                .collect()
+        };
+        for id in silent {
+            self.update_session(id, |info| {
+                if info.state != AgentState::Working {
+                    return false;
+                }
+                info.state = AgentState::Idle;
+                info.state_detail = None;
+                true
+            });
         }
     }
 

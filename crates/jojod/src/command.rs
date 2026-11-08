@@ -9,10 +9,17 @@ pub fn find_on_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&path).map(|dir| dir.join(name)).find(|p| p.is_file())
 }
 
-/// Program and arguments for a new session.
-pub fn command_for(kind: SessionKind, shell: Option<&str>) -> (String, Vec<String>) {
+/// Program and arguments for a new session. `resume` is a
+/// `claude_session_id` to continue (`claude --resume <id>`, spec 5.4).
+pub fn command_for(kind: SessionKind, shell: Option<&str>, resume: Option<&str>) -> (String, Vec<String>) {
     match kind {
-        SessionKind::Claude => claude_command(),
+        SessionKind::Claude => {
+            let (program, mut args) = claude_command();
+            if let Some(id) = resume {
+                args.extend(["--resume".to_owned(), id.to_owned()]);
+            }
+            (program, args)
+        }
         SessionKind::Shell => (shell.map(str::to_owned).unwrap_or_else(default_shell), vec![]),
     }
 }
@@ -80,7 +87,14 @@ mod tests {
 
     #[test]
     fn shell_override_is_used() {
-        assert_eq!(command_for(SessionKind::Shell, Some("bash")), ("bash".to_string(), vec![]));
+        assert_eq!(command_for(SessionKind::Shell, Some("bash"), None), ("bash".to_string(), vec![]));
+    }
+
+    #[test]
+    fn resume_appends_the_claude_session_id() {
+        let (_, args) = command_for(SessionKind::Claude, None, Some("abc-123"));
+        assert!(args.ends_with(&["--resume".to_string(), "abc-123".to_string()]), "{args:?}");
+        assert_eq!(command_for(SessionKind::Shell, Some("bash"), Some("ignored")).1, Vec::<String>::new());
     }
 
     #[test]

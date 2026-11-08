@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyControl, emptyModel } from "./reducer";
 import { sessionsForProject, sortedProjects } from "./views";
 
-const base = { kind: "shell", command: "c", args: [] as string[], label: "l", state: "running", state_changed_at: 0, exit_code: null, claude_session_id: null, attachable: true } as const;
+const base = { kind: "shell", command: "c", args: [] as string[], label: "l", state: "running", state_changed_at: 0, exit_code: null, claude_session_id: null, state_detail: null, renamed: false, attachable: true } as const;
 
 describe("views", () => {
   it("orders sessions by creation and projects by name", () => {

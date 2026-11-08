@@ -5,7 +5,7 @@ import { SHORTCUT_LABELS } from "../input/shortcuts";
 import { countPanes, MAX_PANES, paneIds, type LayoutPreset, type SplitDirection } from "../layout/tree";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
-import { canRestart } from "../state/sessionRules";
+import { canRestart, canResume } from "../state/sessionRules";
 import { SEPARATOR, type MenuEntry } from "./types";
 
 /** Spec 9.4, "Limits": the tooltip of split items and Move-to targets in a full tab. */
@@ -152,6 +152,7 @@ export interface SessionMenuActions {
   moveToNewTab(): void;
   rename(): void;
   restart(): void;
+  resume(): void;
   kill(): void;
 }
 
@@ -179,6 +180,7 @@ export function buildSessionMenu(ctx: SessionMenuContext, actions: SessionMenuAc
     SEPARATOR,
     { kind: "action", label: "Rename…", run: actions.rename },
   ];
+  if (canResume(ctx.session)) entries.push({ kind: "action", label: "Resume", run: actions.resume });
   if (canRestart(ctx.session)) entries.push({ kind: "action", label: "Restart", run: actions.restart });
   entries.push({
     kind: "action",

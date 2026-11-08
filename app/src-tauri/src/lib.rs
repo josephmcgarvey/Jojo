@@ -10,3 +10,5 @@ pub mod settings;
 pub mod shells;
 #[cfg(windows)]
 pub mod snap;
+#[cfg(windows)]
+pub mod toast;

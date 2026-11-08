@@ -128,3 +128,41 @@ installed build.
     bash prompt (not WSL). Right-click a pane ▸ Split right ▸ New shell
     shows the same list, and the chosen shell starts in the new pane.
     Ctrl+Shift+N opens the default shell.
+
+## Agent state (Plan 4)
+
+Plan 4 changes the protocol to version 3. The first start of this build
+finds the older jojod running and shows the version banner; Restart jojod
+ends the sessions it was running.
+
+1. After the first start, `~/.claude/settings.json` contains one Jojo entry
+   (`"<...>/Jojo/bin/jojod.exe" hook`, `"timeout": 5`) for each of
+   SessionStart, UserPromptSubmit, PreToolUse, PostToolUse,
+   PermissionRequest, Notification, Elicitation, Stop, StopFailure and
+   SessionEnd; earlier hooks are still there and still first, and
+   `settings.json.jojo-bak` holds the previous file. Restarting the app adds
+   no further entries.
+2. In a shell pane, run `claude`: the badge changes from running to idle.
+   Send a prompt: the badge spins (working) and the sidebar label becomes the
+   first 40 characters of the prompt.
+3. Ask Claude to run a command that needs permission: the badge glows amber
+   (needs you) and its tooltip reads "Needs you: Needs permission:
+   Bash(...)". Approve it: the badge spins again. When the turn ends, the
+   badge is a solid teal disc (done) if the pane is not focused, and becomes
+   idle when the pane is focused.
+4. Press Esc during a turn: within about 10 seconds the badge returns to
+   idle.
+5. With another app in front (or another pane focused), let a turn finish:
+   a Windows toast "<label> · <project>" / "Finished" appears. Clicking it
+   brings Jojo forward and focuses that pane. A second finish within 10
+   seconds raises no second toast. With `"toasts": false` in
+   `%APPDATA%\Jojo\settings.json`, no toast appears.
+6. Exit Claude with `/exit` inside a shell pane: the badge shows running
+   again. Run `claude` from a pane and restart jojod from the banner or with
+   `taskkill /IM jojod.exe /F`: the session shows exited, and its sidebar
+   menu offers Resume, which continues the conversation in the same pane
+   position.
+7. A rename (double-click the sidebar row) before the first prompt keeps the
+   chosen name after the prompt.
+8. Running `claude` in Windows Terminal (outside Jojo) is unaffected: the
+   hook exits at once because `JOJO_SESSION_ID` is not set.

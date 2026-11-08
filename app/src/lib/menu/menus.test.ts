@@ -35,7 +35,7 @@ function paneActions(over: Partial<PaneMenuActions> = {}): PaneMenuActions {
 }
 
 function sessionActions(over: Partial<SessionMenuActions> = {}): SessionMenuActions {
-  return { openInSplit: noop, moveToNewTab: noop, rename: noop, restart: noop, kill: noop, ...over };
+  return { openInSplit: noop, moveToNewTab: noop, rename: noop, restart: noop, resume: noop, kill: noop, ...over };
 }
 
 function tab(id: string, ids: string[], extra: Partial<TabLayout> = {}): TabLayout {
@@ -77,6 +77,8 @@ function session(over: Partial<SessionInfo> = {}): SessionInfo {
     state_changed_at: 1,
     exit_code: null,
     claude_session_id: null,
+    state_detail: null,
+    renamed: false,
     attachable: true,
     ...over,
   };
@@ -200,5 +202,19 @@ describe("buildSessionMenu", () => {
     expect(labels(exited)).toContain("Restart");
     expect(entry(exited, "Kill")).toMatchObject({ disabledReason: "Session has already exited" });
     expect(isEnabled(entry(exited, "Move to new tab"))).toBe(true);
+    expect(labels(exited)).not.toContain("Resume");
+  });
+
+  it("offers Resume before Restart for an exited session with a claude_session_id", () => {
+    const resume = vi.fn();
+    const menu = buildSessionMenu(
+      { session: session({ state: "exited", claude_session_id: "abc" }), currentTab: current, currentProjectId: "P1", sessionTab: tab("T2", ["S"]) },
+      sessionActions({ resume }),
+    );
+    const names = labels(menu);
+    expect(names.indexOf("Resume")).toBeLessThan(names.indexOf("Restart"));
+    const item = entry(menu, "Resume");
+    if (item.kind === "action") item.run();
+    expect(resume).toHaveBeenCalledTimes(1);
   });
 });

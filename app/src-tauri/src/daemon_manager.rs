@@ -150,6 +150,27 @@ pub async fn connect_or_start(paths: &DaemonPaths) -> Result<Client, ConnectErro
     }
 }
 
+/// Runs `<jojod> install-hooks`, which registers Jojo's Claude Code hooks in
+/// `~/.claude/settings.json` (spec 7.1). The merge is idempotent, so the app
+/// runs it on every start; the hooks then always point at the jojod.exe the
+/// app staged. A failure is logged by the caller and leaves Jojo working
+/// without agent badges.
+pub fn install_hooks(jojod: &Path) -> io::Result<()> {
+    let mut cmd = std::process::Command::new(jojod);
+    cmd.arg("install-hooks");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd.output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(String::from_utf8_lossy(&output.stderr).trim().to_owned()))
+    }
+}
+
 /// Ends every jojod process of this user (used to replace a daemon that
 /// speaks an older protocol; its sessions end).
 pub fn kill_daemons() -> io::Result<()> {

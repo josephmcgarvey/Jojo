@@ -192,6 +192,7 @@ async fn concurrent_input_and_output_keep_the_connection_alive() {
             cols: 80,
             rows: 24,
             shell: Some("cmd.exe".into()),
+            resume: None,
         },
     );
     assert!(

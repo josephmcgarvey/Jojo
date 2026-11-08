@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/jojo-proto", "crates/jojo-grid", "crates/jojod", "app/src-tauri"]
+members = ["crates/jojo-proto", "crates/jojo-grid", "crates/jojo-agent", "crates/jojod", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,6 +32,7 @@ windows-sys = { version = "0.59", features = [
 ] }
 jojo-proto = { path = "crates/jojo-proto" }
 jojo-grid = { path = "crates/jojo-grid" }
+jojo-agent = { path = "crates/jojo-agent" }
 jojod = { path = "crates/jojod" }
 tauri = { version = "2", features = [] }
 tauri-build = { version = "2", features = [] }
