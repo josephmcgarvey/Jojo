@@ -1,6 +1,9 @@
 // Runs an application shortcut (spec 9.6) against the current state.
 import type { AppAction } from "../input/shortcuts";
-import { app, closePane, cycleTab, focusDirection, focusedSessionId, newSession, splitFocused, zoomSession } from "./app.svelte";
+import { app, closePane, cycleTab, focusDirection, focusedSessionId, focusPane, newSession, splitFocused, zoomSession } from "./app.svelte";
+import { nextAttentionSession } from "./jump";
+import { openDialog } from "./ui.svelte";
+import { orderedSessions } from "./views";
 import { copyFromPane, pasteIntoPane } from "./clipboard";
 
 export function runAction(action: AppAction): void {
@@ -12,12 +15,23 @@ export function runAction(action: AppAction): void {
     case "new-shell-tab":
       if (app.selectedProjectId) newSession(app.selectedProjectId, "shell");
       return;
+    // A split opens a terminal (the user's terminal-first model: type
+    // `claude` in it); the pane menu's Split right/down still offer Claude.
     case "split-right":
-      splitFocused("row", "claude");
+      splitFocused("row", "shell");
       return;
     case "split-down":
-      splitFocused("column", "claude");
+      splitFocused("column", "shell");
       return;
+    case "switcher":
+      openDialog({ kind: "switcher" });
+      return;
+    case "jump": {
+      const ordered = orderedSessions(app.machines, app.models).map((o) => o.session);
+      const next = nextAttentionSession(ordered, focused);
+      if (next) focusPane(next);
+      return;
+    }
     case "zoom":
       if (focused) zoomSession(focused);
       return;

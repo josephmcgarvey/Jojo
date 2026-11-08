@@ -21,7 +21,9 @@ export type AppAction =
   | "previous-tab"
   | "close-pane"
   | "copy"
-  | "paste";
+  | "paste"
+  | "switcher"
+  | "jump";
 
 export interface KeyInput {
   key: string;
@@ -54,6 +56,8 @@ export const SHORTCUT_LABELS: Record<AppAction, string> = {
   "close-pane": "Ctrl+Shift+W",
   copy: "Ctrl+Shift+C",
   paste: "Ctrl+Shift+V",
+  switcher: "Ctrl+Shift+P",
+  jump: "Ctrl+Shift+J",
 };
 
 const CTRL_SHIFT: Record<string, AppAction> = {
@@ -63,6 +67,8 @@ const CTRL_SHIFT: Record<string, AppAction> = {
   KeyC: "copy",
   KeyV: "paste",
   Tab: "previous-tab",
+  KeyP: "switcher",
+  KeyJ: "jump",
 };
 
 const ALT_SHIFT: Record<string, AppAction> = {

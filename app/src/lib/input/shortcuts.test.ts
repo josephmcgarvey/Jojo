@@ -40,14 +40,14 @@ describe("resolveShortcut", () => {
     expect(resolveShortcut(ctrlC, { copyOnSelect: false, hasSelection: false })).toBeNull();
   });
 
-  it("leaves plain Ctrl combinations, AltGr, the Windows key and later-plan shortcuts to the terminal", () => {
+  it("leaves plain Ctrl combinations, AltGr and the Windows key to the terminal", () => {
     expect(resolveShortcut(key("KeyT", { ctrlKey: true }, "t"), copyOn)).toBeNull();
     expect(resolveShortcut(key("KeyK", { ctrlKey: true }, "k"), copyOn)).toBeNull();
     expect(resolveShortcut(key("KeyV", { ctrlKey: true }, "v"), copyOn)).toBeNull();
     expect(resolveShortcut(key("ArrowLeft", { ctrlKey: true, altKey: true }), copyOn)).toBeNull();
     expect(resolveShortcut(key("KeyT", { ctrlKey: true, shiftKey: true, metaKey: true }, "T"), copyOn)).toBeNull();
-    expect(resolveShortcut(key("KeyP", { ctrlKey: true, shiftKey: true }, "P"), copyOn)).toBeNull();
-    expect(resolveShortcut(key("KeyJ", { ctrlKey: true, shiftKey: true }, "J"), copyOn)).toBeNull();
+    expect(resolveShortcut(key("KeyP", { ctrlKey: true, shiftKey: true }, "P"), copyOn)).toBe("switcher");
+    expect(resolveShortcut(key("KeyJ", { ctrlKey: true, shiftKey: true }, "J"), copyOn)).toBe("jump");
     expect(resolveShortcut(key("KeyA"), copyOn)).toBeNull();
   });
 

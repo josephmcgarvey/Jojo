@@ -14,6 +14,7 @@
   import AddMachineDialog from "./ui/AddMachineDialog.svelte";
   import AddProjectDialog from "./ui/AddProjectDialog.svelte";
   import SettingsDialog from "./ui/SettingsDialog.svelte";
+  import SwitcherDialog from "./ui/SwitcherDialog.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
@@ -37,7 +38,7 @@
    * rename fields handle their own keys.
    */
   function onKeydown(event: KeyboardEvent): void {
-    if (dialog.confirm || ui.menu || event.target instanceof HTMLInputElement) return;
+    if (dialog.confirm || ui.menu || ui.dialog || event.target instanceof HTMLInputElement) return;
     const action = resolveShortcut(event, {
       copyOnSelect: app.settings?.copyOnSelect ?? true,
       hasSelection: terminalControls(focusedSessionId())?.hasSelection() ?? false,
@@ -83,6 +84,8 @@
   <AddProjectDialog machineId={ui.dialog.machineId} onclose={closeDialog} />
 {:else if ui.dialog?.kind === "settings"}
   <SettingsDialog onclose={closeDialog} />
+{:else if ui.dialog?.kind === "switcher"}
+  <SwitcherDialog onclose={closeDialog} />
 {/if}
 {#if ui.menu}
   {#key ui.menu}
