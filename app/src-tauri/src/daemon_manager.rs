@@ -25,6 +25,12 @@ pub struct DaemonPaths {
     pub endpoint: Endpoint,
     /// Arguments for jojod.exe (`["serve"]` in the app).
     pub serve_args: Vec<String>,
+    /// Whether the connection loop runs `<bin_dir>\jojod.exe install-hooks`,
+    /// which edits the user's real `~/.claude/settings.json`. Only the app
+    /// (`for_app`) sets it; tests use temporary `bin_dir`s that are deleted
+    /// afterwards, and hooks registered to them would break every Claude
+    /// Code session on the machine.
+    pub register_hooks: bool,
 }
 
 impl DaemonPaths {
@@ -35,6 +41,7 @@ impl DaemonPaths {
             bin_dir: local.join("Jojo").join("bin"),
             endpoint: default_endpoint(),
             serve_args: vec!["serve".into()],
+            register_hooks: true,
         }
     }
 }

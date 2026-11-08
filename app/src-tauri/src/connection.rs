@@ -44,7 +44,7 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
     run_with(
         move || async move {
             let result = connect_or_start(paths).await;
-            if result.is_ok() && !hooks_installed.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            if result.is_ok() && paths.register_hooks && !hooks_installed.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 let jojod = paths.bin_dir.join("jojod.exe");
                 tokio::task::spawn_blocking(move || {
                     if let Err(e) = install_hooks(&jojod) {

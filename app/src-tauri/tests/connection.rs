@@ -29,6 +29,9 @@ pub fn test_paths(source: PathBuf, scratch: &std::path::Path) -> DaemonPaths {
             "--state-dir".into(),
             state.to_string_lossy().into_owned(),
         ],
+        // Never true in tests: install-hooks edits the real
+        // ~/.claude/settings.json, and bin_dir is a temporary directory.
+        register_hooks: false,
     }
 }
 
