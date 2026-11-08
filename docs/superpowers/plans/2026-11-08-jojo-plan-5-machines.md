@@ -40,3 +40,9 @@ Out of scope: the settings screen, the switcher and the "+ opens a terminal" flo
 - Task 0: branch `plan-5-machines` from master `7eb04dc` (test-hook fix).
 - Task 1: complete (088b698, 6d985b7). The Linux code needed no changes; two test races fixed. Linux tests run with `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- bash /mnt/c/.../scripts/run-linux-tests.sh` after `cargo zigbuild --tests --bins --target x86_64-unknown-linux-musl`.
 - Task 2: complete (see git log: serve --daemonize, state lock, attach --stdio; tests/remote_entry.rs passes on Windows and in WSL).
+- Task 3: complete (eed37b1, static Linux daemons staged).
+- Task 4: complete (09aa00d, machines.toml, ssh transport, hub, envelope with machine id).
+- Task 5: complete (9f6d1f1, per-machine models, sidebar groups, overlay).
+- Task 6: complete (e61f74d, Add machine, remote projects, Remove machine).
+- Task 7: complete (44709bd, remote Upgrade).
+- Task 8: live test against onprem-server passed twice (install, then idempotent repeat); checklist written.

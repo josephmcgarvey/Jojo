@@ -166,3 +166,41 @@ ends the sessions it was running.
    chosen name after the prompt.
 8. Running `claude` in Windows Terminal (outside Jojo) is unaffected: the
    hook exits at once because `JOJO_SESSION_ID` is not set.
+
+## Machines (Plan 5)
+
+Run `scripts/stage-daemon.ps1` (it builds the Linux daemons with
+cargo-zigbuild) before building. `JOJO_SSH_TEST_HOST=<host> cargo test -p
+jojo-app --test ssh_live -- --nocapture` installs and connects to a real
+server without the window.
+
+1. The sidebar shows This PC first. **+ Machine** at the bottom opens Add
+   machine; the Host field suggests the aliases from `~/.ssh/config`.
+2. Add `onprem-server` with a label: the dialog shows Connect, Platform
+   (Linux x86_64), Install jojod (Uploading, then Installed jojod 0.1.0
+   (protocol 3)), Start jojod, Logout survival (a warning while
+   `Linger=no`) and Claude Code hooks (a warning while Claude Code is not
+   installed). Done adds the machine under This PC; `machines.toml` in
+   `%APPDATA%\Jojo` lists it.
+3. The machine's + asks for a path on the server: `~` (or `~/project`)
+   adds a project; a path that is not a directory shows the daemon's error
+   in the banner. New shell in that project opens a shell on the server
+   (`hostname` prints the server's name).
+4. Restart the app: the remote machine connects again, its tabs and panes
+   come back with their screens, and the header shows no state text.
+5. On the server, `~/.local/bin/jojod shutdown` (or a reboot): the
+   machine's header reads "reconnecting", its sessions dim, and its panes
+   show "Disconnected. Sessions keep running on <label>."; typing in them
+   does nothing. The app starts the daemon again on the next attempt.
+6. Disconnect the network (or stop the OpenSSH Authentication Agent and
+   remove the key): within about 45 seconds the machine reconnects with
+   backoff; with the key removed, the header reads "auth failed", the
+   banner says "Auth failed. Load your key with ssh-add, then Reconnect.",
+   and right-click ▸ Reconnect retries after `ssh-add`.
+7. Right-click the machine header ▸ Remove machine: the confirmation names
+   the running sessions, which keep running on the server; the machine
+   leaves the sidebar and `machines.toml`. Remove and uninstall from server
+   also stops jojod there and deletes `~/.local/bin/jojod` and `~/.jojo`.
+8. A server whose installed jojod speaks another protocol shows "upgrade
+   required"; right-click ▸ Upgrade jojod… names the sessions that end,
+   then reinstalls and reconnects.
