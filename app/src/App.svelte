@@ -13,6 +13,7 @@
   import ContextMenu from "./ui/ContextMenu.svelte";
   import AddMachineDialog from "./ui/AddMachineDialog.svelte";
   import AddProjectDialog from "./ui/AddProjectDialog.svelte";
+  import SettingsDialog from "./ui/SettingsDialog.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
@@ -80,6 +81,8 @@
   <AddMachineDialog onclose={closeDialog} />
 {:else if ui.dialog?.kind === "add-project"}
   <AddProjectDialog machineId={ui.dialog.machineId} onclose={closeDialog} />
+{:else if ui.dialog?.kind === "settings"}
+  <SettingsDialog onclose={closeDialog} />
 {/if}
 {#if ui.menu}
   {#key ui.menu}

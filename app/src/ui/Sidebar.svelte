@@ -146,6 +146,7 @@
   {/each}
   <div class="footer">
     <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}>+ Machine</button>
+    <button class="settings" title="Settings" aria-label="Settings" onclick={() => openDialog({ kind: "settings" })}>⚙</button>
   </div>
 </aside>
 
@@ -182,13 +183,18 @@
   /* Spec 8.3 rule 1: a machine that is not connected keeps its sessions
      and their last badges, dimmed. */
   .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-top: auto;
     padding: 8px;
     border-top: 1px solid var(--jojo-line);
   }
-  .add-machine {
+  .add-machine,
+  .settings {
     color: var(--jojo-muted);
   }
+  .settings:hover,
   .add-machine:hover {
     color: var(--jojo-fg);
   }

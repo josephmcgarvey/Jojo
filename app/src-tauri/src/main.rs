@@ -129,6 +129,12 @@ fn get_settings() -> Settings {
     settings::load(&settings::default_path())
 }
 
+/// Saves the settings screen's values (spec 9.10).
+#[tauri::command]
+fn save_settings(settings: Settings) -> Result<(), String> {
+    settings::save(&settings::default_path(), &settings).map_err(|e| format!("could not save settings.json: {e}"))
+}
+
 /// The shell programs installed on this PC, for the "New shell" menus
 /// (see `jojo_app::shells`).
 #[tauri::command]
@@ -211,6 +217,7 @@ fn main() {
             add_machine,
             remove_machine,
             get_settings,
+            save_settings,
             available_shells,
             get_layout,
             save_layout,

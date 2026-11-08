@@ -46,9 +46,49 @@ pub fn load(path: &Path) -> Settings {
     }
 }
 
+/// Writes settings: the known keys are merged into the file's existing JSON
+/// object, so keys this version does not know (a newer Jojo's, or a hand
+/// edit) are kept. Writes `settings.json.tmp`, then renames it over
+/// `settings.json`.
+pub fn save(path: &Path, settings: &Settings) -> std::io::Result<()> {
+    let mut object = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    if let serde_json::Value::Object(known) = serde_json::to_value(settings).map_err(std::io::Error::other)? {
+        object.extend(known);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut text = serde_json::to_string_pretty(&serde_json::Value::Object(object)).map_err(std::io::Error::other)?;
+    text.push('\n');
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_round_trips_and_keeps_unknown_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{ "futureKey": [1, 2], "terminalFontSize": 15 }"#).unwrap();
+        let mut settings = load(&path);
+        settings.terminal_font_size = 16;
+        settings.copy_on_select = false;
+        save(&path, &settings).unwrap();
+        assert_eq!(load(&path), settings);
+        let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(raw["futureKey"], serde_json::json!([1, 2]));
+        assert!(!dir.path().join("settings.json.tmp").exists());
+    }
 
     #[test]
     fn missing_file_gives_defaults() {

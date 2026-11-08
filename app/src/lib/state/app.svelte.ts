@@ -25,7 +25,7 @@ import { router } from "../terminal/router";
 import { LOCAL_MACHINE, sendControl, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { askConfirm } from "./dialog.svelte";
-import { terminalControls } from "../terminal/registry";
+import { allTerminals, terminalControls } from "../terminal/registry";
 import { applyControl, clearConnectionErrors, emptyModel, type Model } from "./reducer";
 import {
   busyStateText,
@@ -651,6 +651,39 @@ export function dismissError(): void {
     if (model.lastError) app.models[machine] = { ...model, lastError: null };
   }
   mergeModels();
+}
+
+/** Saves the settings screen's values and applies the terminal font to open panes (spec 9.10). */
+export async function saveSettings(settings: Settings): Promise<void> {
+  await invoke("save_settings", { settings });
+  app.settings = settings;
+  for (const terminal of allTerminals()) {
+    terminal.applyFont(settings.terminalFontFamily, settings.terminalFontSize, settings.terminalLineHeight);
+  }
+}
+
+/** Running sessions on a machine (the ones a daemon restart ends). */
+export function runningSessions(machine: string): SessionInfo[] {
+  return Object.values(app.models[machine]?.sessions ?? {}).filter((s) => s.state !== "exited");
+}
+
+/** Spec 9.10 and 8.4: restarts This PC's jojod after a confirmation that names the sessions it ends. */
+export async function confirmRestartLocalDaemon(): Promise<void> {
+  const sessions = runningSessions(LOCAL_MACHINE);
+  const confirmed =
+    sessions.length === 0 ||
+    (await askConfirm({
+      title: "Restart jojod on This PC?",
+      message: `Restarting ends ${sessions.length} running session${sessions.length === 1 ? "" : "s"}:`,
+      details: sessions.map((s) => s.label),
+      confirmLabel: "Restart jojod",
+    }));
+  if (confirmed) restartDaemon(LOCAL_MACHINE);
+}
+
+/** Spec 10, Debug ▸ Rehydrate pane: a new snapshot for the focused pane. */
+export function rehydrateFocusedPane(): void {
+  terminalControls(focusedSessionId())?.rehydrate();
 }
 
 /** This PC: restarts jojod. A remote machine: reconnects now. */

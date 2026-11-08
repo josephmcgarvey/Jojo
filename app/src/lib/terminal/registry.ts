@@ -9,6 +9,10 @@ export interface TerminalControls {
   getSelection(): string;
   paste(text: string): void;
   mouseTrackingMode(): MouseTrackingMode;
+  /** Applies new terminal font settings and refits the terminal to its pane. */
+  applyFont(family: string, size: number, lineHeight: number): void;
+  /** Spec 10, Debug ▸ Rehydrate pane: requests a new snapshot, which repaints the terminal. */
+  rehydrate(): void;
 }
 
 const terminals = new Map<string, TerminalControls>();
@@ -22,4 +26,9 @@ export function registerTerminal(sessionId: string, controls: TerminalControls):
 
 export function terminalControls(sessionId: string | null): TerminalControls | undefined {
   return sessionId ? terminals.get(sessionId) : undefined;
+}
+
+/** Every mounted terminal (settings changes apply to all of them). */
+export function allTerminals(): TerminalControls[] {
+  return [...terminals.values()];
 }
