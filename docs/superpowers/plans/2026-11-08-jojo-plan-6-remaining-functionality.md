@@ -27,3 +27,4 @@
 ## Progress
 
 - Task 0: branch `plan-6-functionality` from master `b8197cb`.
+- Scope 1 (settings): b876c63. Scope 2-3 (switcher, jump): 3a58158. Scope 4 and 7 (+ opens a terminal, counts): d410638. Scope 5-6 (status bar, Later): dc8d0d0. Scope 8 (path suggestions): next commit.

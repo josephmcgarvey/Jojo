@@ -194,7 +194,8 @@ impl Daemon {
                 self.broadcast(ControlMsg::ProjectRemoved { id });
                 drop(store);
             }
-            ControlMsg::ListDir { path } => match list_dirs(&path) {
+            // `path` is echoed back unexpanded, so the asker can match the reply.
+            ControlMsg::ListDir { path } => match list_dirs(&expand_home(&path)) {
                 Ok(entries) => {
                     let _ = reply.send(Frame::Control(ControlMsg::DirEntries { path, entries }));
                 }

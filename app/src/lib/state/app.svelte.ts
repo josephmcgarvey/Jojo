@@ -80,6 +80,8 @@ export const app = $state({
   /** True once the first Projects reply has been applied. */
   projectsLoaded: false,
   now: Date.now(),
+  /** The latest DirEntries reply, for the Add project path suggestions (spec 9.2). */
+  dirEntries: null as { machine: string; path: string; entries: string[] } | null,
   /** Whether the Jojo window is the foreground window (spec 7.3 rule 2, 7.4 rule 1). */
   windowFocused: typeof document === "undefined" ? true : document.hasFocus(),
 });
@@ -254,6 +256,16 @@ function markLoaded(machine: string, part: "projects" | "sessions"): void {
 }
 
 function handleControl(machine: string, msg: ControlMsg): void {
+  // Folder listings feed the Add project suggestions and nothing else; a
+  // folder that does not exist (a half-typed path) is not an error to show.
+  if (msg.type === "DirEntries") {
+    app.dirEntries = { machine, path: msg.path, entries: msg.entries };
+    return;
+  }
+  if (msg.type === "Error" && msg.request === "ListDir") {
+    app.dirEntries = null;
+    return;
+  }
   if (msg.type === "Error" && msg.request === "Output") {
     router.fellBehind(msg.session_id);
     return;
@@ -602,6 +614,11 @@ export async function upgradeMachine(machineId: string): Promise<void> {
     app.models[LOCAL_MACHINE] = { ...(app.models[LOCAL_MACHINE] ?? emptyModel()), lastError: { request: "Upgrade", message: errorText(err), session_id: null } };
     mergeModels();
   }
+}
+
+/** Asks a machine for the subfolders of `path` (answered through app.dirEntries). */
+export function listDir(machineId: string, path: string): void {
+  void sendControl({ type: "ListDir", path }, machineId).catch(() => {});
 }
 
 /** Lists a new machine in the sidebar (add_machine has saved it and started its connection). */

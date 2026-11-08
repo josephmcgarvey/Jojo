@@ -210,3 +210,30 @@ server without the window.
 8. A server whose installed jojod speaks another protocol shows "upgrade
    required"; right-click ▸ Upgrade jojod… names the sessions that end,
    then reinstalls and reconnects.
+
+## Remaining functionality (Plan 6)
+
+1. ⚙ at the bottom of the sidebar opens Settings. Changing the font size
+   or line height and saving resizes the text in every open pane at once
+   (the shell reflows to the new width); the values are in
+   `%APPDATA%\Jojo\settings.json`, and keys added by hand stay there.
+2. Settings ▸ Restart daemon (This PC) names the running sessions before
+   restarting; Debug ▸ Rehydrate pane repaints the focused pane.
+3. Ctrl+Shift+P opens the switcher: typing part of a session label,
+   project name or action ("set" for Settings) narrows the list; Up, Down
+   and Enter choose; Esc closes. Choosing a session focuses its pane.
+4. With one session waiting for permission and one done, Ctrl+Shift+J
+   focuses the waiting one, then the done one.
+5. Clicking a project's + opens a terminal at once; right-clicking it
+   offers New terminal, New Claude session and the other shells. Each
+   project name shows its number of sessions. Alt+Shift+= and Alt+Shift+-
+   split with a terminal.
+6. The status bar shows the focused session's machine and project path and
+   "Ctrl+Shift+P to switch".
+7. With a jojod of another protocol running on This PC, the banner offers
+   "Restart now (ends N sessions)" and "Later"; Later hides the banner and
+   This PC's header reads "restart required".
+8. Add project on a server: typing `~/` lists the home folder's subfolders
+   below the field; typing more narrows them; choosing one fills the path
+   and lists its subfolders. A folder that does not exist shows no
+   suggestions and no error.
