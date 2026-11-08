@@ -64,14 +64,15 @@ async fn add_machine(
     hub: State<'_, Arc<Hub>>,
     host: String,
     label: String,
+    allow_restart: bool,
     progress: Channel<InstallStep>,
 ) -> Result<Machine, String> {
     let host = host.trim().to_owned();
-    if host.is_empty() {
+    if host.is_empty() || host.starts_with('-') || host.chars().any(char::is_whitespace) {
         return Err("Enter a host from ~/.ssh/config or user@host".into());
     }
     let daemon_dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("daemon");
-    jojo_app::install::install(&host, &daemon_dir, |step| {
+    jojo_app::install::install(&host, &daemon_dir, allow_restart, |step| {
         let _ = progress.send(step);
     })
     .await?;
@@ -104,7 +105,8 @@ async fn remove_machine(hub: State<'_, Arc<Hub>>, id: String, uninstall: bool) -
     let Some(machine) = list.iter().find(|m| m.id == id && m.kind == MachineKind::Ssh).cloned() else {
         return Err("This PC cannot be removed".into());
     };
-    hub.stop(&id);
+    // The uninstall runs first: when it fails (for example, the server is
+    // unreachable), the machine stays listed with its connection loop.
     if uninstall {
         if let Some(host) = &machine.ssh_host {
             let script = format!(
@@ -117,6 +119,7 @@ async fn remove_machine(hub: State<'_, Arc<Hub>>, id: String, uninstall: bool) -
             }
         }
     }
+    hub.stop(&id);
     list.retain(|m| m.id != id);
     machines::save(&path, &list).map_err(|e| format!("could not save machines.toml: {e}"))
 }

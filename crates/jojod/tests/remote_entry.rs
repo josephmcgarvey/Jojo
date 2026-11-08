@@ -74,6 +74,37 @@ async fn attach_stdio_relays_the_protocol_between_stdio_and_the_daemon() {
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn attach_stdio_exits_when_the_daemon_goes_away_while_stdin_stays_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let endpoint = test_endpoint(dir.path());
+    let cfg = DaemonConfig { endpoint: endpoint.clone(), state_dir: dir.path().to_path_buf(), scrollback: 1000 };
+    let server = tokio::spawn(jojod::server::run(cfg));
+    for _ in 0..100 {
+        if Client::connect(&endpoint).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let mut child = tokio::process::Command::new(jojod_exe())
+        .args(["attach", "--stdio", "--endpoint", &endpoint.0])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    // Held open for the whole test: SSH keeps the relay's stdin open while
+    // the connection is healthy.
+    let _stdin = child.stdin.take().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let mut admin = Client::connect(&endpoint).await.unwrap();
+    admin.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+    let status = tokio::time::timeout(WAIT, child.wait()).await.expect("attach exits when the daemon closes the connection").unwrap();
+    let _ = tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut Vec::new()).await;
+    let _ = status;
+}
+
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn serve_daemonize_returns_once_listening_and_a_second_serve_exits_cleanly() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shellChoices } from "./shells";
+import { shellChoices, shellProgram } from "./shells";
 
 const detected = [
   { label: "PowerShell 7", program: "pwsh" },
@@ -30,5 +30,21 @@ describe("shellChoices", () => {
 
   it("returns nothing when no shell was detected", () => {
     expect(shellChoices([], "pwsh")).toEqual([]);
+  });
+});
+
+describe("shellProgram", () => {
+  it("uses the default shell on This PC and the login shell on a remote machine", () => {
+    expect(shellProgram("shell", undefined, "pwsh", true)).toBe("pwsh");
+    expect(shellProgram("shell", undefined, "pwsh", false)).toBeNull();
+  });
+
+  it("keeps an explicitly requested program, such as a Restart's own command", () => {
+    expect(shellProgram("shell", "/bin/zsh", "pwsh", false)).toBe("/bin/zsh");
+    expect(shellProgram("shell", "cmd", "pwsh", true)).toBe("cmd");
+  });
+
+  it("sends no program for claude sessions", () => {
+    expect(shellProgram("claude", undefined, "pwsh", true)).toBeNull();
   });
 });

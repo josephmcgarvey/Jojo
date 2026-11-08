@@ -22,6 +22,14 @@ use tokio::process::{Child, ChildStdout};
 /// remote shell expands `~`.
 pub const REMOTE_JOJOD: &str = "~/.local/bin/jojod";
 
+/// `serve --daemonize` run through the user's login shell. A command run over
+/// SSH gets a minimal environment (on Debian and Ubuntu, ~/.profile is not
+/// read), so `~/.local/bin` and nvm paths, where Claude Code usually lives,
+/// would be missing from the PATH the daemon gives every session.
+pub fn start_daemon_command() -> String {
+    format!("exec \"${{SHELL:-/bin/sh}}\" -lc '{REMOTE_JOJOD} serve --daemonize'")
+}
+
 /// How long a non-interactive command (`serve --daemonize`, a check) may run.
 pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -43,11 +51,15 @@ pub fn ssh_program() -> PathBuf {
 /// or host key confirmation, because no terminal is attached.
 pub fn ssh_command(host: &str, options: &[&str], remote: &str) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(ssh_program());
-    cmd.args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]);
+    // -T and RequestTTY=no: a PTY would rewrite the binary protocol's bytes
+    // (a `RequestTTY force` in ~/.ssh/config would otherwise apply).
+    // RemoteCommand=none: ssh refuses a command line when ~/.ssh/config sets
+    // a RemoteCommand for the host.
+    cmd.args(["-T", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]);
     for option in options {
         cmd.args(["-o", option]);
     }
-    cmd.arg(host).arg(remote);
+    cmd.arg("--").arg(host).arg(remote);
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -65,6 +77,11 @@ pub struct CommandOutput {
 /// Runs `remote` on `host` with `input` on its stdin and waits up to
 /// `COMMAND_TIMEOUT` for it to finish.
 pub async fn run(host: &str, remote: &str, input: &[u8]) -> io::Result<CommandOutput> {
+    run_with_timeout(host, remote, input, COMMAND_TIMEOUT).await
+}
+
+/// `run` with its own time limit (the daemon upload scales it with size).
+pub async fn run_with_timeout(host: &str, remote: &str, input: &[u8], timeout: Duration) -> io::Result<CommandOutput> {
     let mut child = ssh_command(host, &[], remote).spawn()?;
     let mut stdin = child.stdin.take().expect("piped stdin");
     let input = input.to_vec();
@@ -72,9 +89,9 @@ pub async fn run(host: &str, remote: &str, input: &[u8]) -> io::Result<CommandOu
         let _ = tokio::io::AsyncWriteExt::write_all(&mut stdin, &input).await;
         // Dropping stdin closes it, so `cat > file` on the remote side ends.
     });
-    let output = tokio::time::timeout(COMMAND_TIMEOUT, child.wait_with_output())
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, format!("ssh {host} did not finish within {} s", COMMAND_TIMEOUT.as_secs())))??;
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, format!("ssh {host} did not finish within {} s", timeout.as_secs())))??;
     let _ = writer.await;
     Ok(CommandOutput {
         code: output.status.code(),
@@ -83,9 +100,21 @@ pub async fn run(host: &str, remote: &str, input: &[u8]) -> io::Result<CommandOu
     })
 }
 
-/// True for ssh's own authentication failure (spec 8.3 rule 5).
+/// True for ssh's own authentication failure (spec 8.3 rule 5):
+/// `user@host: Permission denied (publickey).`, with exit code 255.
 pub fn is_auth_failure(code: Option<i32>, stderr: &str) -> bool {
-    code == Some(255) && stderr.contains("Permission denied")
+    code == Some(255) && is_ssh_permission_denied(stderr)
+}
+
+/// ssh's "Permission denied (<methods>)", as opposed to a remote file's
+/// "Permission denied" (`bash: .../jojod: Permission denied`, or jojod's
+/// `Permission denied (os error 13)`), which no key can fix.
+fn is_ssh_permission_denied(stderr: &str) -> bool {
+    stderr.lines().any(|line| {
+        line.split("Permission denied (").nth(1).is_some_and(|rest| {
+            ["publickey", "password", "keyboard-interactive", "gssapi", "hostbased"].iter().any(|method| rest.starts_with(method))
+        })
+    })
 }
 
 /// The reading half of a connection: ssh's stdout, which owns the `ssh`
@@ -154,10 +183,11 @@ async fn attach(host: &str) -> Result<Client, AttachFailure> {
 /// messages decide: ssh's "Permission denied", the remote shell's report of
 /// a missing jojod, or jojod's own failure to reach its socket.
 fn classify(host: &str, stderr: &str, handshake: io::Error) -> AttachFailure {
-    if stderr.contains("Permission denied") {
+    if is_ssh_permission_denied(stderr) {
         return AttachFailure::Connect(ConnectError::AuthFailed(stderr.to_owned()));
     }
-    if stderr.contains(".local/bin/jojod") && (stderr.contains("No such file") || stderr.contains("not found")) {
+    let lower = stderr.to_lowercase();
+    if lower.contains(".local/bin/jojod") && (lower.contains("no such file") || lower.contains("not found")) {
         return AttachFailure::Connect(ConnectError::Io(io::Error::new(
             io::ErrorKind::NotFound,
             format!("jojod is not installed on {host}; remove the machine and add it again"),
@@ -181,7 +211,7 @@ pub async fn connect(host: &str) -> Result<Client, ConnectError> {
         Err(AttachFailure::Connect(e)) => return Err(e),
         Err(AttachFailure::NoDaemon(_)) => {}
     }
-    let started = run(host, &format!("{REMOTE_JOJOD} serve --daemonize"), b"").await.map_err(ConnectError::Io)?;
+    let started = run(host, &start_daemon_command(), b"").await.map_err(ConnectError::Io)?;
     if is_auth_failure(started.code, &started.stderr) {
         return Err(ConnectError::AuthFailed(started.stderr.trim().to_owned()));
     }
@@ -216,6 +246,9 @@ mod tests {
         assert_eq!(kind(classify("h", "Error: No such file or directory (os error 2)", eof())), "no daemon");
         assert_eq!(kind(classify("h", "Error: Connection refused (os error 111)", eof())), "no daemon");
         assert_eq!(kind(classify("h", "ssh: connect to host 10.0.0.1 port 22: Connection timed out", eof())), "other");
+        assert_eq!(kind(classify("h", "bash: line 1: /home/u/.local/bin/jojod: Permission denied", eof())), "other");
+        assert_eq!(kind(classify("h", "Error: Permission denied (os error 13)", eof())), "other");
+        assert_eq!(kind(classify("h", "zsh:1: no such file or directory: /home/u/.local/bin/jojod", eof())), "not installed");
         assert_eq!(kind(classify("h", "ssh: connect to host 10.0.0.1 port 22: Connection refused", eof())), "other");
     }
 
@@ -224,5 +257,6 @@ mod tests {
         assert!(is_auth_failure(Some(255), "user@host: Permission denied (publickey)."));
         assert!(!is_auth_failure(Some(1), "Permission denied"));
         assert!(!is_auth_failure(Some(255), "Connection timed out"));
+        assert!(!is_auth_failure(Some(255), "Error: Permission denied (os error 13)"));
     }
 }

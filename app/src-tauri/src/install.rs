@@ -1,7 +1,7 @@
 //! Adding a Linux server (spec 8.2): the install steps, run over SSH and
 //! reported one by one.
 
-use crate::ssh::{is_auth_failure, run, REMOTE_JOJOD};
+use crate::ssh::{is_auth_failure, run, run_with_timeout, start_daemon_command, REMOTE_JOJOD};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use ts_rs::TS;
@@ -57,10 +57,27 @@ pub fn default_ssh_config() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".ssh").join("config"))
 }
 
+/// The protocol number in a `jojod --version` line, `jojod 0.1.0 (protocol 3)`.
+pub fn protocol_of(version_line: &str) -> Option<u32> {
+    version_line.rsplit_once("(protocol ")?.1.trim().strip_suffix(')')?.parse().ok()
+}
+
+/// The message returned when installing would end a running daemon of
+/// another protocol and the caller did not allow it. The Add machine dialog
+/// recognizes the prefix and offers to install anyway.
+pub const RESTART_NEEDED: &str = "RESTART_NEEDED: ";
+
 /// Runs spec 8.2 steps 2 to 7 against `host`, calling `report` before and
 /// after each step. Returns an error message when a step fails; warnings
 /// (lingering off, Claude Code missing) do not stop the install.
-pub async fn install(host: &str, daemon_dir: &Path, mut report: impl FnMut(InstallStep)) -> Result<(), String> {
+///
+/// When another version is installed: with the same protocol, the new
+/// binary replaces the old file and the running daemon keeps running (and
+/// its sessions with it); the new binary runs from the next start. With
+/// another protocol, the running daemon must end, which ends every session
+/// on the server, so that happens only with `allow_restart` (spec 8.4);
+/// otherwise the install stops with `RESTART_NEEDED`.
+pub async fn install(host: &str, daemon_dir: &Path, allow_restart: bool, mut report: impl FnMut(InstallStep)) -> Result<(), String> {
     // Step 2: connectivity, with BatchMode (no prompts).
     report(step("connect", "running", format!("ssh {host} uname -sm")));
     let uname = run(host, "uname -sm", b"").await.map_err(|e| fail(&mut report, "connect", e.to_string()))?;
@@ -96,9 +113,17 @@ pub async fn install(host: &str, daemon_dir: &Path, mut report: impl FnMut(Insta
     if installed.code == Some(0) && current == wanted {
         report(step("install", "ok", format!("{wanted} is installed")));
     } else {
-        if installed.code == Some(0) {
-            // A different jojod is installed; its daemon (if running) speaks
-            // another protocol and must end before the new one starts.
+        let other_protocol = installed.code == Some(0) && protocol_of(&current) != Some(jojo_proto::PROTOCOL_VERSION);
+        if other_protocol {
+            if !allow_restart {
+                return Err(fail(
+                    &mut report,
+                    "install",
+                    format!("{RESTART_NEEDED}{host} runs {current}. Installing {wanted} ends its daemon and every session running on {host}."),
+                ));
+            }
+            // Its daemon (if running) speaks another protocol and must end
+            // before the new one starts; `shutdown` with the old binary.
             let _ = run(host, &format!("{REMOTE_JOJOD} shutdown"), b"").await;
         }
         let bytes = std::fs::read(&local_binary).map_err(|e| fail(&mut report, "install", format!("cannot read {binary}: {e}")))?;
@@ -106,7 +131,10 @@ pub async fn install(host: &str, daemon_dir: &Path, mut report: impl FnMut(Insta
         // Streamed over stdin, so the server needs neither scp nor SFTP;
         // `mv` replaces the binary atomically.
         let script = "mkdir -p ~/.local/bin && cat > ~/.local/bin/jojod.new && chmod +x ~/.local/bin/jojod.new && mv ~/.local/bin/jojod.new ~/.local/bin/jojod";
-        let upload = run(host, script, &bytes).await.map_err(|e| fail(&mut report, "install", e.to_string()))?;
+        // 30 s plus 32 KB/s: 4 MB gets about two and a half minutes, enough
+        // for a slow uplink.
+        let limit = std::time::Duration::from_secs(30 + bytes.len() as u64 / (32 * 1024));
+        let upload = run_with_timeout(host, script, &bytes, limit).await.map_err(|e| fail(&mut report, "install", e.to_string()))?;
         if upload.code != Some(0) {
             return Err(fail(&mut report, "install", format!("upload failed: {}", upload.stderr.trim())));
         }
@@ -115,7 +143,7 @@ pub async fn install(host: &str, daemon_dir: &Path, mut report: impl FnMut(Insta
 
     // Step 5: start (a running daemon of the same version is kept).
     report(step("start", "running", "Starting jojod"));
-    let started = run(host, &format!("{REMOTE_JOJOD} serve --daemonize"), b"").await.map_err(|e| fail(&mut report, "start", e.to_string()))?;
+    let started = run(host, &start_daemon_command(), b"").await.map_err(|e| fail(&mut report, "start", e.to_string()))?;
     if started.code != Some(0) {
         return Err(fail(&mut report, "start", format!("jojod did not start: {}", started.stderr.trim())));
     }
@@ -134,7 +162,10 @@ pub async fn install(host: &str, daemon_dir: &Path, mut report: impl FnMut(Insta
     }
 
     // Step 7: hooks.
-    let hooks = run(host, &format!("{REMOTE_JOJOD} install-hooks >/dev/null && (command -v claude >/dev/null || echo NO_CLAUDE)"), b"")
+    // Through the login shell, like the daemon, so `command -v claude` sees
+    // the PATH sessions will get.
+    let check = format!("{REMOTE_JOJOD} install-hooks >/dev/null && (command -v claude >/dev/null || echo NO_CLAUDE)");
+    let hooks = run(host, &format!("exec \"${{SHELL:-/bin/sh}}\" -lc '{check}'"), b"")
         .await
         .map_err(|e| fail(&mut report, "hooks", e.to_string()))?;
     if hooks.code != Some(0) {
@@ -168,6 +199,13 @@ mod tests {
     fn lists_concrete_host_aliases_from_ssh_config() {
         let config = "Host onprem-server 100.100.0.5\n  HostName 100.100.0.5\n  User j\n\nHost *\n  ServerAliveInterval 30\nhost dev !bad\nMatch host x\n";
         assert_eq!(ssh_config_hosts(config), vec!["onprem-server", "100.100.0.5", "dev"]);
+    }
+
+    #[test]
+    fn reads_the_protocol_from_a_version_line() {
+        assert_eq!(protocol_of("jojod 0.1.0 (protocol 3)"), Some(3));
+        assert_eq!(protocol_of("jojod 0.2.0 (protocol 12)\n"), Some(12));
+        assert_eq!(protocol_of("bash: jojod: not found"), None);
     }
 
     #[test]

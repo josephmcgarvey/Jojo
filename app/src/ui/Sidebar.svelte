@@ -106,7 +106,7 @@
     {#if menuFor === project.id}
       <div class="menu" data-session-menu={project.id}>
         <button onclick={() => { menuFor = null; newSession(project.id, "claude"); }}>Claude</button>
-        {#each shells as shell (shell.program)}
+        {#each machine.kind === "local" ? shells : [] as shell (shell.program)}
           <button onclick={() => { menuFor = null; newSession(project.id, "shell", { kind: "tab" }, shell.program); }}>{shell.label}</button>
         {:else}
           <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>

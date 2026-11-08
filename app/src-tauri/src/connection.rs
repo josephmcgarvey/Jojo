@@ -178,7 +178,7 @@ where
     bridge.emit_status(ConnectionStatus::Connected { jojod_version });
 
     let reader_bridge = bridge.clone();
-    let mut reader_task = tokio::spawn(async move {
+    let reader_task = tokio::spawn(async move {
         let mut reader = reader;
         loop {
             match read_frame(&mut reader).await {
@@ -191,6 +191,12 @@ where
             }
         }
     });
+    // Aborts the reader when `serve` ends on any path, including when the
+    // whole connection loop is aborted (Hub::stop, a removed machine), which
+    // drops this future without running the code after the loop below. A
+    // reader left running would keep the ssh process and keep emitting
+    // frames under the machine's id.
+    let mut reader_task = AbortOnDrop(reader_task);
 
     // Captured once, right before the loop starts waiting: a restart
     // requested earlier (for example while the previous attempt was still
@@ -200,7 +206,7 @@ where
 
     let reason = loop {
         tokio::select! {
-            result = &mut reader_task => {
+            result = &mut reader_task.0 => {
                 break match result {
                     Ok(reason) => reason,
                     Err(e) => format!("the reader task failed: {e}"),
@@ -224,12 +230,17 @@ where
             }
         }
     };
-    // Every exit path lands here: the reader task is aborted whether it was
-    // the one that ended the connection (a harmless no-op abort on an
-    // already-finished task) or whether the write or restart arm ended it
-    // instead (where the reader task is otherwise still running).
-    reader_task.abort();
+    drop(reader_task);
     reason
+}
+
+/// Aborts a task when dropped.
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 #[cfg(test)]

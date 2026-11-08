@@ -194,8 +194,16 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 anyhow::bail!("attach needs --stdio");
             }
             let endpoint = endpoint.map(Endpoint).unwrap_or_else(default_endpoint);
-            jojod::attach::relay_stdio(&endpoint).await?;
-            Ok(())
+            let result = jojod::attach::relay_stdio(&endpoint).await;
+            if let Err(e) = &result {
+                eprintln!("Error: {e}");
+            }
+            // tokio reads stdin with a blocking read on its blocking pool,
+            // which cannot be cancelled; returning would drop the runtime,
+            // which waits for that read, so stdout (and the SSH channel)
+            // would stay open after the daemon closed the socket and the app
+            // would not notice until the next keystroke. Exit at once.
+            std::process::exit(if result.is_ok() { 0 } else { 1 });
         }
         Some(Command::InstallHooks { settings, command }) => {
             let settings = settings.or_else(jojod::hooks::default_settings_path).ok_or_else(|| anyhow::anyhow!("no home directory"))?;

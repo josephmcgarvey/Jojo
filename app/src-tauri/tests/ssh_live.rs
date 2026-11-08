@@ -17,7 +17,7 @@ async fn installs_and_connects_to_a_real_server() {
         return;
     };
     let daemon_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("daemon");
-    jojo_app::install::install(&host, &daemon_dir, |step| eprintln!("[{}] {}: {}", step.status, step.step, step.message))
+    jojo_app::install::install(&host, &daemon_dir, false, |step| eprintln!("[{}] {}: {}", step.status, step.step, step.message))
         .await
         .expect("install");
 

@@ -1,6 +1,20 @@
 // The "New shell" menu entries (Plan 3 amendment B).
 import type { ShellOption } from "../backend/ShellOption";
 
+/**
+ * The `shell` field of a CreateSession. `requested` is a program chosen for
+ * this session: from the New shell menu (This PC only) or a Restart, which
+ * passes the old session's own command, valid on its machine. Otherwise
+ * This PC uses the defaultShell setting, and a remote machine gets null so
+ * its daemon starts the user's login shell ($SHELL): the defaultShell
+ * setting and the detected shells are Windows programs.
+ */
+export function shellProgram(kind: "claude" | "shell", requested: string | null | undefined, defaultShell: string | null | undefined, isLocal: boolean): string | null {
+  if (kind !== "shell") return null;
+  if (requested !== undefined) return requested;
+  return isLocal ? (defaultShell ?? null) : null;
+}
+
 export interface ShellChoice {
   /** Menu text; the default shell's label ends with " (default)". */
   label: string;

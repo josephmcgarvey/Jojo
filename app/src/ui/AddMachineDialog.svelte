@@ -27,16 +27,22 @@
   let running = $state(false);
   let done = $state(false);
   let error = $state<string | null>(null);
+  /** Set when installing would end a running daemon of another protocol (spec 8.4). */
+  let restartNeeded = $state(false);
   let steps = $state<InstallStep[]>([]);
 
   onMount(() => {
     void invoke<string[]>("ssh_hosts").then((list) => (hosts = list)).catch(() => {});
   });
 
-  async function install(): Promise<void> {
+  /** The backend's prefix for "installing would end the running daemon" (install.rs RESTART_NEEDED). */
+  const RESTART_NEEDED = "RESTART_NEEDED: ";
+
+  async function install(allowRestart = false): Promise<void> {
     running = true;
     done = false;
     error = null;
+    restartNeeded = false;
     steps = [];
     const progress = new Channel<InstallStep>();
     progress.onmessage = (step) => {
@@ -46,11 +52,13 @@
       else steps.push(step);
     };
     try {
-      const machine = await invoke<Machine>("add_machine", { host, label, progress });
+      const machine = await invoke<Machine>("add_machine", { host, label, allowRestart, progress });
       machineAdded(machine);
       done = true;
     } catch (err) {
-      error = errorText(err);
+      const text = errorText(err);
+      restartNeeded = text.startsWith(RESTART_NEEDED);
+      error = restartNeeded ? text.slice(RESTART_NEEDED.length) : text;
     } finally {
       running = false;
     }
@@ -87,7 +95,7 @@
           <li class={s.status}>
             <span class="mark">{s.status === "ok" ? "✓" : s.status === "failed" ? "✕" : s.status === "warning" ? "!" : "…"}</span>
             <span class="name">{STEP_NAMES[s.step] ?? s.step}</span>
-            <span class="message">{s.message}</span>
+            <span class="message">{s.message.replace(RESTART_NEEDED, "")}</span>
           </li>
         {/each}
       </ol>
@@ -99,7 +107,11 @@
         <button class="primary" onclick={onclose}>Done</button>
       {:else}
         <button onclick={onclose} disabled={running}>Cancel</button>
-        <button class="primary" onclick={install} disabled={running || !host.trim()}>{running ? "Installing…" : error ? "Try again" : "Install"}</button>
+        {#if restartNeeded}
+          <button class="primary" onclick={() => install(true)} disabled={running}>Install and end sessions</button>
+        {:else}
+          <button class="primary" onclick={() => install()} disabled={running || !host.trim()}>{running ? "Installing…" : error ? "Try again" : "Install"}</button>
+        {/if}
       {/if}
     </div>
   </div>

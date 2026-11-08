@@ -39,6 +39,7 @@ import {
   restartShell,
 } from "./sessionRules";
 import { toastFor } from "./toasts";
+import { shellProgram } from "./shells";
 import { sortedProjects } from "./views";
 import {
   createFailed,
@@ -423,8 +424,9 @@ export function newSession(
 ): void {
   const id = newUlid();
   commit(requestCreate(app.workspace, id, { projectId, placement }));
-  const program = shell !== undefined ? shell : kind === "shell" ? (app.settings?.defaultShell ?? null) : null;
-  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume }, machineOfProject(projectId)).catch(() => {
+  const machine = machineOfProject(projectId);
+  const program = shellProgram(kind, shell, app.settings?.defaultShell, machine === LOCAL_MACHINE);
+  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume }, machine).catch(() => {
     // Refused (for example, not connected): the reconnecting banner already
     // explains why. Stop waiting for a SessionCreated that is never coming.
     commit(createFailed(app.workspace, id));
@@ -572,7 +574,8 @@ export async function addProject(): Promise<void> {
  */
 export function addRemoteProject(machineId: string, path: string): Promise<void> {
   const trimmed = path.trim().replace(/\/+$/, "") || "/";
-  const name = trimmed.split("/").filter(Boolean).pop() ?? trimmed;
+  const last = trimmed.split("/").filter(Boolean).pop() ?? trimmed;
+  const name = last === "~" ? "home" : last;
   return sendControl({ type: "AddProject", path: trimmed, name }, machineId);
 }
 
@@ -594,7 +597,7 @@ export async function upgradeMachine(machineId: string): Promise<void> {
   if (!confirmed) return;
   const progress = new Channel<unknown>();
   try {
-    await invoke("add_machine", { host: machine.ssh_host, label: machine.label, progress });
+    await invoke("add_machine", { host: machine.ssh_host, label: machine.label, allowRestart: true, progress });
   } catch (err) {
     app.models[LOCAL_MACHINE] = { ...(app.models[LOCAL_MACHINE] ?? emptyModel()), lastError: { request: "Upgrade", message: errorText(err), session_id: null } };
     mergeModels();
@@ -632,10 +635,12 @@ export async function removeMachine(machineId: string, uninstall: boolean): Prom
     return;
   }
   app.machines = app.machines.filter((m) => m.id !== machineId);
+  if (app.selectedProjectId && machineOfProject(app.selectedProjectId) === machineId) app.selectedProjectId = null;
   delete app.models[machineId];
   delete app.statuses[machineId];
   delete app.loaded[machineId];
   mergeModels();
+  if (!app.selectedProjectId) app.selectedProjectId = sortedProjects(app.model)[0]?.id ?? null;
   const prefix = `${machineId}:`;
   const projects = Object.fromEntries(Object.entries(app.workspace.layout.projects).filter(([key]) => !key.startsWith(prefix)));
   commit({ ...app.workspace, layout: { ...app.workspace.layout, projects } });

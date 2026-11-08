@@ -195,8 +195,14 @@ server without the window.
 6. Disconnect the network (or stop the OpenSSH Authentication Agent and
    remove the key): within about 45 seconds the machine reconnects with
    backoff; with the key removed, the header reads "auth failed", the
-   banner says "Auth failed. Load your key with ssh-add, then Reconnect.",
-   and right-click ▸ Reconnect retries after `ssh-add`.
+   machine's panes say "Auth failed on <label>. Load your key with
+   ssh-add, then Reconnect.", and right-click the header ▸ Reconnect
+   retries after `ssh-add`.
+9. On a server with Claude Code in `~/.local/bin`, the Claude Code hooks
+   step reports "registered" and a Claude session starts there (the
+   daemon is started through the login shell, so its PATH includes it).
+10. New shell in a server project starts the server's login shell, and
+    the + menu lists no Windows shells for it.
 7. Right-click the machine header ▸ Remove machine: the confirmation names
    the running sessions, which keep running on the server; the machine
    leaves the sidebar and `machines.toml`. Remove and uninstall from server

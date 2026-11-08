@@ -57,7 +57,19 @@ pub fn default_path() -> PathBuf {
 fn normalized(machines: Vec<Machine>) -> Vec<Machine> {
     let local = machines.iter().find(|m| m.id == LOCAL_MACHINE).cloned().map(|m| Machine { kind: MachineKind::Local, ssh_host: None, enabled: true, ..m });
     let mut out = vec![local.unwrap_or_else(this_pc)];
-    out.extend(machines.into_iter().filter(|m| m.id != LOCAL_MACHINE && m.kind == MachineKind::Ssh && m.ssh_host.is_some()));
+    // A usable remote entry has a host that ssh cannot read as an option and
+    // an id that is unique, short enough for the bridge envelope and free of
+    // the `:` that separates layout keys.
+    let mut seen = std::collections::HashSet::new();
+    out.extend(machines.into_iter().filter(|m| {
+        m.id != LOCAL_MACHINE
+            && m.kind == MachineKind::Ssh
+            && m.ssh_host.as_deref().is_some_and(|h| !h.is_empty() && !h.starts_with('-'))
+            && !m.id.is_empty()
+            && m.id.len() <= 64
+            && !m.id.contains(':')
+            && seen.insert(m.id.clone())
+    }));
     out
 }
 
