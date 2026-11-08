@@ -16,6 +16,8 @@ function session(id: string, over: Partial<SessionInfo> = {}): SessionInfo {
     state_changed_at: 1,
     exit_code: null,
     claude_session_id: null,
+    state_detail: null,
+    renamed: false,
     attachable: true,
     ...over,
   };

@@ -27,6 +27,7 @@ import { applyControl, clearConnectionErrors, emptyModel, type Model } from "./r
 import {
   busyStateText,
   canRestart,
+  canResume,
   closeTabMessage,
   closeTabNeedsConfirmation,
   closeTabSummary,
@@ -285,11 +286,17 @@ export function focusDirection(direction: FocusDirection): void {
  * shell session (Restart passes the old session's program); when omitted, a
  * shell uses the defaultShell setting.
  */
-export function newSession(projectId: string, kind: SessionKind, placement: Placement = { kind: "tab" }, shell?: string | null): void {
+export function newSession(
+  projectId: string,
+  kind: SessionKind,
+  placement: Placement = { kind: "tab" },
+  shell?: string | null,
+  resume: string | null = null,
+): void {
   const id = newUlid();
   commit(requestCreate(app.workspace, id, { projectId, placement }));
   const program = shell !== undefined ? shell : kind === "shell" ? (app.settings?.defaultShell ?? null) : null;
-  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program }).catch(() => {
+  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume }).catch(() => {
     // Refused (for example, not connected): the reconnecting banner already
     // explains why. Stop waiting for a SessionCreated that is never coming.
     commit(createFailed(app.workspace, id));
@@ -379,6 +386,13 @@ export function restartSession(sessionId: string): void {
   const session = app.model.sessions[sessionId];
   if (!session || !canRestart(session)) return;
   newSession(session.project_id, session.kind, { kind: "replace", oldId: sessionId }, restartShell(session));
+}
+
+/** Spec 5.4: continues an exited claude session's conversation in its pane. */
+export function resumeSession(sessionId: string): void {
+  const session = app.model.sessions[sessionId];
+  if (!session || !canResume(session)) return;
+  newSession(session.project_id, "claude", { kind: "replace", oldId: sessionId }, null, session.claude_session_id);
 }
 
 export function zoomSession(sessionId: string): void {

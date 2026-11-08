@@ -97,6 +97,8 @@ mod tests {
             state_changed_at: 1,
             exit_code,
             claude_session_id: None,
+            state_detail: None,
+            renamed: false,
             attachable: false,
         }
     }

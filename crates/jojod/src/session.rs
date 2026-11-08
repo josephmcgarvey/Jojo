@@ -36,7 +36,7 @@ use jojo_proto::{Frame, SessionId};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc as std_mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -102,6 +102,10 @@ pub struct Session {
     /// way to `on_exit` returning and the `Session` being dropped or
     /// explicitly closed).
     exited: Arc<AtomicBool>,
+    /// Unix time in milliseconds of the last PTY output (or of the spawn,
+    /// before any output). The daemon's silence fallback reads it (spec 7.3
+    /// rule 3).
+    last_output_ms: Arc<AtomicU64>,
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -117,6 +121,7 @@ type SessionSetup = (
     std_mpsc::Sender<Vec<u8>>,
     Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     std_mpsc::Receiver<()>,
+    Arc<AtomicU64>,
 );
 
 impl Session {
@@ -159,6 +164,7 @@ impl Session {
             let mut reader = pair.master.try_clone_reader().context("PTY reader")?;
             let mut writer = pair.master.take_writer().context("PTY writer")?;
             let master = Arc::new(Mutex::new(Some(pair.master)));
+            let last_output_ms = Arc::new(AtomicU64::new(crate::store::now_ms()));
             let shared = Arc::new(Mutex::new(Shared {
                 grid: TermGrid::new(spec.cols, spec.rows, spec.scrollback),
                 subscribers: Vec::new(),
@@ -184,6 +190,7 @@ impl Session {
             {
                 let shared = shared.clone();
                 let input_tx = input_tx.clone();
+                let last_output_ms = last_output_ms.clone();
                 thread::Builder::new().name(format!("pty-out-{id}")).spawn(move || {
                     let mut buf = vec![0u8; 64 * 1024];
                     loop {
@@ -191,6 +198,7 @@ impl Session {
                             Ok(0) | Err(_) => break,
                             Ok(n) => n,
                         };
+                        last_output_ms.store(crate::store::now_ms(), Ordering::Relaxed);
                         let mut s = shared.lock().expect("session lock");
                         s.grid.feed(&buf[..n]);
                         let replies = s.grid.take_replies();
@@ -223,10 +231,10 @@ impl Session {
                 })?;
             }
 
-            Ok((shared, input_tx, master, reader_done_rx))
+            Ok((shared, input_tx, master, reader_done_rx, last_output_ms))
         })();
 
-        let (shared, input_tx, master, reader_done_rx) = match setup {
+        let (shared, input_tx, master, reader_done_rx, last_output_ms) = match setup {
             Ok(v) => v,
             Err(e) => {
                 let _ = child.kill();
@@ -278,7 +286,7 @@ impl Session {
             }
         }
 
-        Ok(Arc::new(Session { id, shared, input_tx, master, killer: Mutex::new(killer), exited }))
+        Ok(Arc::new(Session { id, shared, input_tx, master, killer: Mutex::new(killer), exited, last_output_ms }))
     }
 
     /// Sends one Snapshot laid out for `cols` x `rows`, then live Output.
@@ -318,6 +326,11 @@ impl Session {
         if let Some(master) = self.master.lock().expect("master lock").as_ref() {
             let _ = master.resize(pty_size(cols, rows));
         }
+    }
+
+    /// Unix time in milliseconds of the session's last PTY output.
+    pub fn last_output_ms(&self) -> u64 {
+        self.last_output_ms.load(Ordering::Relaxed)
     }
 
     pub fn size(&self) -> (u16, u16) {

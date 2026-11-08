@@ -49,6 +49,15 @@ pub struct SessionInfo {
     pub state_changed_at: u64,
     pub exit_code: Option<i32>,
     pub claude_session_id: Option<String>,
+    /// Shown in the badge tooltip and toast: the pending tool for
+    /// `needs_you` ("Needs permission: Bash(git push)") or the error type
+    /// for `error`. `None` for every other state.
+    #[serde(default)]
+    pub state_detail: Option<String>,
+    /// True once the user has renamed the session; a first prompt then no
+    /// longer replaces the label (spec 7.2).
+    #[serde(default)]
+    pub renamed: bool,
     /// True when this daemon still holds a screen for the session, so
     /// `Attach` will succeed. Computed by the daemon for every message that
     /// carries a `SessionInfo`; the value stored in state.json is ignored.
@@ -88,6 +97,10 @@ pub enum ControlMsg {
         rows: u16,
         /// Shell program for `SessionKind::Shell`; `None` uses the daemon default.
         shell: Option<String>,
+        /// For `SessionKind::Claude`: a `claude_session_id` to continue. The
+        /// daemon runs `claude --resume <id>` (spec 5.4).
+        #[serde(default)]
+        resume: Option<String>,
     },
     SessionCreated { session: SessionInfo },
     SessionUpdated { session: SessionInfo },
@@ -99,6 +112,12 @@ pub enum ControlMsg {
     SessionRemoved { session_id: SessionId },
     RenameSession { session_id: SessionId, label: String },
     SessionExited { session_id: SessionId, exit_code: Option<i32> },
+    /// The user has seen this session's pane: a `done` session becomes
+    /// `idle` (spec 7.3 rule 2). App to daemon.
+    MarkSeen { session_id: SessionId },
+    /// One Claude Code hook payload, as raw JSON, from `jojod hook` (spec
+    /// 7.1). Hook relay to daemon; the daemon sends no reply.
+    HookEvent { session_id: SessionId, payload: String },
 
     Shutdown,
     /// Reports a failure, either in response to a specific request or for a

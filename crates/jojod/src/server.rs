@@ -21,6 +21,21 @@ pub async fn run(cfg: DaemonConfig) -> anyhow::Result<()> {
 /// a fake `Accept` in tests instead of a real OS transport (Finding F1).
 async fn run_with_listener(cfg: DaemonConfig, mut listener: impl Accept + 'static) -> anyhow::Result<()> {
     let daemon = Daemon::new(cfg)?;
+    // The silence fallback (spec 7.3 rule 3) checks every live session once
+    // a second. The task holds only a weak reference, so it ends with the
+    // daemon.
+    let ticker = {
+        let weak = std::sync::Arc::downgrade(&daemon);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                let Some(daemon) = weak.upgrade() else { return };
+                daemon.tick();
+            }
+        })
+    };
+    let _stop_ticker = AbortOnDrop(ticker);
     loop {
         tokio::select! {
             accepted = listener.accept() => {
@@ -168,6 +183,16 @@ async fn serve_connection(daemon: Arc<Daemon>, mut reader: BoxRead, writer: BoxW
     drop(tx);
     let _ = writer_task.await;
     tracing::info!(client, "client disconnected");
+}
+
+/// Aborts a background task when dropped, so it never outlives the daemon
+/// loop that started it (in tests several daemons run in one process).
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 #[cfg(test)]

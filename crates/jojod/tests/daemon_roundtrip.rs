@@ -63,6 +63,7 @@ async fn create_shell(c: &mut Client, project: &ProjectInfo) -> SessionInfo {
         cols: 80,
         rows: 24,
         shell: Some(test_shell()),
+        resume: None,
     }))
     .await
     .unwrap();
@@ -253,6 +254,7 @@ async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
         cols: 80,
         rows: 24,
         shell: Some("definitely-not-a-real-program-jojo".into()),
+        resume: None,
     }))
     .await
     .unwrap();
@@ -387,6 +389,7 @@ async fn create_session_rejects_a_duplicate_id() {
         cols: 80,
         rows: 24,
         shell: Some(test_shell()),
+        resume: None,
     }))
     .await
     .unwrap();
@@ -402,6 +405,7 @@ async fn create_session_rejects_a_duplicate_id() {
         cols: 80,
         rows: 24,
         shell: Some(test_shell()),
+        resume: None,
     }))
     .await
     .unwrap();
@@ -432,6 +436,7 @@ async fn create_session_with_out_of_range_size_reports_the_requested_session_id(
         cols: 0,
         rows: 0,
         shell: Some(test_shell()),
+        resume: None,
     }))
     .await
     .unwrap();
@@ -504,4 +509,87 @@ async fn close_session_twice_yields_one_removed_and_one_error() {
 
     c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
+/// Waits for the next SessionUpdated for `id` and returns its session.
+async fn next_update(c: &mut Client, id: jojo_proto::SessionId) -> SessionInfo {
+    match c
+        .recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionUpdated { session }) if session.id == id))
+        .await
+        .unwrap()
+    {
+        Frame::Control(ControlMsg::SessionUpdated { session }) => session,
+        _ => unreachable!(),
+    }
+}
+
+/// Sends one hook payload the way `jojod hook` does: a separate connection
+/// that says Hello, sends HookEvent and disconnects.
+async fn relay(endpoint: &Endpoint, id: jojo_proto::SessionId, payload: &str) {
+    let mut relay = Client::connect(endpoint).await.unwrap();
+    relay.send(Frame::Control(ControlMsg::HookEvent { session_id: id, payload: payload.into() })).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hook_events_drive_state_label_and_claude_session_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+
+    relay(&endpoint, session.id, r#"{"hook_event_name":"SessionStart","session_id":"claude-abc"}"#).await;
+    let started = next_update(&mut c, session.id).await;
+    assert_eq!(started.state, jojo_proto::AgentState::Idle);
+    assert_eq!(started.claude_session_id.as_deref(), Some("claude-abc"));
+
+    relay(&endpoint, session.id, r#"{"hook_event_name":"UserPromptSubmit","prompt":"Fix the login bug"}"#).await;
+    let working = next_update(&mut c, session.id).await;
+    assert_eq!(working.state, jojo_proto::AgentState::Working);
+    assert_eq!(working.label, "Fix the login bug");
+
+    relay(&endpoint, session.id, r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push"}}"#).await;
+    let asking = next_update(&mut c, session.id).await;
+    assert_eq!(asking.state, jojo_proto::AgentState::NeedsYou);
+    assert_eq!(asking.state_detail.as_deref(), Some("Needs permission: Bash(git push)"));
+
+    relay(&endpoint, session.id, r#"{"hook_event_name":"UserPromptSubmit","prompt":"A second prompt"}"#).await;
+    let second = next_update(&mut c, session.id).await;
+    assert_eq!(second.label, "Fix the login bug", "only the first prompt names the session");
+    assert_eq!(second.state_detail, None);
+
+    relay(&endpoint, session.id, r#"{"hook_event_name":"Stop"}"#).await;
+    assert_eq!(next_update(&mut c, session.id).await.state, jojo_proto::AgentState::Done);
+
+    c.send(Frame::Control(ControlMsg::MarkSeen { session_id: session.id })).await.unwrap();
+    assert_eq!(next_update(&mut c, session.id).await.state, jojo_proto::AgentState::Idle);
+
+    // A payload that is not hook JSON, and a hook for an unknown session,
+    // change nothing and produce no reply; the next real event still applies.
+    relay(&endpoint, session.id, "not json").await;
+    relay(&endpoint, jojo_proto::SessionId::new(), r#"{"hook_event_name":"Stop"}"#).await;
+    relay(&endpoint, session.id, r#"{"hook_event_name":"PreToolUse"}"#).await;
+    assert_eq!(next_update(&mut c, session.id).await.state, jojo_proto::AgentState::Working);
+
+    // Claude Code exits inside this shell session: it shows running again.
+    relay(&endpoint, session.id, r#"{"hook_event_name":"SessionEnd"}"#).await;
+    assert_eq!(next_update(&mut c, session.id).await.state, jojo_proto::AgentState::Running);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_renamed_session_keeps_its_label_on_the_first_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+
+    c.send(Frame::Control(ControlMsg::RenameSession { session_id: session.id, label: "mine".into() })).await.unwrap();
+    let renamed = next_update(&mut c, session.id).await;
+    assert!(renamed.renamed);
+
+    relay(&endpoint, session.id, r#"{"hook_event_name":"UserPromptSubmit","prompt":"Fix the login bug"}"#).await;
+    let working = next_update(&mut c, session.id).await;
+    assert_eq!(working.label, "mine");
+    assert_eq!(working.state, jojo_proto::AgentState::Working);
 }

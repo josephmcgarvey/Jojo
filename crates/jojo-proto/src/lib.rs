@@ -9,4 +9,4 @@ pub use ids::{ProjectId, SessionId};
 pub use msg::{AgentState, ControlMsg, ProjectInfo, SessionInfo, SessionKind};
 
 /// Protocol version exchanged in `Hello`. Both sides require an exact match.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;

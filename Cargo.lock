@@ -2055,6 +2055,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "jojo-agent",
  "jojo-grid",
  "jojo-proto",
  "portable-pty",
