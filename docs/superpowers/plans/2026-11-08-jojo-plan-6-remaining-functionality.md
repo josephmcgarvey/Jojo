@@ -28,3 +28,11 @@
 
 - Task 0: branch `plan-6-functionality` from master `b8197cb`.
 - Scope 1 (settings): b876c63. Scope 2-3 (switcher, jump): 3a58158. Scope 4 and 7 (+ opens a terminal, counts): d410638. Scope 5-6 (status bar, Later): dc8d0d0. Scope 8 (path suggestions): next commit.
+- Scope 8 (path suggestions): 044bb04. Final-review fixes: 2aaab17.
+
+## Open Items From the Final Review
+
+1. **Rehydrate overrides the attach gate:** `rehydrate` calls `stream.reattach(true)`, which abandons an outstanding Attach, so repeated clicks send several Attaches (cosmetic: the last Snapshot resets the screen). It is kept because Rehydrate is the recovery for a pane whose gate is stuck; a gentler path would use `reattach(false)` first.
+2. **Switcher keyboard details:** the highlighted row is not scrolled into view past the visible rows, and arrow keys work only while the input has focus.
+3. **The status bar no longer shows the jojod version** (spec 9.7 lists machine, path and the switcher hint only); the version is visible in the Add machine install step and the protocol-mismatch messages.
+4. **User-driven deviations from the spec:** a project's + opens a terminal at once (right-click for Claude and other shells), replacing spec 9.2's Claude/Shell menu, and Alt+Shift+= / Alt+Shift+- split with a terminal instead of a Claude session (spec 9.6).
