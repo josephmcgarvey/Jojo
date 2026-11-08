@@ -43,3 +43,88 @@ after `pnpm --dir app stage`.
 13. Open a project's + menu; Escape closes it; clicking outside closes it;
     clicking the same + again closes it without reopening.
 14. Tab to the project + with the keyboard: it becomes visible when focused.
+
+
+## Pane layout (Plan 3)
+
+Run from a normal terminal (not elevated, not Claude Code's PowerShell tool)
+after `pnpm --dir app stage`, with `pnpm --dir app tauri dev` or the
+installed build.
+
+1. With `%APPDATA%\Jojo\layout.json` deleted and the app closed, starting
+   the app opens every existing session in its own tab, and `layout.json`
+   is written within a second.
+2. Split a pane (pane menu ▸ Split right ▸ New shell), drag the divider,
+   switch to another tab, close the window and start the app again: the
+   same tabs, splits, divider position, focused pane and active tab return,
+   and every pane shows its screen.
+3. With the app closed, add a made-up session id as an extra pane in
+   `layout.json`; on start the app ignores it and the tab shows only the
+   real sessions.
+4. Split right and Split down (menu and Alt+Shift+= / Alt+Shift+-) add a
+   pane beside the focused one in the same project. In a tab with 4 panes
+   both split items are disabled and hovering them shows
+   "Tab is full (4 panes)"; Move to ▸ that tab is disabled from other tabs
+   with the same tooltip.
+5. Dragging a divider resizes both sides and the terminals reflow; a pane
+   cannot be dragged smaller than a tenth of its split.
+6. Alt+Arrow moves focus between panes; the focused pane has the accent
+   outline and receives typing.
+7. Alt+Shift+Z (or Zoom pane) fills the tab with the focused pane; toggling
+   again brings the other panes back with their screens intact.
+8. Swap with, Move to ▸ New tab, Move to ▸ another tab, Layout ▸ Columns,
+   Rows, Grid 2×2 and Main + stack, and Equalize sizes rearrange panes; the
+   moved terminals keep their content.
+9. Tab menu: Rename tab… (also double-click a tab title) renames the tab and
+   the name survives a restart; Layout applies presets; Close tab on a tab
+   with two sessions lists both before closing them.
+10. Ctrl+Shift+W closes the focused pane and its session.
+11. Sidebar session menu: Open in split right/down moves a session of the
+    current project into the current tab and is disabled for a session of
+    another project; Move to new tab; Rename… and double-click rename the
+    session in the sidebar, pane header and tab; Kill marks a running
+    session exited and keeps its row and final output; Restart on an exited
+    session starts a new one in the same pane position and removes the old
+    row.
+12. In `vim` with `:set mouse=a`, a plain right-click goes to vim and
+    Shift+right-click opens the pane menu; Shift+drag selects text.
+13. With copyOnSelect on (default), drag, double-click and triple-click
+    selections copy to the clipboard and the header shows "Copied" for
+    about a second; Ctrl+C with a selection still visible interrupts
+    `ping -t localhost`.
+14. With `"copyOnSelect": false` in settings.json, Ctrl+C copies a selection
+    and interrupts when nothing is selected.
+15. Ctrl+Shift+C copies, Ctrl+Shift+V and pane menu ▸ Paste paste, plain
+    Ctrl+V still pastes, and plain Ctrl+T reaches Claude Code.
+16. Ctrl+Shift+T and Ctrl+Shift+N open a Claude and a shell tab;
+    Ctrl+Tab and Ctrl+Shift+Tab cycle tabs.
+17. Clicking Shell twice quickly in a project's + menu opens two tabs.
+18. An OSC 8 link
+    (`$e = [char]27; Write-Host "$e]8;;https://example.com$e\click here$e]8;;$e\"`)
+    asks "Open link?" showing `https://example.com` before opening; a plain
+    URL opens without asking; a hostless OSC 8 link
+    (`Write-Host "$e]8;;http://$e\broken$e]8;;$e\"`) shows
+    "Link not opened: URL has no host" in the pane header.
+19. Hovering the maximize button shows the Windows 11 snap layout flyout and
+    highlights the button; clicking it maximizes and restores.
+20. Printing a large amount of output
+    (`$s = 'x' * 200; 1..300000 | ForEach-Object { $s }`) leaves the app
+    responsive, ends with the last lines on screen, and the WebView2
+    devtools console (Ctrl+Shift+I in `tauri dev`) shows no
+    "write data discarded" error.
+21. With no staged daemon and no `%LOCALAPPDATA%\Jojo\bin\jojod.exe`, the
+    banner reads "Starting jojod (attempt N): …" and, after 10 attempts,
+    "jojod did not start: … Logs are in …" with Retry, never
+    "Disconnected … Sessions keep running".
+22. **Close on exit (amendment A).** In a shell pane, type `exit`: the pane
+    closes and the session disappears from the sidebar. In another shell
+    pane, run `exit 3`: the pane stays open with its output, and the sidebar
+    shows the session as exited. Restart the app with an exited session
+    present: it is not closed automatically.
+23. **Shell picker (amendment B).** Open the + menu next to a project: it
+    lists the shells installed on this PC (PowerShell 7, Windows PowerShell,
+    Command Prompt, Git Bash, only those present), with the `defaultShell`
+    setting's entry first and marked "(default)". Choosing Git Bash opens a
+    bash prompt (not WSL). Right-click a pane ▸ Split right ▸ New shell
+    shows the same list, and the chosen shell starts in the new pane.
+    Ctrl+Shift+N opens the default shell.

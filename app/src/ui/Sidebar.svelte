@@ -1,13 +1,28 @@
 <script lang="ts">
-  import { activateSession, addProject, app, newSession, selectProject } from "../lib/state/app.svelte";
+  import { addProject, app, focusPane, focusedSessionId, newSession, renameSession, selectProject } from "../lib/state/app.svelte";
+  import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
+  import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import { shellChoices } from "../lib/state/shells";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
+  import Badge from "./Badge.svelte";
+  import RenameField from "./RenameField.svelte";
 
   let menuFor = $state<string | null>(null);
   const projects = $derived(sortedProjects(app.model));
+  const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
 
   function isInsideOpenMenu(target: EventTarget | null): boolean {
     return target instanceof Element && target.closest(`[data-session-menu="${menuFor}"]`) !== null;
+  }
+
+  function isRenaming(sessionId: string): boolean {
+    return ui.renaming?.kind === "session" && ui.renaming.where === "sidebar" && ui.renaming.sessionId === sessionId;
+  }
+
+  function onSessionMenu(event: MouseEvent, sessionId: string): void {
+    event.preventDefault();
+    openMenu(event.clientX, event.clientY, sessionMenu(sessionId));
   }
 
   // The Claude/Shell menu is a single piece of state (menuFor), so only one
@@ -56,15 +71,40 @@
     {#if menuFor === project.id}
       <div class="menu" data-session-menu={project.id}>
         <button onclick={() => { menuFor = null; newSession(project.id, "claude"); }}>Claude</button>
-        <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>
+        {#each shells as shell (shell.program)}
+          <button onclick={() => { menuFor = null; newSession(project.id, "shell", { kind: "tab" }, shell.program); }}>{shell.label}</button>
+        {:else}
+          <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>
+        {/each}
       </div>
     {/if}
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
-      <button class="session" class:active={app.activeSessionId === session.id} onclick={() => activateSession(session)}>
-        <span class="badge {session.state}"></span>
-        <span class="label">{session.label}</span>
-        <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
-      </button>
+      {#if isRenaming(session.id)}
+        <div class="session renaming">
+          <Badge agentState={session.state} />
+          <RenameField
+            value={session.label}
+            label="Session name"
+            onCommit={(value) => {
+              endRename();
+              renameSession(session.id, value);
+            }}
+            onCancel={endRename}
+          />
+        </div>
+      {:else}
+        <button
+          class="session"
+          class:active={focusedSessionId() === session.id}
+          onclick={() => focusPane(session.id)}
+          ondblclick={() => beginRename({ kind: "session", sessionId: session.id, where: "sidebar" })}
+          oncontextmenu={(e) => onSessionMenu(e, session.id)}
+        >
+          <Badge agentState={session.state} />
+          <span class="label">{session.label}</span>
+          <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
+        </button>
+      {/if}
     {/each}
   {/each}
 </aside>
@@ -176,43 +216,5 @@
   .time {
     color: var(--jojo-muted);
     font-size: 10.5px;
-  }
-  .badge {
-    width: 13px;
-    height: 13px;
-    flex: none;
-    border-radius: 50%;
-    border: 2px solid var(--jojo-idle);
-  }
-  .badge.working {
-    border-color: var(--jojo-working);
-    border-top-color: transparent;
-    animation: spin 1s linear infinite;
-  }
-  .badge.needs_you {
-    border-color: var(--jojo-needs-you);
-    background: var(--jojo-needs-you-soft);
-    box-shadow: 0 0 10px var(--jojo-needs-you-glow);
-  }
-  .badge.done {
-    border-color: var(--jojo-done);
-    background: var(--jojo-done);
-  }
-  .badge.error {
-    border-color: var(--jojo-error);
-    background: var(--jojo-error);
-  }
-  .badge.exited {
-    opacity: 0.6;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .badge.working {
-      animation: none;
-    }
   }
 </style>

@@ -1,21 +1,56 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import neonGlass from "./themes/neon-glass.json";
-  import { app, startApp } from "./lib/state/app.svelte";
-  import { paneKey } from "./lib/terminal/pane";
+  import { app, currentTab, focusedSessionId, startApp } from "./lib/state/app.svelte";
+  import { closeMenu, ui } from "./lib/state/ui.svelte";
+  import { resolveShortcut } from "./lib/input/shortcuts";
+  import { runAction } from "./lib/state/actions";
+  import { dialog } from "./lib/state/dialog.svelte";
+  import { terminalControls } from "./lib/terminal/registry";
   import { applyTheme, type Theme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
+  import ConfirmDialog from "./ui/ConfirmDialog.svelte";
+  import ContextMenu from "./ui/ContextMenu.svelte";
+  import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
   import TabBar from "./ui/TabBar.svelte";
-  import TerminalPane from "./ui/TerminalPane.svelte";
 
   const theme = neonGlass as Theme;
   onMount(() => {
     applyTheme(theme);
-    return startApp();
+    window.addEventListener("keydown", onKeydown, true);
+    const stopApp = startApp();
+    return () => {
+      window.removeEventListener("keydown", onKeydown, true);
+      stopApp();
+    };
   });
-  const active = $derived(app.activeSessionId ? app.model.sessions[app.activeSessionId] : undefined);
+  /**
+   * Application shortcuts (spec 9.6), handled in the capture phase on window
+   * so they run before xterm.js's keydown handler on its textarea. A matched
+   * shortcut is stopped here, so xterm.js never sends it to the program;
+   * every other key reaches the terminal unchanged. The dialog, menus and
+   * rename fields handle their own keys.
+   */
+  function onKeydown(event: KeyboardEvent): void {
+    if (dialog.confirm || ui.menu || event.target instanceof HTMLInputElement) return;
+    const action = resolveShortcut(event, {
+      copyOnSelect: app.settings?.copyOnSelect ?? true,
+      hasSelection: terminalControls(focusedSessionId())?.hasSelection() ?? false,
+    });
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    runAction(action);
+  }
+  const tab = $derived(currentTab());
+
+  /** Closing a menu returns keyboard focus to the focused pane's terminal. */
+  function closeMenuAndRefocus(): void {
+    closeMenu();
+    terminalControls(focusedSessionId())?.focus();
+  }
 </script>
 
 <div class="window">
@@ -24,10 +59,8 @@
     <TabBar />
     <Banner />
     <div class="panes">
-      {#if active}
-        {#key paneKey(active)}
-          <TerminalPane session={active} terminalTheme={theme.terminal} />
-        {/key}
+      {#if tab}
+        <PaneGrid terminalTheme={theme.terminal} />
       {:else if app.selectedProjectId}
         <p class="empty">No session open. Use + to start Claude or a shell.</p>
       {:else}
@@ -37,6 +70,12 @@
     <StatusBar />
   </section>
 </div>
+<ConfirmDialog />
+{#if ui.menu}
+  {#key ui.menu}
+    <ContextMenu entries={ui.menu.entries} x={ui.menu.x} y={ui.menu.y} onclose={closeMenuAndRefocus} />
+  {/key}
+{/if}
 
 <style>
   .window {

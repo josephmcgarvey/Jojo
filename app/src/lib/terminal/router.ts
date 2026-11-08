@@ -3,7 +3,10 @@ import type { Frame } from "../wire/frame";
 
 export interface PaneHandle {
   deliver(kind: "output" | "snapshot", bytes: Uint8Array): void;
-  reattach(): void;
+  /** Attach again for a fresh Snapshot; `afterReconnect` discards an Attach outstanding on the old connection. */
+  reattach(afterReconnect: boolean): void;
+  /** jojod answered this pane's Attach with an error, so no Snapshot is coming. */
+  attachFailed(): void;
 }
 
 export function createRouter() {
@@ -20,11 +23,14 @@ export function createRouter() {
     },
     /** jojod detached a client that fell behind; attach again for a fresh snapshot. */
     fellBehind(sessionId: string | null): void {
-      if (sessionId) panes.get(sessionId)?.reattach();
+      if (sessionId) panes.get(sessionId)?.reattach(false);
     },
     /** After a reconnect, every mounted pane attaches again. */
     reattachAll(): void {
-      for (const pane of panes.values()) pane.reattach();
+      for (const pane of panes.values()) pane.reattach(true);
+    },
+    attachFailed(sessionId: string): void {
+      panes.get(sessionId)?.attachFailed();
     },
   };
 }

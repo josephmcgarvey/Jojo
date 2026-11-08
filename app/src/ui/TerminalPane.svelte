@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { Terminal, type ITheme } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -8,19 +7,32 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app } from "../lib/state/app.svelte";
-  import { AttachGate } from "../lib/terminal/attachGate";
   import { noScreenMessage } from "../lib/terminal/pane";
+  import { contextMenuTarget } from "../lib/input/mouse";
+  import { resolveShortcut } from "../lib/input/shortcuts";
+  import { copyFromPane } from "../lib/state/clipboard";
+  import { openLink } from "../lib/terminal/links";
+  import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
+  import { registerTerminal } from "../lib/terminal/registry";
   import { router } from "../lib/terminal/router";
   import { clampSize } from "../lib/terminal/size";
   import { sendControl, sendInput } from "../lib/wire/bridge";
 
-  let { session, terminalTheme }: { session: SessionInfo; terminalTheme: ITheme } = $props();
+  let {
+    session,
+    terminalTheme,
+    focused,
+    onmenu,
+  }: { session: SessionInfo; terminalTheme: ITheme; focused: boolean; onmenu: (x: number, y: number) => void } = $props();
   let host: HTMLDivElement;
+  /** Set in onMount and cleared on unmount; read by the focus effect below. */
+  let term: Terminal | undefined;
 
   onMount(() => {
     const settings = app.settings;
-    const term = new Terminal({
+    const id = session.id;
+    const created = new Terminal({
       allowProposedApi: true,
       fontFamily: settings?.terminalFontFamily ?? "Geist Mono",
       fontSize: settings?.terminalFontSize ?? 13,
@@ -28,21 +40,62 @@
       scrollback: Math.max(settings?.scrollbackLines ?? 10_000, 10_000),
       theme: terminalTheme,
       cursorBlink: true,
+      // OSC 8 hyperlinks. xterm.js's default handler calls confirm() and then
+      // window.open(), which the main window denies, so nothing opened.
+      // allowNonHttpProtocols stays false, so links with other schemes are
+      // ignored by xterm.js.
+      linkHandler: { activate: (_event, uri) => void openLink(id, uri, true) },
     });
+    term = created;
     const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(new Unicode11Addon());
-    term.unicode.activeVersion = "11";
-    // The addon's default handler calls window.open, which the main webview
-    // denies (see main.rs). The open_url command validates the URL (http and
-    // https only) and opens it in the default browser instead.
-    term.loadAddon(new WebLinksAddon((_event, uri) => void invoke("open_url", { url: uri }).catch(() => {})));
-    suppressQueryReplies(term);
-    term.open(host);
+    created.loadAddon(fit);
+    created.loadAddon(new Unicode11Addon());
+    created.unicode.activeVersion = "11";
+    // Plain URLs found in the output. Their text is the URL itself, so they
+    // open without a confirmation; open_url validates them.
+    created.loadAddon(new WebLinksAddon((_event, uri) => void openLink(id, uri, false)));
+    suppressQueryReplies(created);
+    created.open(host);
+    // Spec 9.4 mouse reporting rule. This listener runs in the capture phase
+    // on the host, before xterm.js's handlers on its child elements. The
+    // browser's own context menu is always suppressed. When the program has
+    // mouse reporting on and Shift is not held, xterm.js has already
+    // reported the right-button press to the program and nothing else
+    // happens here.
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (contextMenuTarget(event.shiftKey, created.modes.mouseTrackingMode) === "jojo") onmenu(event.clientX, event.clientY);
+    };
+    host.addEventListener("contextmenu", onContextMenu, true);
+    // App.svelte handles application shortcuts on keydown before xterm.js
+    // sees them; returning false here makes xterm.js also ignore the
+    // keypress and keyup events of those keys.
+    created.attachCustomKeyEventHandler(
+      (event) => resolveShortcut(event, { copyOnSelect: app.settings?.copyOnSelect ?? true, hasSelection: created.hasSelection() }) === null,
+    );
+    // Spec 9.5 rules 1-2: releasing the left button after a drag, double-click
+    // or triple-click selection copies it. xterm.js tracks a drag with
+    // document-level listeners, so the button can be released outside this
+    // host (in the pane padding, or past the pane while autoscrolling); the
+    // mouseup is therefore listened for on window, armed by a left-button
+    // press inside the host. The check waits one task so that xterm.js's own
+    // mouseup handling has finished the selection.
+    const onWindowMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      window.removeEventListener("mouseup", onWindowMouseUp, true);
+      if (!(app.settings?.copyOnSelect ?? true)) return;
+      setTimeout(() => {
+        if (created.hasSelection()) void copyFromPane(id);
+      }, 0);
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 0) window.addEventListener("mouseup", onWindowMouseUp, true);
+    };
+    host.addEventListener("mousedown", onMouseDown);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
-      term.loadAddon(webgl);
+      created.loadAddon(webgl);
       // xterm.js falls back to its DOM renderer on context loss; the addon
       // itself does not dispose on loss, so do it here to release the GL
       // resources instead of leaving a dead context attached.
@@ -56,40 +109,36 @@
     }
     fit.fit();
 
-    const id = session.id;
-    const gate = new AttachGate();
-    let size = clampSize(term.cols, term.rows);
-    const attach = () => {
-      if (!session.attachable) return;
-      gate.requestAttach();
-      // If this Attach is refused (disconnected), the gate is left awaiting
-      // a snapshot: that is fine, because the store's onStatus handler calls
-      // router.reattachAll() on the next "connected" status, which retries
-      // attach() and the awaited snapshot is satisfied then. No separate
-      // rejection handling of the gate is needed here.
-      void sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }).catch(() => {});
-    };
-    if (session.attachable) attach();
-    else term.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
+    let size = clampSize(created.cols, created.rows);
+    const stream = createPaneStream({
+      write: (bytes, done) => created.write(bytes, done),
+      sendAttach: () => sendControl({ type: "Attach", session_id: id, cols: size.cols, rows: size.rows }),
+    });
+    // A session with no screen is never attached, so it is not registered
+    // with the router: reattachAll() after a reconnect must not send an
+    // Attach that jojod can only refuse.
+    const unregister = session.attachable ? router.register(id, stream) : () => {};
+    if (session.attachable) stream.start();
+    else created.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
 
-    const unregister = router.register(id, {
-      deliver(kind, bytes) {
-        const accepted = gate.accept(kind, bytes);
-        if (accepted) term.write(accepted);
-      },
-      reattach: attach,
+    const unregisterControls = registerTerminal(id, {
+      focus: () => created.focus(),
+      hasSelection: () => created.hasSelection(),
+      getSelection: () => created.getSelection(),
+      paste: (text) => created.paste(text),
+      mouseTrackingMode: () => created.modes.mouseTrackingMode,
     });
 
     // A session with no screen has nothing on the daemon side to receive
-    // input, so keystrokes are not sent. App.svelte keys this pane on
+    // input, so keystrokes are not sent. PaneGrid keys this pane on
     // paneKey(), which includes `attachable`, so a session that loses its
     // screen while mounted is remounted and reaches this check.
     const encoder = new TextEncoder();
-    const onData = term.onData((data) => {
+    const onData = created.onData((data) => {
       if (!session.attachable) return;
       void sendInput(id, encoder.encode(data)).catch(() => {});
     });
-    const onBinary = term.onBinary((data) => {
+    const onBinary = created.onBinary((data) => {
       if (!session.attachable) return;
       void sendInput(id, Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff)).catch(() => {});
     });
@@ -102,7 +151,7 @@
         // message to the host's width; only an attachable session has
         // anything on the daemon side to tell about the new size.
         fit.fit();
-        const next = clampSize(term.cols, term.rows);
+        const next = clampSize(created.cols, created.rows);
         if (next.cols !== size.cols || next.rows !== size.rows) {
           size = next;
           if (session.attachable) {
@@ -112,32 +161,37 @@
       }, 50);
     });
     observer.observe(host);
-    term.focus();
 
     return () => {
+      host.removeEventListener("contextmenu", onContextMenu, true);
+      host.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onWindowMouseUp, true);
+      stream.stop();
       observer.disconnect();
       clearTimeout(timer);
       unregister();
+      unregisterControls();
       onData.dispose();
       onBinary.dispose();
       if (session.attachable) void sendControl({ type: "Detach", session_id: id }).catch(() => {});
       webgl?.dispose();
-      term.dispose();
+      term = undefined;
+      created.dispose();
     };
+  });
+
+  // Moves keyboard focus into this terminal whenever its pane becomes the
+  // focused pane: a click on the pane, Alt+Arrow, a sidebar click, or a tab
+  // switch. Declared after onMount, so on first mount it runs after `term`
+  // is set.
+  $effect(() => {
+    if (focused) term?.focus();
   });
 </script>
 
-<div class="frame">
-  <div class="host" bind:this={host}></div>
-</div>
+<div class="host" bind:this={host}></div>
 
 <style>
-  .frame {
-    position: absolute;
-    inset: 0;
-    padding: 10px 12px;
-    background: var(--jojo-pane);
-  }
   .host {
     width: 100%;
     height: 100%;

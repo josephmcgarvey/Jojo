@@ -35,9 +35,26 @@ async fn kill_daemons_async() {
 
 /// Runs until the task is aborted.
 pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
+    let paths = &paths;
+    run_with(move || connect_or_start(paths), bridge).await
+}
+
+/// The connection loop, with the connect step passed in so tests can drive
+/// the loop without starting a daemon.
+pub async fn run_with<F, Fut>(mut connect: F, bridge: Arc<Bridge>)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Client, ConnectError>>,
+{
     let mut attempt: u32 = 0;
     loop {
-        match connect_or_start(&paths).await {
+        // Read before connecting: connect_or_start can take up to its start
+        // deadline (about 10 s) while it starts a daemon, and a Retry or
+        // Restart clicked during that time must cut short the wait that
+        // follows a failure instead of being lost (Plan 2b carry-over 3.3
+        // item 1).
+        let since = bridge.restart_generation();
+        match connect().await {
             Ok(client) => {
                 let started = Instant::now();
                 let reason = serve(client, &bridge).await;
@@ -50,6 +67,9 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
                     } else {
                         ConnectionStatus::Reconnecting { attempt, message }
                     });
+                    // serve() itself reacts to restarts requested while it
+                    // ran, so this wait counts only restarts requested from
+                    // here on.
                     let since = bridge.restart_generation();
                     tokio::select! {
                         _ = tokio::time::sleep(backoff(attempt)) => {}
@@ -62,12 +82,10 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
             }
             Err(ConnectError::Elevated) => {
                 bridge.emit_status(ConnectionStatus::Elevated);
-                let since = bridge.restart_generation();
                 let _ = tokio::time::timeout(Duration::from_secs(10), bridge.wait_for_restart_after(since)).await;
             }
             Err(e @ ConnectError::Mismatch { .. }) => {
                 bridge.emit_status(ConnectionStatus::VersionMismatch { message: e.to_string() });
-                let since = bridge.restart_generation();
                 bridge.wait_for_restart_after(since).await;
                 kill_daemons_async().await;
                 tokio::time::sleep(Duration::from_millis(500)).await;
@@ -80,7 +98,6 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
                 } else {
                     ConnectionStatus::Reconnecting { attempt, message }
                 });
-                let since = bridge.restart_generation();
                 tokio::select! {
                     _ = tokio::time::sleep(backoff(attempt)) => {}
                     _ = bridge.wait_for_restart_after(since) => { attempt = 0; }
@@ -278,5 +295,44 @@ mod tests {
         assert!(arrived, "a frame whose length prefix arrived in two pieces must still be relayed intact, not lost to the concurrent send");
 
         serve_task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_retry_clicked_while_connecting_skips_the_backoff() {
+        let bridge = Arc::new(Bridge::default());
+        let starts = Arc::new(std::sync::Mutex::new(Vec::<Instant>::new()));
+        let connect = {
+            let starts = starts.clone();
+            let bridge = bridge.clone();
+            move || {
+                let starts = starts.clone();
+                let bridge = bridge.clone();
+                async move {
+                    let first = {
+                        let mut starts = starts.lock().unwrap();
+                        starts.push(Instant::now());
+                        starts.len() == 1
+                    };
+                    if first {
+                        // The user clicks Retry while this attempt is still running.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        bridge.request_restart();
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                    Err::<Client, _>(ConnectError::Io(std::io::Error::other("no daemon")))
+                }
+            }
+        };
+        let task = tokio::spawn(run_with(connect, bridge.clone()));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while starts.lock().unwrap().len() < 2 && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        task.abort();
+        let starts = starts.lock().unwrap();
+        assert!(starts.len() >= 2, "the loop never retried");
+        // With the click lost, the loop first sleeps backoff(1) = 1 s.
+        let gap = starts[1] - starts[0];
+        assert!(gap < Duration::from_millis(700), "the second attempt started {gap:?} after the first");
     }
 }

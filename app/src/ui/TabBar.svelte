@@ -1,18 +1,49 @@
 <script lang="ts">
-  import { activateSession, app, closeSession, newSession } from "../lib/state/app.svelte";
-  import { sessionsForProject } from "../lib/state/views";
+  import { activeTab, tabLabel } from "../lib/layout/tabs";
+  import { countPanes } from "../lib/layout/tree";
+  import { app, closeTab, currentProjectLayout, newSession, renameTab, selectTab } from "../lib/state/app.svelte";
+  import { tabMenu } from "../lib/state/contextMenus";
+  import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import Badge from "./Badge.svelte";
+  import RenameField from "./RenameField.svelte";
   import WindowControls from "./WindowControls.svelte";
 
-  const tabs = $derived(app.selectedProjectId ? sessionsForProject(app.model, app.selectedProjectId) : []);
+  const project = $derived(currentProjectLayout());
+  const activeId = $derived(project ? activeTab(project)?.id : undefined);
+  const labelOf = (sessionId: string) => app.model.sessions[sessionId]?.label;
+
+  function onTabMenu(event: MouseEvent, tabId: string): void {
+    event.preventDefault();
+    selectTab(tabId);
+    openMenu(event.clientX, event.clientY, tabMenu(tabId));
+  }
 </script>
 
 <div class="tabs">
-  {#each tabs as session (session.id)}
-    <div class="tab" class:on={app.activeSessionId === session.id}>
-      <button class="title" onclick={() => activateSession(session)}>
-        <span class="badge {session.state}"></span>{session.label}
-      </button>
-      <button class="close" aria-label="Close {session.label}" onclick={() => closeSession(session.id)}>×</button>
+  {#each project?.tabs ?? [] as tab (tab.id)}
+    {@const focusedSession = app.model.sessions[tab.focused]}
+    {@const panes = countPanes(tab.root)}
+    <!-- The tab's buttons are its keyboard controls; the container only adds the right-click menu. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="tab" class:on={activeId === tab.id} oncontextmenu={(e) => onTabMenu(e, tab.id)}>
+      {#if ui.renaming?.kind === "tab" && ui.renaming.tabId === tab.id}
+        <RenameField
+          value={tabLabel(tab, labelOf)}
+          label="Tab name"
+          onCommit={(value) => {
+            endRename();
+            renameTab(tab.id, value);
+          }}
+          onCancel={endRename}
+        />
+      {:else}
+        <button class="title" onclick={() => selectTab(tab.id)} ondblclick={() => beginRename({ kind: "tab", tabId: tab.id })}>
+          {#if focusedSession}<Badge agentState={focusedSession.state} size={11} />{/if}
+          <span class="name">{tabLabel(tab, labelOf)}</span>
+          {#if panes > 1}<span class="count">{panes}</span>{/if}
+        </button>
+      {/if}
+      <button class="close" aria-label="Close tab {tabLabel(tab, labelOf)}" onclick={() => void closeTab(tab.id)}>×</button>
     </div>
   {/each}
   {#if app.selectedProjectId}
@@ -38,6 +69,7 @@
     gap: 4px;
     padding: 0 6px 0 12px;
     height: 31px;
+    max-width: 260px;
     border-radius: var(--jojo-radius) var(--jojo-radius) 0 0;
     color: var(--jojo-muted);
   }
@@ -52,10 +84,20 @@
     display: flex;
     align-items: center;
     gap: 7px;
+    min-width: 0;
     max-width: 220px;
     white-space: nowrap;
+  }
+  .name {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .count {
+    padding: 0 5px;
+    border-radius: var(--jojo-radius-sm);
+    font-size: 10.5px;
+    color: var(--jojo-muted);
+    background: var(--jojo-sel);
   }
   .close {
     padding: 0 4px;
@@ -72,20 +114,5 @@
   .drag {
     flex: 1;
     align-self: stretch;
-  }
-  .badge {
-    width: 11px;
-    height: 11px;
-    flex: none;
-    border-radius: 50%;
-    border: 2px solid var(--jojo-idle);
-  }
-  .badge.done {
-    border-color: var(--jojo-done);
-    background: var(--jojo-done);
-  }
-  .badge.error {
-    border-color: var(--jojo-error);
-    background: var(--jojo-error);
   }
 </style>
