@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import neonGlass from "./themes/neon-glass.json";
   import { app, currentTab, focusedSessionId, markFocusedSessionSeen, startApp } from "./lib/state/app.svelte";
-  import { closeMenu, ui } from "./lib/state/ui.svelte";
+  import { closeDialog, closeMenu, ui } from "./lib/state/ui.svelte";
   import { resolveShortcut } from "./lib/input/shortcuts";
   import { runAction } from "./lib/state/actions";
   import { dialog } from "./lib/state/dialog.svelte";
@@ -11,6 +11,8 @@
   import Banner from "./ui/Banner.svelte";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
   import ContextMenu from "./ui/ContextMenu.svelte";
+  import AddMachineDialog from "./ui/AddMachineDialog.svelte";
+  import AddProjectDialog from "./ui/AddProjectDialog.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
@@ -74,6 +76,11 @@
   </section>
 </div>
 <ConfirmDialog />
+{#if ui.dialog?.kind === "add-machine"}
+  <AddMachineDialog onclose={closeDialog} />
+{:else if ui.dialog?.kind === "add-project"}
+  <AddProjectDialog machineId={ui.dialog.machineId} onclose={closeDialog} />
+{/if}
 {#if ui.menu}
   {#key ui.menu}
     <ContextMenu entries={ui.menu.entries} x={ui.menu.x} y={ui.menu.y} onclose={closeMenuAndRefocus} />

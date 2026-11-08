@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { addProject, app, focusPane, focusedSessionId, newSession, renameSession, selectProject } from "../lib/state/app.svelte";
+  import { addProject, app, focusPane, focusedSessionId, newSession, removeMachine, renameSession, restartDaemon, selectProject } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
-  import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
+  import type { Machine } from "../lib/backend/Machine";
+  import type { MenuEntry } from "../lib/menu/types";
   import { shellChoices } from "../lib/state/shells";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
   import { emptyModel } from "../lib/state/reducer";
@@ -12,6 +14,23 @@
   import RenameField from "./RenameField.svelte";
 
   let menuFor = $state<string | null>(null);
+  /** Right-click on a machine header (spec 8.4): Reconnect, and Remove for remote machines. */
+  function onMachineMenu(event: MouseEvent, machine: Machine): void {
+    event.preventDefault();
+    const entries: MenuEntry[] = [
+      { kind: "action", label: machine.kind === "local" ? "Restart jojod" : "Reconnect", run: () => restartDaemon(machine.id) },
+    ];
+    if (machine.kind === "ssh") {
+      entries.push(
+        { kind: "action", label: "Add project…", run: () => openDialog({ kind: "add-project", machineId: machine.id }) },
+        { kind: "separator" },
+        { kind: "action", label: "Remove machine…", run: () => void removeMachine(machine.id, false) },
+        { kind: "action", label: "Remove and uninstall from server…", run: () => void removeMachine(machine.id, true) },
+      );
+    }
+    openMenu(event.clientX, event.clientY, entries);
+  }
+
   /** A machine's projects, sorted by name; empty until its first Projects reply. */
   const projectsOf = (machineId: string) => sortedProjects(app.models[machineId] ?? emptyModel());
   const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
@@ -60,11 +79,14 @@
   {@const status = app.statuses[machine.id]}
   {@const statusText = machineStatusText(machine, status)}
   <div class="machine-group" class:offline={status?.state !== "connected"}>
-  <div class="machine" title={statusText ?? machine.label}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="machine" title={statusText ?? machine.label} oncontextmenu={(e) => onMachineMenu(e, machine)}>
     <span class="dot" class:ok={status?.state === "connected"}></span>
     <span class="grow">{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</span>
     {#if machine.kind === "local"}
       <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}>+</button>
+    {:else}
+      <button class="icon" title="Add project" aria-label={`Add project on ${machine.label}`} onclick={() => openDialog({ kind: "add-project", machineId: machine.id })}>+</button>
     {/if}
   </div>
   {#each projectsOf(machine.id) as project (project.id)}
@@ -119,6 +141,9 @@
   {/each}
   </div>
   {/each}
+  <div class="footer">
+    <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}>+ Machine</button>
+  </div>
 </aside>
 
 <style>
@@ -153,6 +178,17 @@
   }
   /* Spec 8.3 rule 1: a machine that is not connected keeps its sessions
      and their last badges, dimmed. */
+  .footer {
+    margin-top: auto;
+    padding: 8px;
+    border-top: 1px solid var(--jojo-line);
+  }
+  .add-machine {
+    color: var(--jojo-muted);
+  }
+  .add-machine:hover {
+    color: var(--jojo-fg);
+  }
   .machine-group.offline {
     opacity: 0.55;
   }

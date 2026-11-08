@@ -4,6 +4,7 @@
 
 use jojo_app::bridge::ConnectionStatus;
 use jojo_app::layout::LayoutFile;
+use jojo_app::install::InstallStep;
 use jojo_app::machines::Machine;
 use jojo_app::settings::Settings;
 use jojo_app::shells::ShellOption;
@@ -19,6 +20,7 @@ fn export_backend_bindings() {
     LayoutFile::export_all(&cfg).unwrap();
     ShellOption::export_all(&cfg).unwrap();
     Machine::export_all(&cfg).unwrap();
+    InstallStep::export_all(&cfg).unwrap();
     let status = std::fs::read_to_string(dir.join("ConnectionStatus.ts")).unwrap();
     assert!(status.contains("\"state\": \"version_mismatch\""), "{status}");
     let settings = std::fs::read_to_string(dir.join("Settings.ts")).unwrap();

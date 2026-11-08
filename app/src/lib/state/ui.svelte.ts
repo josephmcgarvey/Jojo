@@ -3,10 +3,23 @@ import type { MenuEntry } from "../menu/types";
 
 export type RenameTarget = { kind: "tab"; tabId: string } | { kind: "session"; sessionId: string; where: "pane" | "sidebar" };
 
+/** The open modal dialog: Add machine, or Add project on a remote machine. */
+export type DialogTarget = { kind: "add-machine" } | { kind: "add-project"; machineId: string };
+
 export const ui = $state({
   menu: null as { x: number; y: number; entries: MenuEntry[] } | null,
   renaming: null as RenameTarget | null,
+  dialog: null as DialogTarget | null,
 });
+
+export function openDialog(target: DialogTarget): void {
+  ui.menu = null;
+  ui.dialog = target;
+}
+
+export function closeDialog(): void {
+  ui.dialog = null;
+}
 
 export function openMenu(x: number, y: number, entries: MenuEntry[]): void {
   if (entries.length === 0) return;

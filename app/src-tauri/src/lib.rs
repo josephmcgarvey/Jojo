@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod connection;
 pub mod daemon_manager;
 pub mod hub;
+pub mod install;
 pub mod layout;
 pub mod links;
 pub mod machines;

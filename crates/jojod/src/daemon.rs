@@ -137,6 +137,7 @@ impl Daemon {
                 let _ = reply.send(Frame::Control(ControlMsg::Projects { projects }));
             }
             ControlMsg::AddProject { path, name } => {
+                let path = expand_home(&path);
                 if !std::path::Path::new(&path).is_absolute() {
                     return Self::error(reply, "AddProject", format!("path must be absolute: {path}"));
                 }
@@ -574,4 +575,20 @@ fn variant_name(msg: &ControlMsg) -> String {
         .ok()
         .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
         .unwrap_or_else(|| "Unknown".to_string())
+}
+
+/// Expands a leading `~` (or `~/...`) to the user's home directory, so a
+/// project on a remote machine can be added as `~/app`: the path is typed in
+/// the app and sent as text, and no shell expands it on the way. Other paths
+/// are returned unchanged.
+fn expand_home(path: &str) -> String {
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default();
+    if home.is_empty() {
+        return path.to_owned();
+    }
+    match path.strip_prefix('~') {
+        Some("") => home,
+        Some(rest) if rest.starts_with(['/', '\\']) => format!("{home}{rest}"),
+        _ => path.to_owned(),
+    }
 }

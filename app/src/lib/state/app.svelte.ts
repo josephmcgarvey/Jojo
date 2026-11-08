@@ -565,6 +565,57 @@ export async function addProject(): Promise<void> {
   void sendControl({ type: "AddProject", path, name }).catch(() => {});
 }
 
+/**
+ * Adds a project on a remote machine: `path` is an absolute path on that
+ * machine. The daemon checks that it is a directory and replies with an
+ * Error otherwise, which the banner shows.
+ */
+export function addRemoteProject(machineId: string, path: string): Promise<void> {
+  const trimmed = path.trim().replace(/\/+$/, "") || "/";
+  const name = trimmed.split("/").filter(Boolean).pop() ?? trimmed;
+  return sendControl({ type: "AddProject", path: trimmed, name }, machineId);
+}
+
+/** Lists a new machine in the sidebar (add_machine has saved it and started its connection). */
+export function machineAdded(machine: Machine): void {
+  if (!app.machines.some((m) => m.id === machine.id)) app.machines = [...app.machines, machine];
+}
+
+/**
+ * Spec 8.4: removes a remote machine after confirmation, which names the
+ * sessions that end when `uninstall` is set (otherwise they keep running on
+ * the server, unreachable from this PC).
+ */
+export async function removeMachine(machineId: string, uninstall: boolean): Promise<void> {
+  const machine = app.machines.find((m) => m.id === machineId);
+  if (!machine || machine.kind === "local") return;
+  const sessions = Object.values(app.models[machineId]?.sessions ?? {}).filter((s) => s.state !== "exited");
+  const confirmed = await askConfirm({
+    title: uninstall ? `Remove ${machine.label} and uninstall Jojo from it?` : `Remove ${machine.label}?`,
+    message: uninstall
+      ? `This stops jojod on the server, which ends ${sessions.length} running session${sessions.length === 1 ? "" : "s"}, removes Jojo's Claude Code hooks there, and deletes ~/.local/bin/jojod and ~/.jojo.`
+      : `Jojo disconnects from the server and forgets it. Its ${sessions.length} running session${sessions.length === 1 ? " keeps" : "s keep"} running on the server until the server restarts.`,
+    details: sessions.map((s) => s.label),
+    confirmLabel: uninstall ? "Remove and uninstall" : "Remove",
+  });
+  if (!confirmed) return;
+  try {
+    await invoke("remove_machine", { id: machineId, uninstall });
+  } catch (err) {
+    app.models[LOCAL_MACHINE] = { ...(app.models[LOCAL_MACHINE] ?? emptyModel()), lastError: { request: "RemoveMachine", message: errorText(err), session_id: null } };
+    mergeModels();
+    return;
+  }
+  app.machines = app.machines.filter((m) => m.id !== machineId);
+  delete app.models[machineId];
+  delete app.statuses[machineId];
+  delete app.loaded[machineId];
+  mergeModels();
+  const prefix = `${machineId}:`;
+  const projects = Object.fromEntries(Object.entries(app.workspace.layout.projects).filter(([key]) => !key.startsWith(prefix)));
+  commit({ ...app.workspace, layout: { ...app.workspace.layout, projects } });
+}
+
 export function dismissError(): void {
   for (const [machine, model] of Object.entries(app.models)) {
     if (model.lastError) app.models[machine] = { ...model, lastError: null };

@@ -3,7 +3,8 @@
 
 use jojo_app::bridge::LOCAL_MACHINE;
 use jojo_app::hub::Hub;
-use jojo_app::machines::{self, Machine};
+use jojo_app::install::InstallStep;
+use jojo_app::machines::{self, Machine, MachineKind};
 use jojo_app::daemon_manager::DaemonPaths;
 use jojo_app::layout::{self, LayoutFile};
 use jojo_app::settings::{self, Settings};
@@ -44,6 +45,80 @@ fn restart_daemon(machine: Option<String>, hub: State<'_, Arc<Hub>>) {
 #[tauri::command]
 fn list_machines() -> Vec<Machine> {
     machines::load(&machines::default_path())
+}
+
+/// Host aliases from `~/.ssh/config`, for the Add machine dialog.
+#[tauri::command]
+fn ssh_hosts() -> Vec<String> {
+    jojo_app::install::default_ssh_config()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|config| jojo_app::install::ssh_config_hosts(&config))
+        .unwrap_or_default()
+}
+
+/// Spec 8.2: installs jojod on `host`, reporting each step on `progress`,
+/// then adds the machine to machines.toml and connects to it.
+#[tauri::command]
+async fn add_machine(
+    app: tauri::AppHandle,
+    hub: State<'_, Arc<Hub>>,
+    host: String,
+    label: String,
+    progress: Channel<InstallStep>,
+) -> Result<Machine, String> {
+    let host = host.trim().to_owned();
+    if host.is_empty() {
+        return Err("Enter a host from ~/.ssh/config or user@host".into());
+    }
+    let daemon_dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("daemon");
+    jojo_app::install::install(&host, &daemon_dir, |step| {
+        let _ = progress.send(step);
+    })
+    .await?;
+    let path = machines::default_path();
+    let mut list = machines::load(&path);
+    if let Some(existing) = list.iter().find(|m| m.ssh_host.as_deref() == Some(host.as_str())) {
+        // Adding a host that is already listed upgrades and restarts it; the
+        // existing entry (and its layout keys) stays.
+        let existing = existing.clone();
+        hub.stop(&existing.id);
+        hub.start(&existing, || unreachable!("a remote machine has no local paths"));
+        return Ok(existing);
+    }
+    let label = if label.trim().is_empty() { host.clone() } else { label.trim().to_owned() };
+    let machine = Machine { id: jojo_proto::SessionId::new().to_string(), label, kind: MachineKind::Ssh, ssh_host: Some(host), enabled: true };
+    list.push(machine.clone());
+    machines::save(&path, &list).map_err(|e| format!("could not save machines.toml: {e}"))?;
+    hub.start(&machine, || unreachable!("a remote machine has no local paths"));
+    Ok(machine)
+}
+
+/// Spec 8.4: disconnects a remote machine and removes it from
+/// machines.toml. With `uninstall`, first runs `jojod shutdown` and
+/// `jojod uninstall-hooks` on the server and deletes `~/.local/bin/jojod`
+/// and `~/.jojo/`.
+#[tauri::command]
+async fn remove_machine(hub: State<'_, Arc<Hub>>, id: String, uninstall: bool) -> Result<(), String> {
+    let path = machines::default_path();
+    let mut list = machines::load(&path);
+    let Some(machine) = list.iter().find(|m| m.id == id && m.kind == MachineKind::Ssh).cloned() else {
+        return Err("This PC cannot be removed".into());
+    };
+    hub.stop(&id);
+    if uninstall {
+        if let Some(host) = &machine.ssh_host {
+            let script = format!(
+                "{0} shutdown; {0} uninstall-hooks; rm -f ~/.local/bin/jojod && rm -rf ~/.jojo",
+                jojo_app::ssh::REMOTE_JOJOD
+            );
+            let out = jojo_app::ssh::run(host, &script, b"").await.map_err(|e| e.to_string())?;
+            if out.code != Some(0) {
+                return Err(format!("uninstall on {host} failed: {}", out.stderr.trim()));
+            }
+        }
+    }
+    list.retain(|m| m.id != id);
+    machines::save(&path, &list).map_err(|e| format!("could not save machines.toml: {e}"))
 }
 
 #[tauri::command]
@@ -129,6 +204,9 @@ fn main() {
             send_frame,
             restart_daemon,
             list_machines,
+            ssh_hosts,
+            add_machine,
+            remove_machine,
             get_settings,
             available_shells,
             get_layout,

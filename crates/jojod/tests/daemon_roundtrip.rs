@@ -640,3 +640,17 @@ async fn resume_keeps_the_label_of_the_session_it_continues() {
     assert!(resumed.renamed);
     assert_eq!(resumed.claude_session_id.as_deref(), Some("0f3c2a9e-1b2c-4d5e-8f90-123456789abc"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_project_path_starting_with_a_tilde_is_the_home_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    c.send(Frame::Control(ControlMsg::AddProject { path: "~".into(), name: "home".into() })).await.unwrap();
+    let added = match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::ProjectAdded { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::ProjectAdded { project }) => project,
+        _ => unreachable!(),
+    };
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap();
+    assert_eq!(added.path, home);
+}
