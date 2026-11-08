@@ -1,0 +1,9 @@
+[package]
+name = "jojo-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+jojo-proto.workspace = true
+serde_json.workspace = true

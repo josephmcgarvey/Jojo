@@ -2004,6 +2004,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jojo-agent"
+version = "0.1.0"
+dependencies = [
+ "jojo-proto",
+ "serde_json",
+]
+
+[[package]]
 name = "jojo-app"
 version = "0.1.0"
 dependencies = [
