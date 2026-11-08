@@ -1,17 +1,19 @@
 <script lang="ts">
   // Spec 9.6, Ctrl+Shift+P: fuzzy search over sessions, projects and actions.
   // Up and Down move the highlight, Enter runs it, Esc closes.
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
+  import { terminalControls } from "../lib/terminal/registry";
   import {
     app,
     confirmRestartLocalDaemon,
+    focusedSessionId,
     focusPane,
     newSession,
     rehydrateFocusedPane,
     selectProject,
   } from "../lib/state/app.svelte";
   import { orderedSessions } from "../lib/state/views";
-  import { openDialog } from "../lib/state/ui.svelte";
+  import { openDialog, ui } from "../lib/state/ui.svelte";
   import { fuzzyFilter } from "../lib/switcher/fuzzy";
   import { stateTooltip } from "../lib/state/toasts";
   import { LOCAL_MACHINE } from "../lib/wire/bridge";
@@ -19,6 +21,8 @@
   let { onclose }: { onclose: () => void } = $props();
 
   interface Item {
+    /** Unique among the items: `session:<id>`, `project:<machine>:<id>` or `action:<label>`. */
+    key: string;
     kind: "Session" | "Project" | "Action";
     label: string;
     detail: string;
@@ -36,6 +40,7 @@
     for (const { session, machineId } of orderedSessions(app.machines, app.models)) {
       const project = app.model.projects[session.project_id];
       list.push({
+        key: `session:${session.id}`,
         kind: "Session",
         label: session.label,
         detail: `${project?.name ?? ""} · ${machineLabel(machineId)} · ${stateTooltip(session)}`,
@@ -44,19 +49,21 @@
     }
     for (const machine of app.machines) {
       for (const project of Object.values(app.models[machine.id]?.projects ?? {})) {
-        list.push({ kind: "Project", label: project.name, detail: `${machine.label} · ${project.path}`, run: () => selectProject(project.id) });
+        list.push({ key: `project:${machine.id}:${project.id}`, kind: "Project", label: project.name, detail: `${machine.label} · ${project.path}`, run: () => selectProject(project.id) });
       }
     }
     const project = app.selectedProjectId;
-    const actions: Item[] = [
-      { kind: "Action", label: "New shell", detail: "Ctrl+Shift+N", run: () => project && newSession(project, "shell") },
-      { kind: "Action", label: "New Claude session", detail: "Ctrl+Shift+T", run: () => project && newSession(project, "claude") },
-      { kind: "Action", label: "Add machine…", detail: "Linux server over SSH", run: () => openDialog({ kind: "add-machine" }) },
-      { kind: "Action", label: "Settings…", detail: "", run: () => openDialog({ kind: "settings" }) },
-      { kind: "Action", label: "Restart daemon (This PC)…", detail: "Ends This PC's sessions", run: () => void confirmRestartLocalDaemon() },
-      { kind: "Action", label: "Debug ▸ Rehydrate pane", detail: "New snapshot for the focused pane", run: rehydrateFocusedPane },
+    const actions: Omit<Item, "key" | "kind">[] = [
+      { label: "New terminal", detail: "Ctrl+Shift+N", run: () => project && newSession(project, "shell") },
+      { label: "New Claude session", detail: "Ctrl+Shift+T", run: () => project && newSession(project, "claude") },
+      { label: "Add machine…", detail: "Linux server over SSH", run: () => openDialog({ kind: "add-machine" }) },
+      { label: "Settings…", detail: "", run: () => openDialog({ kind: "settings" }) },
+      { label: "Restart daemon (This PC)…", detail: "Ends This PC's sessions", run: () => void confirmRestartLocalDaemon() },
+      { label: "Debug ▸ Rehydrate pane", detail: "New snapshot for the focused pane", run: rehydrateFocusedPane },
     ];
-    if (app.machines.some((m) => m.id === LOCAL_MACHINE)) list.push(...actions);
+    if (app.machines.some((m) => m.id === LOCAL_MACHINE)) {
+      list.push(...actions.map((action) => ({ ...action, key: `action:${action.label}`, kind: "Action" as const })));
+    }
     return list;
   });
 
@@ -75,15 +82,27 @@
     // Close first: an action that opens another dialog replaces this one.
     onclose();
     item.run();
+    // A session item focuses its own pane; otherwise keys return to the
+    // focused pane's terminal instead of staying on the page.
+    if (item.kind !== "Session") void tick().then(refocusTerminal);
+  }
+
+  function close(): void {
+    onclose();
+    void tick().then(refocusTerminal);
+  }
+
+  function refocusTerminal(): void {
+    if (!ui.dialog && !ui.menu) terminalControls(focusedSessionId())?.focus();
   }
 
   function onKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
       event.preventDefault();
-      onclose();
+      close();
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
-      highlight = Math.min(matches.length - 1, highlight + 1);
+      highlight = Math.max(0, Math.min(matches.length - 1, highlight + 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       highlight = Math.max(0, highlight - 1);
@@ -96,12 +115,12 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="scrim" onclick={onclose}>
+<div class="scrim" onclick={close}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="switcher" role="dialog" aria-modal="true" aria-label="Switcher" tabindex="-1" onclick={(e) => e.stopPropagation()}>
     <input bind:this={input} bind:value={query} onkeydown={onKeydown} placeholder="Jump to a session, project or action" spellcheck="false" />
     <ul role="listbox">
-      {#each matches as item, i (item.kind + item.label + item.detail)}
+      {#each matches as item, i (item.key)}
         <li role="option" aria-selected={i === highlight}>
           <button class:on={i === highlight} onmouseenter={() => (highlight = i)} onclick={() => choose(item)}>
             <span class="kind">{item.kind}</span>

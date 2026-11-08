@@ -20,9 +20,11 @@ export function fuzzyScore(query: string, text: string): number | null {
   let score = 0;
   let from = 0;
   let previous = -2;
-  for (const ch of q) {
-    if (ch === " ") continue;
-    const at = nextMatch(t, ch, from, previous);
+  const chars = [...q].filter((c) => c !== " ");
+  for (let n = 0; n < chars.length; n++) {
+    const ch = chars[n];
+    const remaining = chars.slice(n + 1).join("");
+    const at = nextMatch(t, ch, from, previous, remaining);
     if (at < 0) return null;
     score += 1;
     if (at === previous + 1) score += 4;
@@ -34,12 +36,30 @@ export function fuzzyScore(query: string, text: string): number | null {
   return score;
 }
 
-function nextMatch(text: string, ch: string, from: number, previous: number): number {
-  if (previous >= 0 && text[previous + 1] === ch) return previous + 1;
+/**
+ * Where `ch` is matched. A preferred position (right after the previous
+ * match, or a word start) is taken only when `remaining` (the rest of the
+ * query) can still be matched after it; otherwise the earliest occurrence,
+ * so preferring a position never turns a match into a miss.
+ */
+function nextMatch(text: string, ch: string, from: number, previous: number, remaining: string): number {
+  const fits = (at: number) => isSubsequence(remaining, text, at + 1);
+  if (previous >= 0 && text[previous + 1] === ch && fits(previous + 1)) return previous + 1;
   for (let i = text.indexOf(ch, from); i >= 0; i = text.indexOf(ch, i + 1)) {
-    if (i === 0 || WORD_BREAK.test(text[i - 1])) return i;
+    if ((i === 0 || WORD_BREAK.test(text[i - 1])) && fits(i)) return i;
   }
   return text.indexOf(ch, from);
+}
+
+/** True when the characters of `query` appear in order in `text` from `from`. */
+function isSubsequence(query: string, text: string, from: number): boolean {
+  let at = from;
+  for (const ch of query) {
+    at = text.indexOf(ch, at);
+    if (at < 0) return false;
+    at += 1;
+  }
+  return true;
 }
 
 /** The items whose text matches `query`, best first; ties keep their order. */

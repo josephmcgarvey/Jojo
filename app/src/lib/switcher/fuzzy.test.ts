@@ -6,6 +6,8 @@ describe("fuzzyScore", () => {
     expect(fuzzyScore("fxl", "Fix the login bug")).not.toBeNull();
     expect(fuzzyScore("lxf", "Fix the login bug")).toBeNull();
     expect(fuzzyScore("", "anything")).toBe(0);
+    // A word start ("api") must not take a character the rest of the query needs.
+    expect(fuzzyScore("ar", "jar api · This PC · Idle")).not.toBeNull();
   });
 
   it("prefers word starts and consecutive characters", () => {

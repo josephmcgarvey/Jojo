@@ -15,4 +15,9 @@ describe("nextAttentionSession", () => {
     expect(nextAttentionSession([s("A", "idle"), s("B", "done"), s("C", "working")], "C")).toBe("B");
     expect(nextAttentionSession([s("A", "idle"), s("B", "working")], "A")).toBeNull();
   });
+
+  it("moves from the only needs_you session to a done one, and stays when nothing else needs attention", () => {
+    expect(nextAttentionSession([s("A", "needs_you"), s("B", "done")], "A")).toBe("B");
+    expect(nextAttentionSession([s("A", "needs_you"), s("B", "idle")], "A")).toBe("A");
+  });
 });

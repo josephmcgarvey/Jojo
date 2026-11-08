@@ -13,7 +13,7 @@
       deferred = false;
       return;
     }
-    void invoke<number>("local_running_sessions")
+    void invoke<number | null>("local_running_sessions")
       .then((count) => (runningSessions = count))
       .catch(() => (runningSessions = null));
   });

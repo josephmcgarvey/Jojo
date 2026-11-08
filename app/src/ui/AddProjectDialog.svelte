@@ -14,8 +14,11 @@
   // Spec 9.2: suggestions from ListDir for the folder being typed in, asked
   // 150 ms after the last keystroke.
   const typed = $derived(splitTypedPath(path));
+  // A string, so the effect below runs when the folder changes, not on
+  // every keystroke within it.
+  const typedDir = $derived(typed.dir);
   $effect(() => {
-    const dir = typed.dir;
+    const dir = typedDir;
     const timer = setTimeout(() => listDir(machineId, dir), 150);
     return () => clearTimeout(timer);
   });
@@ -34,9 +37,18 @@
     }
   }
 
+  let input: HTMLInputElement;
+
   function onKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") onclose();
-    if (event.key === "Enter" && path.trim()) void add();
+    // Enter on a focused suggestion chooses it (its own click); only Enter
+    // in the path field adds the project.
+    if (event.key === "Enter" && event.target === input && path.trim()) void add();
+  }
+
+  function choose(suggestion: string): void {
+    path = suggestion;
+    input.focus();
   }
 </script>
 
@@ -46,11 +58,11 @@
     <h2 id="add-project-title">Add project on {machine?.label ?? "server"}</h2>
     <p class="hint">The folder's path on the server, for example <code>/home/you/app</code>. Sessions in this project start there.</p>
     <!-- svelte-ignore a11y_autofocus -->
-    <input bind:value={path} autofocus spellcheck="false" />
+    <input bind:this={input} bind:value={path} autofocus spellcheck="false" />
     {#if suggestions.length > 0}
       <ul class="suggestions">
         {#each suggestions as suggestion (suggestion)}
-          <li><button onclick={() => (path = suggestion)}>{suggestion}</button></li>
+          <li><button onclick={() => choose(suggestion)}>{suggestion}</button></li>
         {/each}
       </ul>
     {/if}

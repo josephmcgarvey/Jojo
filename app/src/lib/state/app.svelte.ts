@@ -686,12 +686,20 @@ export function runningSessions(machine: string): SessionInfo[] {
 
 /** Spec 9.10 and 8.4: restarts This PC's jojod after a confirmation that names the sessions it ends. */
 export async function confirmRestartLocalDaemon(): Promise<void> {
-  const sessions = runningSessions(LOCAL_MACHINE);
+  // While This PC's jojod speaks another protocol the app has never listed
+  // its sessions; their number comes from its state.json (labels unknown),
+  // and the restart is always confirmed.
+  const mismatch = app.status.state === "version_mismatch";
+  const sessions = mismatch ? [] : runningSessions(LOCAL_MACHINE);
+  const count = mismatch ? await invoke<number | null>("local_running_sessions").catch(() => null) : sessions.length;
   const confirmed =
-    sessions.length === 0 ||
+    (!mismatch && count === 0) ||
     (await askConfirm({
       title: "Restart jojod on This PC?",
-      message: `Restarting ends ${sessions.length} running session${sessions.length === 1 ? "" : "s"}:`,
+      message:
+        count === null
+          ? "Restarting ends every session the running jojod has."
+          : `Restarting ends ${count} running session${count === 1 ? "" : "s"}${sessions.length ? ":" : "."}`,
       details: sessions.map((s) => s.label),
       confirmLabel: "Restart jojod",
     }));

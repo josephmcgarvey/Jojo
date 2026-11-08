@@ -69,7 +69,7 @@
       {#if tab}
         <PaneGrid terminalTheme={theme.terminal} />
       {:else if app.selectedProjectId}
-        <p class="empty">No session open. Use + to start Claude or a shell.</p>
+        <p class="empty">No session open. Use + next to the project to open a terminal.</p>
       {:else}
         <p class="empty">Add a project folder with + next to This PC.</p>
       {/if}
@@ -77,7 +77,6 @@
     <StatusBar />
   </section>
 </div>
-<ConfirmDialog />
 {#if ui.dialog?.kind === "add-machine"}
   <AddMachineDialog onclose={closeDialog} />
 {:else if ui.dialog?.kind === "add-project"}
@@ -87,6 +86,9 @@
 {:else if ui.dialog?.kind === "switcher"}
   <SwitcherDialog onclose={closeDialog} />
 {/if}
+<!-- After the dialogs, so a confirmation asked from one (Settings ▸ Restart
+     daemon) paints above it: both scrims share z-index 200. -->
+<ConfirmDialog />
 {#if ui.menu}
   {#key ui.menu}
     <ContextMenu entries={ui.menu.entries} x={ui.menu.x} y={ui.menu.y} onclose={closeMenuAndRefocus} />

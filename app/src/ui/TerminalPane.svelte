@@ -143,9 +143,9 @@
       getSelection: () => created.getSelection(),
       paste: (text) => created.paste(text),
       mouseTrackingMode: () => created.modes.mouseTrackingMode,
-      applyFont: (family, size, lineHeight) => {
+      applyFont: (family, fontSize, lineHeight) => {
         created.options.fontFamily = family;
-        created.options.fontSize = size;
+        created.options.fontSize = fontSize;
         created.options.lineHeight = lineHeight;
         // A new cell size changes how many columns and rows fit; the resize
         // observer does not fire because the host's size is unchanged.

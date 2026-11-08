@@ -3,6 +3,7 @@
   // saves them with Save; terminal font changes apply to open panes at once,
   // scrollback to panes opened afterwards. It also offers Restart daemon
   // (This PC) and Debug ▸ Rehydrate pane.
+  import { onMount } from "svelte";
   import type { Settings } from "../lib/backend/Settings";
   import { errorText } from "../lib/errors";
   import { app, confirmRestartLocalDaemon, focusedSessionId, rehydrateFocusedPane, runningSessions, saveSettings } from "../lib/state/app.svelte";
@@ -23,9 +24,18 @@
   };
 
   let draft = $state<Settings>({ ...DEFAULTS, ...(app.settings ?? {}) });
+  $effect(() => {
+    const match = app.shells.find((s) => s.program !== draft.defaultShell && sameProgram(s.program, draft.defaultShell));
+    if (match) draft.defaultShell = match.program;
+  });
   let error = $state<string | null>(null);
   let saving = $state(false);
-  const shells = $derived(shellChoices(app.shells, draft.defaultShell));
+  // Ordered by the saved default, so the list does not reorder while choosing.
+  const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
+  /** Names the same program as a detected shell (`pwsh.exe` and `pwsh`, any case). */
+  const sameProgram = (a: string, b: string) => a.trim().toLowerCase().replace(/\.exe$/, "") === b.trim().toLowerCase().replace(/\.exe$/, "");
+  let dialogElement: HTMLDivElement;
+  onMount(() => dialogElement.focus());
   const localSessions = $derived(runningSessions(LOCAL_MACHINE).length);
   const canRehydrate = $derived(focusedSessionId() !== null);
 
@@ -60,7 +70,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="scrim" onkeydown={onKeydown}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" bind:this={dialogElement}>
     <h2 id="settings-title">Settings</h2>
 
     <section>
@@ -76,7 +86,7 @@
           {#each shells as shell (shell.program)}
             <option value={shell.program}>{shell.label.replace(" (default)", "")}</option>
           {/each}
-          {#if !shells.some((s) => s.program === draft.defaultShell)}
+          {#if app.shells.length > 0 && !shells.some((s) => sameProgram(s.program, draft.defaultShell))}
             <option value={draft.defaultShell}>{draft.defaultShell} (not found)</option>
           {/if}
         </select>
@@ -124,6 +134,7 @@
     background: var(--jojo-scrim);
   }
   .dialog {
+    outline: none;
     width: min(560px, calc(100% - 32px));
     max-height: calc(100% - 32px);
     overflow-y: auto;
