@@ -2,6 +2,8 @@
 // (../layout, ./workspace, ./sessionRules); this module holds the current
 // values, talks to the backend, and keeps layout.json in sync.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { tick } from "svelte";
 import type { ConnectionStatus } from "../backend/ConnectionStatus";
@@ -35,6 +37,7 @@ import {
   isBusy,
   restartShell,
 } from "./sessionRules";
+import { toastFor } from "./toasts";
 import { sortedProjects } from "./views";
 import {
   createFailed,
@@ -65,7 +68,12 @@ export const app = $state({
   /** True once the first Projects reply has been applied. */
   projectsLoaded: false,
   now: Date.now(),
+  /** Whether the Jojo window is the foreground window (spec 7.3 rule 2, 7.4 rule 1). */
+  windowFocused: typeof document === "undefined" ? true : document.hasFocus(),
 });
+
+/** Unix ms of each session's last toast (spec 7.4 rule 4). Not rendered, so not reactive. */
+const lastToastAt = new Map<string, number>();
 
 /** Delay from the last layout change to the layout.json write. */
 const SAVE_DELAY_MS = 250;
@@ -110,7 +118,17 @@ export function startApp(): () => void {
   // placed into an empty layout that the file then overwrites.
   void loadLayout().then(connect);
   const tick = setInterval(() => (app.now = Date.now()), 30_000);
-  return () => clearInterval(tick);
+  const window = getCurrentWindow();
+  const unlistenFocus = window.onFocusChanged(({ payload: focused }) => {
+    app.windowFocused = focused;
+  });
+  // Spec 7.4 rule 3: the backend has already brought the window forward.
+  const unlistenToast = listen<string>("toast-activated", ({ payload: sessionId }) => focusPane(sessionId));
+  return () => {
+    clearInterval(tick);
+    void unlistenFocus.then((stop) => stop());
+    void unlistenToast.then((stop) => stop());
+  };
 }
 
 async function loadLayout(): Promise<void> {
@@ -167,7 +185,9 @@ function handleControl(msg: ControlMsg): void {
     if (msg.request === "CreateSession") commit(createFailed(app.workspace, msg.session_id));
   }
 
+  const previousState = msg.type === "SessionUpdated" ? app.model.sessions[msg.session.id]?.state : undefined;
   app.model = applyControl(app.model, msg);
+  if (msg.type === "SessionUpdated") maybeToast(previousState, msg.session);
 
   switch (msg.type) {
     case "Sessions":
@@ -209,6 +229,36 @@ function handleControl(msg: ControlMsg): void {
   // once it has been applied, so a reconnect does not race an Attach against
   // stale attachable state from before the daemon restarted.
   if (msg.type === "Sessions") router.reattachAll();
+}
+
+/** Spec 7.4: shows a toast when a session newly needs attention and the user is not looking at it. */
+function maybeToast(previous: SessionInfo["state"] | undefined, session: SessionInfo): void {
+  const now = Date.now();
+  const toast = toastFor(previous, session, {
+    focusedSessionId: focusedSessionId(),
+    windowFocused: app.windowFocused,
+    enabled: app.settings?.toasts ?? true,
+    lastToastAt: lastToastAt.get(session.id),
+    now,
+    projectName: app.model.projects[session.project_id]?.name,
+  });
+  if (!toast) return;
+  lastToastAt.set(session.id, now);
+  void invoke("notify", { sessionId: session.id, title: toast.title, body: toast.body }).catch(() => {
+    // No toast (for example, notifications are off in Windows); the badge
+    // still shows the state.
+  });
+}
+
+/**
+ * Spec 7.3 rule 2: a done session becomes idle once its pane is focused in
+ * the foreground window. App.svelte runs this whenever the focused session,
+ * its state or the window focus changes.
+ */
+export function markFocusedSessionSeen(): void {
+  const id = focusedSessionId();
+  if (!id || !app.windowFocused || app.model.sessions[id]?.state !== "done") return;
+  void sendControl({ type: "MarkSeen", session_id: id }).catch(() => {});
 }
 
 export function projectLayout(projectId: string): ProjectLayout {

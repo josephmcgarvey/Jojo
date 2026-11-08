@@ -5,6 +5,7 @@
   import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
   import { shellChoices } from "../lib/state/shells";
   import { sessionsForProject, sortedProjects } from "../lib/state/views";
+  import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
   import RenameField from "./RenameField.svelte";
 
@@ -81,7 +82,7 @@
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
       {#if isRenaming(session.id)}
         <div class="session renaming">
-          <Badge agentState={session.state} />
+          <Badge agentState={session.state} title={stateTooltip(session)} />
           <RenameField
             value={session.label}
             label="Session name"
@@ -100,7 +101,7 @@
           ondblclick={() => beginRename({ kind: "session", sessionId: session.id, where: "sidebar" })}
           oncontextmenu={(e) => onSessionMenu(e, session.id)}
         >
-          <Badge agentState={session.state} />
+          <Badge agentState={session.state} title={stateTooltip(session)} />
           <span class="label">{session.label}</span>
           <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
         </button>

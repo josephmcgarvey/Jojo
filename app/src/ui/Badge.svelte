@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { AgentState } from "../lib/protocol/AgentState";
 
-  let { agentState, size = 13 }: { agentState: AgentState; size?: number } = $props();
+  let { agentState, size = 13, title }: { agentState: AgentState; size?: number; title?: string } = $props();
 </script>
 
-<span class="badge {agentState}" style:width="{size}px" style:height="{size}px"></span>
+<span class="badge {agentState}" {title} style:width="{size}px" style:height="{size}px"></span>
 
 <style>
   .badge {

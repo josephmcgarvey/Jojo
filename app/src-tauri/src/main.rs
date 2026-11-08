@@ -70,6 +70,19 @@ async fn open_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("the link opener thread failed: {e}"))?
 }
 
+/// Shows a Windows toast for a session (spec 7.4). The frontend decides when
+/// one is due; clicking it emits `toast-activated` with `session_id`.
+#[tauri::command]
+fn notify(app: tauri::AppHandle, session_id: String, title: String, body: String) -> Result<(), String> {
+    #[cfg(windows)]
+    return jojo_app::toast::show(&app, session_id, &title, &body);
+    #[cfg(not(windows))]
+    {
+        let _ = (app, session_id, title, body);
+        Ok(())
+    }
+}
+
 /// Places the snap-layout input sink over the HTML maximize button (see
 /// `jojo_app::snap`). The frontend sends the button's rectangle in
 /// physical pixels whenever the window or the button changes size.
@@ -101,7 +114,8 @@ fn main() {
             get_layout,
             save_layout,
             open_url,
-            set_maximize_button_rect
+            set_maximize_button_rect,
+            notify
         ])
         .setup(move |app| {
             // The main window has `"create": false` in tauri.conf.json so it

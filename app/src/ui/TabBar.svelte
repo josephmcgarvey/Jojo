@@ -4,6 +4,7 @@
   import { app, closeTab, currentProjectLayout, newSession, renameTab, selectTab } from "../lib/state/app.svelte";
   import { tabMenu } from "../lib/state/contextMenus";
   import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
   import RenameField from "./RenameField.svelte";
   import WindowControls from "./WindowControls.svelte";
@@ -38,7 +39,7 @@
         />
       {:else}
         <button class="title" onclick={() => selectTab(tab.id)} ondblclick={() => beginRename({ kind: "tab", tabId: tab.id })}>
-          {#if focusedSession}<Badge agentState={focusedSession.state} size={11} />{/if}
+          {#if focusedSession}<Badge agentState={focusedSession.state} title={stateTooltip(focusedSession)} size={11} />{/if}
           <span class="name">{tabLabel(tab, labelOf)}</span>
           {#if panes > 1}<span class="count">{panes}</span>{/if}
         </button>
