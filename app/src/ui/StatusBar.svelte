@@ -1,17 +1,28 @@
 <script lang="ts">
-  import { app } from "../lib/state/app.svelte";
+  // Spec 9.7: the focused session's machine label and project path (the
+  // selected project's when no pane is focused), and the switcher hint.
+  import { app, focusedSessionId, machineOfProject } from "../lib/state/app.svelte";
+  import { SHORTCUT_LABELS } from "../lib/input/shortcuts";
 
-  const project = $derived(app.selectedProjectId ? app.model.projects[app.selectedProjectId] : undefined);
+  const projectId = $derived.by(() => {
+    const focused = focusedSessionId();
+    return (focused ? app.model.sessions[focused]?.project_id : undefined) ?? app.selectedProjectId;
+  });
+  const project = $derived(projectId ? app.model.projects[projectId] : undefined);
+  const machine = $derived(project ? app.machines.find((m) => m.id === machineOfProject(project.id)) : undefined);
 </script>
 
 <footer class="status">
-  <span>This PC</span>
-  {#if project}<span>{project.path}</span>{/if}
+  <span>{machine?.label ?? "This PC"}</span>
+  {#if project}<span class="path">{project.path}</span>{/if}
   <span class="grow"></span>
-  {#if app.status.state === "connected"}<span>jojod {app.status.jojod_version}</span>{/if}
+  <span>{SHORTCUT_LABELS.switcher} to switch</span>
 </footer>
 
 <style>
+  .path {
+    font-family: var(--jojo-font-mono);
+  }
   .status {
     display: flex;
     gap: 14px;

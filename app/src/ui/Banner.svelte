@@ -1,8 +1,24 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import { app, dismissError, restartDaemon } from "../lib/state/app.svelte";
   import { connectionBanner } from "../lib/state/banner";
 
-  const banner = $derived(connectionBanner(app.status, app.everConnected));
+  /** This PC's running sessions, read from state.json when its jojod speaks another protocol. */
+  let runningSessions = $state<number | null>(null);
+  /** Spec 8.4 "Later": the mismatch banner stays hidden until the status changes. */
+  let deferred = $state(false);
+
+  $effect(() => {
+    if (app.status.state !== "version_mismatch") {
+      deferred = false;
+      return;
+    }
+    void invoke<number>("local_running_sessions")
+      .then((count) => (runningSessions = count))
+      .catch(() => (runningSessions = null));
+  });
+
+  const banner = $derived(deferred ? null : connectionBanner(app.status, app.everConnected, runningSessions));
   const error = $derived(app.model.lastError);
 </script>
 
@@ -11,6 +27,10 @@
     {banner.text}
     {#if banner.action}
       <button class="action" onclick={() => restartDaemon()}>{banner.action}</button>
+    {/if}
+    {#if banner.later}
+      <!-- The header keeps "restart required" while the banner is hidden. -->
+      <button class="action" onclick={() => (deferred = true)}>Later</button>
     {/if}
   </div>
 {/if}

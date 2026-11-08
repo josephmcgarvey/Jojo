@@ -129,6 +129,20 @@ fn get_settings() -> Settings {
     settings::load(&settings::default_path())
 }
 
+/// The number of sessions This PC's jojod is running, read from its
+/// state.json (spec 8.4: "Restart now (ends N sessions)"). Reading the file
+/// works while the running daemon speaks another protocol, when the app
+/// cannot ask it; 0 when the file is missing or unreadable.
+#[tauri::command]
+fn local_running_sessions() -> usize {
+    let path = jojod::paths::default_state_dir().join("state.json");
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<jojod::store::StoreData>(&bytes).ok())
+        .map(|data| data.sessions.iter().filter(|s| s.state != jojo_proto::AgentState::Exited).count())
+        .unwrap_or(0)
+}
+
 /// Saves the settings screen's values (spec 9.10).
 #[tauri::command]
 fn save_settings(settings: Settings) -> Result<(), String> {
@@ -218,6 +232,7 @@ fn main() {
             remove_machine,
             get_settings,
             save_settings,
+            local_running_sessions,
             available_shells,
             get_layout,
             save_layout,
