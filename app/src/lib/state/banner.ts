@@ -7,6 +7,8 @@ export interface BannerView {
   text: string;
   /** Label of the button, which calls restart_daemon (it doubles as Retry); null for no button. */
   action: string | null;
+  /** Spec 8.4: This PC's protocol mismatch also offers Later, which hides the banner. */
+  later?: boolean;
 }
 
 /**
@@ -15,7 +17,12 @@ export interface BannerView {
  * texts say jojod is starting or did not start, rather than "Disconnected
  * … Sessions keep running" (Plan 2b carry-over 3.3 item 7).
  */
-export function connectionBanner(status: ConnectionStatus, everConnected: boolean): BannerView | null {
+/**
+ * `runningSessions` is the number of sessions the running jojod has (read
+ * from its state.json), shown on the restart button of a protocol mismatch;
+ * null when unknown.
+ */
+export function connectionBanner(status: ConnectionStatus, everConnected: boolean, runningSessions: number | null = null): BannerView | null {
   switch (status.state) {
     case "connected":
       return null;
@@ -31,7 +38,14 @@ export function connectionBanner(status: ConnectionStatus, everConnected: boolea
         action: null,
       };
     case "version_mismatch":
-      return { text: `${status.message}.`, action: "Restart jojod (ends all running sessions)" };
+      return {
+        text: `${status.message}. Until jojod restarts, its sessions keep running but cannot be shown.`,
+        action:
+          runningSessions === null
+            ? "Restart now (ends all running sessions)"
+            : `Restart now (ends ${runningSessions} session${runningSessions === 1 ? "" : "s"})`,
+        later: true,
+      };
     case "failed":
       return everConnected
         ? { text: `Cannot reach jojod: ${status.message}. Logs are in ${LOG_PATH}.`, action: "Retry" }

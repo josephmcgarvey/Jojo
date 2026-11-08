@@ -13,7 +13,6 @@
   import Badge from "./Badge.svelte";
   import RenameField from "./RenameField.svelte";
 
-  let menuFor = $state<string | null>(null);
   /** Right-click on a machine header (spec 8.4): Reconnect, and Remove for remote machines. */
   function onMachineMenu(event: MouseEvent, machine: Machine): void {
     event.preventDefault();
@@ -38,10 +37,6 @@
   const projectsOf = (machineId: string) => sortedProjects(app.models[machineId] ?? emptyModel());
   const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
 
-  function isInsideOpenMenu(target: EventTarget | null): boolean {
-    return target instanceof Element && target.closest(`[data-session-menu="${menuFor}"]`) !== null;
-  }
-
   function isRenaming(sessionId: string): boolean {
     return ui.renaming?.kind === "session" && ui.renaming.where === "sidebar" && ui.renaming.sessionId === sessionId;
   }
@@ -51,29 +46,26 @@
     openMenu(event.clientX, event.clientY, sessionMenu(sessionId));
   }
 
-  // The Claude/Shell menu is a single piece of state (menuFor), so only one
-  // project's menu is ever open; these listeners are only attached while
-  // that is true, and torn down as soon as it closes.
-  $effect(() => {
-    if (menuFor === null) return;
-    const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") menuFor = null;
-    };
-    const onClick = (e: MouseEvent) => {
-      // Reads menuFor live, not a stale closed-over value: when this click
-      // is the same one that toggled the menu via the "+" button's own
-      // onclick, that handler already ran (target-phase listeners fire
-      // before this bubble-phase one), so menuFor already reflects the
-      // toggle's result and isInsideOpenMenu is checked against it.
-      if (!isInsideOpenMenu(e.target)) menuFor = null;
-    };
-    window.addEventListener("keydown", onKeydown);
-    window.addEventListener("click", onClick);
-    return () => {
-      window.removeEventListener("keydown", onKeydown);
-      window.removeEventListener("click", onClick);
-    };
-  });
+  /**
+   * Right-click on a project's +: a terminal (the same as a click), a Claude
+   * session, and on This PC the other detected shells. A remote project's
+   * terminal is the server's login shell.
+   */
+  function onNewSessionMenu(event: MouseEvent, projectId: string, isLocal: boolean): void {
+    event.preventDefault();
+    const entries: MenuEntry[] = [
+      { kind: "action", label: "New terminal", shortcut: "Ctrl+Shift+N", run: () => newSession(projectId, "shell") },
+      { kind: "action", label: "New Claude session", shortcut: "Ctrl+Shift+T", run: () => newSession(projectId, "claude") },
+    ];
+    const others = isLocal ? shells.filter((shell) => !shell.isDefault) : [];
+    if (others.length > 0) {
+      entries.push({ kind: "separator" });
+      for (const shell of others) {
+        entries.push({ kind: "action", label: `New ${shell.label}`, run: () => newSession(projectId, "shell", { kind: "tab" }, shell.program) });
+      }
+    }
+    openMenu(event.clientX, event.clientY, entries);
+  }
 </script>
 
 <aside class="side">
@@ -93,26 +85,21 @@
     {/if}
   </div>
   {#each projectsOf(machine.id) as project (project.id)}
+    {@const count = sessionsForProject(app.model, project.id).length}
     <div class="project" class:selected={app.selectedProjectId === project.id}>
-      <button class="name" onclick={() => selectProject(project.id)}>{project.name}</button>
+      <button class="name" onclick={() => selectProject(project.id)}>
+        {project.name}{#if count > 0}<small class="count">{count}</small>{/if}
+      </button>
+      <!-- A click opens a terminal in the project (type `claude` in it);
+           right-click offers a Claude session and other shells. -->
       <button
         class="icon add"
-        title="New session"
-        aria-label={`New session in ${project.name}`}
-        data-session-menu={project.id}
-        onclick={() => (menuFor = menuFor === project.id ? null : project.id)}
+        title="New terminal (right-click for more)"
+        aria-label={`New terminal in ${project.name}`}
+        onclick={() => newSession(project.id, "shell")}
+        oncontextmenu={(e) => onNewSessionMenu(e, project.id, machine.kind === "local")}
       >+</button>
     </div>
-    {#if menuFor === project.id}
-      <div class="menu" data-session-menu={project.id}>
-        <button onclick={() => { menuFor = null; newSession(project.id, "claude"); }}>Claude</button>
-        {#each machine.kind === "local" ? shells : [] as shell (shell.program)}
-          <button onclick={() => { menuFor = null; newSession(project.id, "shell", { kind: "tab" }, shell.program); }}>{shell.label}</button>
-        {:else}
-          <button onclick={() => { menuFor = null; newSession(project.id, "shell"); }}>Shell</button>
-        {/each}
-      </div>
-    {/if}
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
       {#if isRenaming(session.id)}
         <div class="session renaming">
@@ -146,6 +133,7 @@
   {/each}
   <div class="footer">
     <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}>+ Machine</button>
+    <button class="settings" title="Settings" aria-label="Settings" onclick={() => openDialog({ kind: "settings" })}>⚙</button>
   </div>
 </aside>
 
@@ -181,14 +169,25 @@
   }
   /* Spec 8.3 rule 1: a machine that is not connected keeps its sessions
      and their last badges, dimmed. */
+  .count {
+    margin-left: 6px;
+    color: var(--jojo-muted);
+    font-size: 10.5px;
+    font-weight: 400;
+  }
   .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-top: auto;
     padding: 8px;
     border-top: 1px solid var(--jojo-line);
   }
-  .add-machine {
+  .add-machine,
+  .settings {
     color: var(--jojo-muted);
   }
+  .settings:hover,
   .add-machine:hover {
     color: var(--jojo-fg);
   }
@@ -238,20 +237,6 @@
   .project:hover .add,
   .project:focus-within .add {
     opacity: 1;
-  }
-  .menu {
-    display: flex;
-    gap: 4px;
-    padding: 2px 8px 4px 14px;
-  }
-  .menu button {
-    padding: 3px 8px;
-    border: 1px solid var(--jojo-line);
-    border-radius: var(--jojo-radius-sm);
-    color: var(--jojo-fg2);
-  }
-  .menu button:hover {
-    background: var(--jojo-sel);
   }
   .session {
     display: flex;

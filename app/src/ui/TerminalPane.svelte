@@ -123,12 +123,37 @@
     if (session.attachable) stream.start();
     else created.write(`\x1b[2m${noScreenMessage(session)}\x1b[0m\r\n`);
 
+    // Fits the terminal to the host and tells the daemon about a new size.
+    // Always re-fits so a session with no screen still wraps its static
+    // message to the host's width; only an attachable session has anything
+    // on the daemon side to tell about the new size.
+    const refit = () => {
+      fit.fit();
+      const next = clampSize(created.cols, created.rows);
+      if (next.cols !== size.cols || next.rows !== size.rows) {
+        size = next;
+        if (session.attachable) {
+          void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }, machine).catch(() => {});
+        }
+      }
+    };
     const unregisterControls = registerTerminal(id, {
       focus: () => created.focus(),
       hasSelection: () => created.hasSelection(),
       getSelection: () => created.getSelection(),
       paste: (text) => created.paste(text),
       mouseTrackingMode: () => created.modes.mouseTrackingMode,
+      applyFont: (family, fontSize, lineHeight) => {
+        created.options.fontFamily = family;
+        created.options.fontSize = fontSize;
+        created.options.lineHeight = lineHeight;
+        // A new cell size changes how many columns and rows fit; the resize
+        // observer does not fire because the host's size is unchanged.
+        refit();
+      },
+      rehydrate: () => {
+        if (session.attachable) stream.reattach(true);
+      },
     });
 
     // A session with no screen has nothing on the daemon side to receive
@@ -148,19 +173,7 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(() => {
       clearTimeout(timer);
-      timer = setTimeout(() => {
-        // Always re-fit so a session with no screen still wraps its static
-        // message to the host's width; only an attachable session has
-        // anything on the daemon side to tell about the new size.
-        fit.fit();
-        const next = clampSize(created.cols, created.rows);
-        if (next.cols !== size.cols || next.rows !== size.rows) {
-          size = next;
-          if (session.attachable) {
-            void sendControl({ type: "Resize", session_id: id, cols: size.cols, rows: size.rows }, machine).catch(() => {});
-          }
-        }
-      }, 50);
+      timer = setTimeout(refit, 50);
     });
     observer.observe(host);
 

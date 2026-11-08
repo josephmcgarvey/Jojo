@@ -34,8 +34,11 @@ describe("connectionBanner", () => {
   it("keeps the elevated and version mismatch banners", () => {
     expect(connectionBanner({ state: "elevated" }, false)?.text).toContain("running as administrator");
     expect(connectionBanner({ state: "version_mismatch", message: "jojod speaks protocol 1" }, true)).toEqual({
-      text: "jojod speaks protocol 1.",
-      action: "Restart jojod (ends all running sessions)",
+      text: "jojod speaks protocol 1. Until jojod restarts, its sessions keep running but cannot be shown.",
+      action: "Restart now (ends all running sessions)",
+      later: true,
     });
+    expect(connectionBanner({ state: "version_mismatch", message: "x" }, true, 3)?.action).toBe("Restart now (ends 3 sessions)");
+    expect(connectionBanner({ state: "version_mismatch", message: "x" }, true, 1)?.action).toBe("Restart now (ends 1 session)");
   });
 });

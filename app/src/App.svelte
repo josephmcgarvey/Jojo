@@ -13,6 +13,8 @@
   import ContextMenu from "./ui/ContextMenu.svelte";
   import AddMachineDialog from "./ui/AddMachineDialog.svelte";
   import AddProjectDialog from "./ui/AddProjectDialog.svelte";
+  import SettingsDialog from "./ui/SettingsDialog.svelte";
+  import SwitcherDialog from "./ui/SwitcherDialog.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StatusBar from "./ui/StatusBar.svelte";
@@ -36,7 +38,7 @@
    * rename fields handle their own keys.
    */
   function onKeydown(event: KeyboardEvent): void {
-    if (dialog.confirm || ui.menu || event.target instanceof HTMLInputElement) return;
+    if (dialog.confirm || ui.menu || ui.dialog || event.target instanceof HTMLInputElement) return;
     const action = resolveShortcut(event, {
       copyOnSelect: app.settings?.copyOnSelect ?? true,
       hasSelection: terminalControls(focusedSessionId())?.hasSelection() ?? false,
@@ -67,7 +69,7 @@
       {#if tab}
         <PaneGrid terminalTheme={theme.terminal} />
       {:else if app.selectedProjectId}
-        <p class="empty">No session open. Use + to start Claude or a shell.</p>
+        <p class="empty">No session open. Use + next to the project to open a terminal.</p>
       {:else}
         <p class="empty">Add a project folder with + next to This PC.</p>
       {/if}
@@ -75,12 +77,18 @@
     <StatusBar />
   </section>
 </div>
-<ConfirmDialog />
 {#if ui.dialog?.kind === "add-machine"}
   <AddMachineDialog onclose={closeDialog} />
 {:else if ui.dialog?.kind === "add-project"}
   <AddProjectDialog machineId={ui.dialog.machineId} onclose={closeDialog} />
+{:else if ui.dialog?.kind === "settings"}
+  <SettingsDialog onclose={closeDialog} />
+{:else if ui.dialog?.kind === "switcher"}
+  <SwitcherDialog onclose={closeDialog} />
 {/if}
+<!-- After the dialogs, so a confirmation asked from one (Settings ▸ Restart
+     daemon) paints above it: both scrims share z-index 200. -->
+<ConfirmDialog />
 {#if ui.menu}
   {#key ui.menu}
     <ContextMenu entries={ui.menu.entries} x={ui.menu.x} y={ui.menu.y} onclose={closeMenuAndRefocus} />

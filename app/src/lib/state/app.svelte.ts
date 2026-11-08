@@ -25,7 +25,7 @@ import { router } from "../terminal/router";
 import { LOCAL_MACHINE, sendControl, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { askConfirm } from "./dialog.svelte";
-import { terminalControls } from "../terminal/registry";
+import { allTerminals, terminalControls } from "../terminal/registry";
 import { applyControl, clearConnectionErrors, emptyModel, type Model } from "./reducer";
 import {
   busyStateText,
@@ -80,6 +80,8 @@ export const app = $state({
   /** True once the first Projects reply has been applied. */
   projectsLoaded: false,
   now: Date.now(),
+  /** The latest DirEntries reply, for the Add project path suggestions (spec 9.2). */
+  dirEntries: null as { machine: string; path: string; entries: string[] } | null,
   /** Whether the Jojo window is the foreground window (spec 7.3 rule 2, 7.4 rule 1). */
   windowFocused: typeof document === "undefined" ? true : document.hasFocus(),
 });
@@ -254,6 +256,16 @@ function markLoaded(machine: string, part: "projects" | "sessions"): void {
 }
 
 function handleControl(machine: string, msg: ControlMsg): void {
+  // Folder listings feed the Add project suggestions and nothing else; a
+  // folder that does not exist (a half-typed path) is not an error to show.
+  if (msg.type === "DirEntries") {
+    app.dirEntries = { machine, path: msg.path, entries: msg.entries };
+    return;
+  }
+  if (msg.type === "Error" && msg.request === "ListDir") {
+    app.dirEntries = null;
+    return;
+  }
   if (msg.type === "Error" && msg.request === "Output") {
     router.fellBehind(msg.session_id);
     return;
@@ -604,6 +616,11 @@ export async function upgradeMachine(machineId: string): Promise<void> {
   }
 }
 
+/** Asks a machine for the subfolders of `path` (answered through app.dirEntries). */
+export function listDir(machineId: string, path: string): void {
+  void sendControl({ type: "ListDir", path }, machineId).catch(() => {});
+}
+
 /** Lists a new machine in the sidebar (add_machine has saved it and started its connection). */
 export function machineAdded(machine: Machine): void {
   if (!app.machines.some((m) => m.id === machine.id)) app.machines = [...app.machines, machine];
@@ -651,6 +668,47 @@ export function dismissError(): void {
     if (model.lastError) app.models[machine] = { ...model, lastError: null };
   }
   mergeModels();
+}
+
+/** Saves the settings screen's values and applies the terminal font to open panes (spec 9.10). */
+export async function saveSettings(settings: Settings): Promise<void> {
+  await invoke("save_settings", { settings });
+  app.settings = settings;
+  for (const terminal of allTerminals()) {
+    terminal.applyFont(settings.terminalFontFamily, settings.terminalFontSize, settings.terminalLineHeight);
+  }
+}
+
+/** Running sessions on a machine (the ones a daemon restart ends). */
+export function runningSessions(machine: string): SessionInfo[] {
+  return Object.values(app.models[machine]?.sessions ?? {}).filter((s) => s.state !== "exited");
+}
+
+/** Spec 9.10 and 8.4: restarts This PC's jojod after a confirmation that names the sessions it ends. */
+export async function confirmRestartLocalDaemon(): Promise<void> {
+  // While This PC's jojod speaks another protocol the app has never listed
+  // its sessions; their number comes from its state.json (labels unknown),
+  // and the restart is always confirmed.
+  const mismatch = app.status.state === "version_mismatch";
+  const sessions = mismatch ? [] : runningSessions(LOCAL_MACHINE);
+  const count = mismatch ? await invoke<number | null>("local_running_sessions").catch(() => null) : sessions.length;
+  const confirmed =
+    (!mismatch && count === 0) ||
+    (await askConfirm({
+      title: "Restart jojod on This PC?",
+      message:
+        count === null
+          ? "Restarting ends every session the running jojod has."
+          : `Restarting ends ${count} running session${count === 1 ? "" : "s"}${sessions.length ? ":" : "."}`,
+      details: sessions.map((s) => s.label),
+      confirmLabel: "Restart jojod",
+    }));
+  if (confirmed) restartDaemon(LOCAL_MACHINE);
+}
+
+/** Spec 10, Debug ▸ Rehydrate pane: a new snapshot for the focused pane. */
+export function rehydrateFocusedPane(): void {
+  terminalControls(focusedSessionId())?.rehydrate();
 }
 
 /** This PC: restarts jojod. A remote machine: reconnects now. */

@@ -4,7 +4,7 @@ import type { MenuEntry } from "../menu/types";
 export type RenameTarget = { kind: "tab"; tabId: string } | { kind: "session"; sessionId: string; where: "pane" | "sidebar" };
 
 /** The open modal dialog: Add machine, or Add project on a remote machine. */
-export type DialogTarget = { kind: "add-machine" } | { kind: "add-project"; machineId: string };
+export type DialogTarget = { kind: "add-machine" } | { kind: "add-project"; machineId: string } | { kind: "settings" } | { kind: "switcher" };
 
 export const ui = $state({
   menu: null as { x: number; y: number; entries: MenuEntry[] } | null,
