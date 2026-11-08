@@ -23,6 +23,7 @@ for test in *; do
   code=$?
   printf '%s\n' "$output" | grep -E '^test .*FAILED|panicked at|test result' | head -20
   if [ "$code" -ne 0 ]; then
+    echo "exit code $code"
     status=1
   fi
 done

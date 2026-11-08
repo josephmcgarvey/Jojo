@@ -76,8 +76,16 @@ async fn create_shell(c: &mut Client, project: &ProjectInfo) -> SessionInfo {
     }
 }
 
+/// True when a screen line is exactly `want`, or `want` after a `$ ` prompt.
+/// Input sent before `sh` has printed its first prompt is echoed by the
+/// terminal first; `sh` then prints `$ ` and the command's output lands on
+/// the same line (`$ jojo-hi`). The echoed command line (`echo jojo-hi`)
+/// never matches.
 fn has_line(grid: &TermGrid, want: &str) -> bool {
-    grid.visible_text().lines().any(|l| l.trim() == want)
+    grid.visible_text().lines().any(|l| {
+        let line = l.trim();
+        line == want || line.strip_prefix("$ ").is_some_and(|rest| rest.trim() == want)
+    })
 }
 
 #[tokio::test(flavor = "multi_thread")]
