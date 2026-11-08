@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addProject, app, focusPane, focusedSessionId, newSession, removeMachine, renameSession, restartDaemon, selectProject } from "../lib/state/app.svelte";
+  import { addProject, app, focusPane, focusedSessionId, newSession, removeMachine, renameSession, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
@@ -20,6 +20,9 @@
     const entries: MenuEntry[] = [
       { kind: "action", label: machine.kind === "local" ? "Restart jojod" : "Reconnect", run: () => restartDaemon(machine.id) },
     ];
+    if (machine.kind === "ssh" && app.statuses[machine.id]?.state === "version_mismatch") {
+      entries.unshift({ kind: "action", label: "Upgrade jojod…", run: () => void upgradeMachine(machine.id) });
+    }
     if (machine.kind === "ssh") {
       entries.push(
         { kind: "action", label: "Add project…", run: () => openDialog({ kind: "add-project", machineId: machine.id }) },

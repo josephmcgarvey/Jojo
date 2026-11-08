@@ -1,7 +1,7 @@
 // The app's reactive state and actions. The rules live in pure modules
 // (../layout, ./workspace, ./sessionRules); this module holds the current
 // values, talks to the backend, and keeps layout.json in sync.
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -574,6 +574,31 @@ export function addRemoteProject(machineId: string, path: string): Promise<void>
   const trimmed = path.trim().replace(/\/+$/, "") || "/";
   const name = trimmed.split("/").filter(Boolean).pop() ?? trimmed;
   return sendControl({ type: "AddProject", path: trimmed, name }, machineId);
+}
+
+/**
+ * Spec 8.4, remote mismatch: upgrades jojod on a machine whose daemon speaks
+ * another protocol. The confirmation names the sessions last seen there,
+ * because the old daemon is shut down and they end.
+ */
+export async function upgradeMachine(machineId: string): Promise<void> {
+  const machine = app.machines.find((m) => m.id === machineId);
+  if (!machine?.ssh_host) return;
+  const sessions = Object.values(app.models[machineId]?.sessions ?? {}).filter((s) => s.state !== "exited");
+  const confirmed = await askConfirm({
+    title: `Upgrade jojod on ${machine.label}?`,
+    message: `The running jojod speaks another protocol version. Upgrading shuts it down, which ends every session running on ${machine.label}${sessions.length ? ` (${sessions.length} last seen)` : ""}, then installs and starts this version.`,
+    details: sessions.map((s) => s.label),
+    confirmLabel: "Upgrade",
+  });
+  if (!confirmed) return;
+  const progress = new Channel<unknown>();
+  try {
+    await invoke("add_machine", { host: machine.ssh_host, label: machine.label, progress });
+  } catch (err) {
+    app.models[LOCAL_MACHINE] = { ...(app.models[LOCAL_MACHINE] ?? emptyModel()), lastError: { request: "Upgrade", message: errorText(err), session_id: null } };
+    mergeModels();
+  }
 }
 
 /** Lists a new machine in the sidebar (add_machine has saved it and started its connection). */
