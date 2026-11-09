@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// Node 21+ has a global navigator whose platform is "MacIntel" on macOS, so
+// these tests pin the Windows bindings; the macOS ones are tested with
+// resolveShortcut's `mac` argument.
+vi.mock("../platform", () => ({ isMac: false, LOCAL_LABEL: "This PC", OS_NAME: "Windows" }));
+// Node 21+ has a global navigator whose platform is "MacIntel" on macOS, so
+// these tests pin the Windows bindings; the macOS ones are tested with
+// resolveShortcut's `mac` argument.
+vi.mock("../platform", () => ({ isMac: false, LOCAL_LABEL: "This PC", OS_NAME: "Windows" }));
 import { MAC_SHORTCUT_LABELS, resolveShortcut, SHORTCUT_LABELS, WINDOWS_SHORTCUT_LABELS, type AppAction, type KeyInput } from "./shortcuts";
 
 function key(code: string, mods: Partial<KeyInput> = {}, keyValue = code): KeyInput {

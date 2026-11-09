@@ -1,4 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+// Node 21+ has a global navigator whose platform is "MacIntel" on macOS, so
+// these tests pin the Windows bindings; the macOS ones are tested with
+// resolveShortcut's `mac` argument.
+vi.mock("../platform", () => ({ isMac: false, LOCAL_LABEL: "This PC", OS_NAME: "Windows" }));
+// Node 21+ has a global navigator whose platform is "MacIntel" on macOS, so
+// these tests pin the Windows bindings; the macOS ones are tested with
+// resolveShortcut's `mac` argument.
+vi.mock("../platform", () => ({ isMac: false, LOCAL_LABEL: "This PC", OS_NAME: "Windows" }));
 import type { TabLayout } from "../backend/TabLayout";
 import { pane, split } from "../layout/tree";
 import type { SessionInfo } from "../protocol/SessionInfo";
