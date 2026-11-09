@@ -20,10 +20,17 @@ state_changed_at: number, exit_code: number | null, claude_session_id: string | 
  */
 state_detail: string | null, 
 /**
- * True once the label is settled: the user renamed the session, or its
- * first prompt named it (spec 7.2). A later prompt does not replace it.
+ * True once the user has renamed the session.
  */
 renamed: boolean, 
+/**
+ * The first 40 characters of the first prompt Claude Code received in
+ * this session (spec 7.2). The app shows it in place of `label` when
+ * its "Name sessions from Claude's first prompt" setting is on and the
+ * user has not renamed the session; the daemon never changes `label`
+ * from a prompt.
+ */
+prompt_label: string | null, 
 /**
  * True when this daemon still holds a screen for the session, so
  * `Attach` will succeed. Computed by the daemon for every message that

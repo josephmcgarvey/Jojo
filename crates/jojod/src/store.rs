@@ -101,6 +101,7 @@ mod tests {
             claude_session_id: None,
             state_detail: None,
             renamed: false,
+            prompt_label: None,
             attachable: false,
         }
     }

@@ -15,6 +15,11 @@ pub struct Settings {
     pub copy_on_select: bool,
     pub toasts: bool,
     pub default_shell: String,
+    /// Show the first prompt Claude Code received as a session's name, until
+    /// the user renames it (spec 7.2; off by default, user request).
+    pub prompt_labels: bool,
+    /// Play a chime when a session finishes or needs a response.
+    pub sound: bool,
 }
 
 impl Default for Settings {
@@ -28,6 +33,8 @@ impl Default for Settings {
             copy_on_select: true,
             toasts: true,
             default_shell: "pwsh".into(),
+            prompt_labels: false,
+            sound: true,
         }
     }
 }

@@ -39,6 +39,7 @@ import {
   restartShell,
 } from "./sessionRules";
 import { toastFor } from "./toasts";
+import { chimeFor, playChime } from "./chime";
 import { shellProgram } from "./shells";
 import { sortedProjects } from "./views";
 import {
@@ -125,6 +126,17 @@ function mergeModels(): void {
 
 /** Unix ms of each session's last toast (spec 7.4 rule 4). Not rendered, so not reactive. */
 const lastToastAt = new Map<string, number>();
+/** Unix ms of each session's last chime. */
+const lastChimeAt = new Map<string, number>();
+
+/**
+ * The name shown for a session: the first prompt Claude Code received when
+ * the "Name sessions from Claude's first prompt" setting is on and the user
+ * has not renamed the session, otherwise its label.
+ */
+export function displayLabel(session: Pick<SessionInfo, "label" | "renamed" | "prompt_label">): string {
+  return app.settings?.promptLabels && !session.renamed && session.prompt_label ? session.prompt_label : session.label;
+}
 
 /** Delay from the last layout change to the layout.json write. */
 const SAVE_DELAY_MS = 250;
@@ -278,7 +290,10 @@ function handleControl(machine: string, msg: ControlMsg): void {
   const previousState = msg.type === "SessionUpdated" ? app.model.sessions[msg.session.id]?.state : undefined;
   app.models[machine] = applyControl(app.models[machine] ?? emptyModel(), msg);
   mergeModels();
-  if (msg.type === "SessionUpdated") maybeToast(previousState, msg.session);
+  if (msg.type === "SessionUpdated") {
+    maybeToast(previousState, msg.session);
+    maybeChime(previousState, msg.session);
+  }
 
   switch (msg.type) {
     case "Sessions":
@@ -323,9 +338,18 @@ function handleControl(machine: string, msg: ControlMsg): void {
 }
 
 /** Spec 7.4: shows a toast when a session newly needs attention and the user is not looking at it. */
+/** Plays the chime when a session newly finishes, needs a response or fails. */
+function maybeChime(previous: SessionInfo["state"] | undefined, session: SessionInfo): void {
+  const now = Date.now();
+  const state = chimeFor(previous, session.state, app.settings?.sound ?? true, lastChimeAt.get(session.id), now);
+  if (!state) return;
+  lastChimeAt.set(session.id, now);
+  playChime(state);
+}
+
 function maybeToast(previous: SessionInfo["state"] | undefined, session: SessionInfo): void {
   const now = Date.now();
-  const toast = toastFor(previous, session, {
+  const toast = toastFor(previous, { ...session, label: displayLabel(session) }, {
     focusedSessionId: focusedSessionId(),
     windowFocused: app.windowFocused,
     enabled: app.settings?.toasts ?? true,
@@ -470,7 +494,7 @@ export async function closePane(sessionId: string): Promise<void> {
   if (isBusy(session)) {
     const confirmed = await askConfirm({
       title: "Close pane?",
-      message: `${session.label} is ${busyStateText(session.state)}. Closing the pane ends the session.`,
+      message: `${displayLabel(session)} is ${busyStateText(session.state)}. Closing the pane ends the session.`,
       details: [],
       confirmLabel: "Close pane",
     });
@@ -501,7 +525,7 @@ export function renameTab(tabId: string, name: string): void {
     if (!tab) return p;
     // Committing the label the tab already shows keeps it following the
     // focused session instead of pinning that text as a name.
-    if (tab.name === null && name.trim() === tabs.tabLabel(tab, (id) => app.model.sessions[id]?.label)) return p;
+    if (tab.name === null && name.trim() === tabs.tabLabel(tab, (id) => { const s = app.model.sessions[id]; return s && displayLabel(s); })) return p;
     return tabs.renameTab(p, tabId, name);
   });
 }

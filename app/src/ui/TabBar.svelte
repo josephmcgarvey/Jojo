@@ -1,7 +1,7 @@
 <script lang="ts">
   import { activeTab, tabLabel } from "../lib/layout/tabs";
   import { countPanes } from "../lib/layout/tree";
-  import { app, closeTab, currentProjectLayout, newSession, renameTab, selectTab } from "../lib/state/app.svelte";
+  import { displayLabel, app, closeTab, currentProjectLayout, newSession, renameTab, selectTab } from "../lib/state/app.svelte";
   import { tabMenu } from "../lib/state/contextMenus";
   import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
   import { stateTooltip } from "../lib/state/toasts";
@@ -12,7 +12,10 @@
 
   const project = $derived(currentProjectLayout());
   const activeId = $derived(project ? activeTab(project)?.id : undefined);
-  const labelOf = (sessionId: string) => app.model.sessions[sessionId]?.label;
+  const labelOf = (sessionId: string) => {
+    const session = app.model.sessions[sessionId];
+    return session && displayLabel(session);
+  };
 
   function onTabMenu(event: MouseEvent, tabId: string): void {
     event.preventDefault();

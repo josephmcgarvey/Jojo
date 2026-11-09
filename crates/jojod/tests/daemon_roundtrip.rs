@@ -554,7 +554,10 @@ async fn hook_events_drive_state_label_and_claude_session_id() {
     relay(&endpoint, session.id, r#"{"hook_event_name":"UserPromptSubmit","prompt":"Fix the login bug"}"#).await;
     let working = next_update(&mut c, session.id).await;
     assert_eq!(working.state, jojo_proto::AgentState::Working);
-    assert_eq!(working.label, "Fix the login bug");
+    // The prompt is recorded beside the label; the label itself is unchanged.
+    assert_eq!(working.prompt_label.as_deref(), Some("Fix the login bug"));
+    assert_eq!(working.label, session.label);
+    assert!(!working.renamed);
 
     relay(&endpoint, session.id, r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push"}}"#).await;
     let asking = next_update(&mut c, session.id).await;
@@ -563,7 +566,7 @@ async fn hook_events_drive_state_label_and_claude_session_id() {
 
     relay(&endpoint, session.id, r#"{"hook_event_name":"UserPromptSubmit","prompt":"A second prompt"}"#).await;
     let second = next_update(&mut c, session.id).await;
-    assert_eq!(second.label, "Fix the login bug", "only the first prompt names the session");
+    assert_eq!(second.prompt_label.as_deref(), Some("Fix the login bug"), "only the first prompt is recorded");
     assert_eq!(second.state_detail, None);
 
     relay(&endpoint, session.id, r#"{"hook_event_name":"Stop"}"#).await;
@@ -585,7 +588,7 @@ async fn hook_events_drive_state_label_and_claude_session_id() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_renamed_session_keeps_its_label_on_the_first_prompt() {
+async fn a_renamed_session_keeps_its_label_and_still_records_the_first_prompt() {
     let dir = tempfile::tempdir().unwrap();
     let (endpoint, _server) = start(dir.path()).await;
     let mut c = Client::connect(&endpoint).await.unwrap();
@@ -599,6 +602,7 @@ async fn a_renamed_session_keeps_its_label_on_the_first_prompt() {
     relay(&endpoint, session.id, r#"{"hook_event_name":"UserPromptSubmit","prompt":"Fix the login bug"}"#).await;
     let working = next_update(&mut c, session.id).await;
     assert_eq!(working.label, "mine");
+    assert_eq!(working.prompt_label.as_deref(), Some("Fix the login bug"));
     assert_eq!(working.state, jojo_proto::AgentState::Working);
 }
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ITheme } from "@xterm/xterm";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
-  import { app, focusPane, machineOfSession, renameSession } from "../lib/state/app.svelte";
+  import { app, displayLabel, focusPane, machineOfSession, renameSession } from "../lib/state/app.svelte";
   import { disconnectedOverlay } from "../lib/state/machines";
   import { paneMenu } from "../lib/state/contextMenus";
   import { notices } from "../lib/state/notices.svelte";
@@ -39,7 +39,7 @@
     <Badge agentState={session.state} title={stateTooltip(session)} size={10} />
     {#if renaming}
       <RenameField
-        value={session.label}
+        value={displayLabel(session)}
         label="Session name"
         onCommit={(value) => {
           endRename();
@@ -48,7 +48,7 @@
         onCancel={endRename}
       />
     {:else}
-      <span class="label">{session.label}</span>
+      <span class="label">{displayLabel(session)}</span>
     {/if}
     {#if notice}
       <span class="notice" class:error={notice.tone === "error"} role="status">{notice.text}</span>

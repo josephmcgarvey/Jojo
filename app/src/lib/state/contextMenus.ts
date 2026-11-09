@@ -5,6 +5,7 @@ import type { MenuEntry } from "../menu/types";
 import { terminalControls } from "../terminal/registry";
 import {
   app,
+  displayLabel,
   machineOfProject,
   applyTabPreset,
   closePane,
@@ -28,7 +29,10 @@ import { shellChoices } from "./shells";
 import { beginRename } from "./ui.svelte";
 import { LOCAL_MACHINE } from "../wire/bridge";
 
-const labelOf = (sessionId: string): string | undefined => app.model.sessions[sessionId]?.label;
+const labelOf = (sessionId: string): string | undefined => {
+  const session = app.model.sessions[sessionId];
+  return session && displayLabel(session);
+};
 
 export function paneMenu(sessionId: string): MenuEntry[] {
   const projectId = app.model.sessions[sessionId]?.project_id;

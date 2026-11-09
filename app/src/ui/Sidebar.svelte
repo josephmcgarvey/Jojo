@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addProject, app, focusPane, focusedSessionId, newSession, removeMachine, renameSession, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, displayLabel, focusPane, focusedSessionId, newSession, removeMachine, renameSession, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
@@ -106,7 +106,7 @@
         <div class="session renaming">
           <Badge agentState={session.state} title={stateTooltip(session)} />
           <RenameField
-            value={session.label}
+            value={displayLabel(session)}
             label="Session name"
             onCommit={(value) => {
               endRename();
@@ -124,7 +124,7 @@
           oncontextmenu={(e) => onSessionMenu(e, session.id)}
         >
           <Badge agentState={session.state} title={stateTooltip(session)} />
-          <span class="label">{session.label}</span>
+          <span class="label">{displayLabel(session)}</span>
           <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
         </button>
       {/if}
@@ -252,6 +252,7 @@
   }
   .session {
     display: flex;
+    width: 100%;
     align-items: center;
     gap: 8px;
     padding: 5px 8px 5px 14px;

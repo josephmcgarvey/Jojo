@@ -333,6 +333,7 @@ impl Daemon {
             claude_session_id: resume.map(str::to_owned),
             state_detail: None,
             renamed: false,
+            prompt_label: None,
             attachable: false,
         };
         // Hold the store lock across the duplicate-id check, the project
@@ -354,6 +355,7 @@ impl Daemon {
         if let Some(previous) = resume.and_then(|r| store.data.sessions.iter().find(|s| s.claude_session_id.as_deref() == Some(r))) {
             info.label = previous.label.clone();
             info.renamed = previous.renamed;
+            info.prompt_label = previous.prompt_label.clone();
         }
         if store.data.sessions.iter().any(|s| s.id == id)
             || self.sessions.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&id)
@@ -472,12 +474,11 @@ impl Daemon {
                     info.claude_session_id = Some(claude_id.clone());
                     changed = true;
                 }
-                HookEvent::UserPromptSubmit { prompt: Some(prompt) } if !info.renamed => {
+                // Only the first prompt is recorded; whether it is shown is the
+                // app's setting.
+                HookEvent::UserPromptSubmit { prompt: Some(prompt) } if info.prompt_label.is_none() => {
                     if let Some(label) = jojo_agent::label_from_prompt(prompt) {
-                        // Only the first prompt names the session: after it,
-                        // the label is treated like a user's choice.
-                        info.label = label;
-                        info.renamed = true;
+                        info.prompt_label = Some(label);
                         changed = true;
                     }
                 }

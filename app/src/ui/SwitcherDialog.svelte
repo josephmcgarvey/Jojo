@@ -6,6 +6,7 @@
   import {
     app,
     confirmRestartLocalDaemon,
+    displayLabel,
     focusedSessionId,
     focusPane,
     newSession,
@@ -42,7 +43,7 @@
       list.push({
         key: `session:${session.id}`,
         kind: "Session",
-        label: session.label,
+        label: displayLabel(session),
         detail: `${project?.name ?? ""} · ${machineLabel(machineId)} · ${stateTooltip(session)}`,
         run: () => focusPane(session.id),
       });
