@@ -15,6 +15,7 @@ import type { ShellOption } from "../backend/ShellOption";
 import type { TabLayout } from "../backend/TabLayout";
 import { errorText } from "../errors";
 import { loadTerminalFont, terminalFontStack } from "../fonts";
+import { LOCAL_LABEL } from "../platform";
 import { focusNeighbor, layoutRects, type FocusDirection } from "../layout/geometry";
 import { reconcileMachine } from "../layout/reconcile";
 import * as tabs from "../layout/tabs";
@@ -171,7 +172,7 @@ export function startApp(): () => void {
       app.machines = machines;
     })
     .catch(() => {
-      app.machines = [{ id: LOCAL_MACHINE, label: "This PC", kind: "local", ssh_host: null, enabled: true }];
+      app.machines = [{ id: LOCAL_MACHINE, label: LOCAL_LABEL, kind: "local", ssh_host: null, enabled: true }];
     });
   void invoke<ShellOption[]>("available_shells")
     .then((shells) => {
@@ -765,7 +766,7 @@ export async function confirmRestartLocalDaemon(): Promise<void> {
   const confirmed =
     (!mismatch && count === 0) ||
     (await askConfirm({
-      title: "Restart jojod on This PC?",
+      title: `Restart jojod on ${LOCAL_LABEL}?`,
       message:
         count === null
           ? "Restarting ends every session the running jojod has."

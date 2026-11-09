@@ -1,6 +1,7 @@
 <script lang="ts">
   // Spec 9.6, Ctrl+Shift+P: fuzzy search over sessions, projects and actions.
   // Up and Down move the highlight, Enter runs it, Esc closes.
+  import { LOCAL_LABEL } from "../lib/platform";
   import { onMount, tick } from "svelte";
   import { terminalControls } from "../lib/terminal/registry";
   import {
@@ -59,7 +60,7 @@
       { label: "New Claude session", detail: "Ctrl+Shift+T", run: () => project && newSession(project, "claude") },
       { label: "Add machine…", detail: "Linux server over SSH", run: () => openDialog({ kind: "add-machine" }) },
       { label: "Settings…", detail: "", run: () => openDialog({ kind: "settings" }) },
-      { label: "Restart daemon (This PC)…", detail: "Ends This PC's sessions", run: () => void confirmRestartLocalDaemon() },
+      { label: `Restart daemon (${LOCAL_LABEL})…`, detail: `Ends ${LOCAL_LABEL}'s sessions`, run: () => void confirmRestartLocalDaemon() },
       { label: "Debug ▸ Rehydrate pane", detail: "New snapshot for the focused pane", run: rehydrateFocusedPane },
     ];
     if (app.machines.some((m) => m.id === LOCAL_MACHINE)) {

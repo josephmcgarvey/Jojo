@@ -60,7 +60,8 @@ describe("theme", () => {
 
   it("applies the interface font and base color", () => {
     const theme = resolveTheme({ theme: "neon-glass", accentColor: "#5aa2ff", uiFontFamily: "Inter" });
-    expect(theme.tokens["font-ui"]).toBe('"Inter", "Segoe UI", sans-serif');
+    expect(theme.tokens["font-ui"]).toBe('"Inter", "Segoe UI", system-ui, sans-serif');
+    expect(resolveTheme({ uiFontFamily: "system-ui" }).tokens["font-ui"]).toBe('system-ui, "Segoe UI", system-ui, sans-serif');
     expect(theme.tokens.accent).toBe("#5aa2ff");
   });
 });

@@ -1,0 +1,101 @@
+# Tests Jojo on macOS and builds the macOS installers (.dmg), one for Apple
+# Silicon and one for Intel Macs. The builds are unsigned (ad-hoc signed with
+# signingIdentity "-"): on first launch macOS asks to confirm the app in
+# System Settings > Privacy & Security > Open Anyway, or run
+# `xattr -dr com.apple.quarantine /Applications/Jojo.app`.
+#
+# The .dmg files are attached to each run as artifacts (Actions > the run >
+# Artifacts).
+name: macOS
+
+on:
+  push:
+    branches: [master, design-pass, "mac/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: app
+      - name: Frontend checks and tests
+        run: pnpm check && pnpm test && pnpm lint:colors
+        working-directory: app
+      # The app crate's tests need the frontend's dist folder to exist
+      # (tauri::generate_context! embeds it).
+      - name: Build frontend
+        run: pnpm build
+        working-directory: app
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --workspace
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: test
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            target: aarch64-apple-darwin
+            artifact: Jojo-macos-apple-silicon
+          - name: Intel
+            target: x86_64-apple-darwin
+            artifact: Jojo-macos-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }},x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      # The Linux daemons that Add machine installs on servers are built with
+      # cargo-zigbuild (scripts/stage-daemon.sh).
+      - uses: mlugg/setup-zig@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: app
+      - name: Build the app and the .dmg
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles app,dmg
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error

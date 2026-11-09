@@ -73,8 +73,7 @@ impl Default for LayoutFile {
 }
 
 pub fn default_path() -> PathBuf {
-    let roaming = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    roaming.join("Jojo").join("layout.json")
+    crate::platform::config_dir().join("layout.json")
 }
 
 /// Reads the layout. A missing file gives an empty layout. A file that does

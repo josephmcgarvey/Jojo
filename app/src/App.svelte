@@ -6,6 +6,7 @@
   import { runAction } from "./lib/state/actions";
   import { dialog } from "./lib/state/dialog.svelte";
   import { terminalControls } from "./lib/terminal/registry";
+  import { LOCAL_LABEL } from "./lib/platform";
   import { applyTheme, resolveTheme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
@@ -69,7 +70,7 @@
       {:else if app.selectedProjectId}
         <p class="empty">No session open. Use + next to the project to open a terminal.</p>
       {:else}
-        <p class="empty">Add a project folder with + next to This PC.</p>
+        <p class="empty">Add a project folder with + next to {LOCAL_LABEL}.</p>
       {/if}
     </div>
     <StatusBar />

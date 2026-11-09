@@ -46,7 +46,7 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
         move || async move {
             let result = connect_or_start(paths).await;
             if result.is_ok() && paths.register_hooks && !hooks_installed.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                let jojod = paths.bin_dir.join("jojod.exe");
+                let jojod = paths.bin_dir.join(crate::daemon_manager::JOJOD_FILE);
                 tokio::task::spawn_blocking(move || {
                     if let Err(e) = install_hooks(&jojod) {
                         eprintln!("jojo: could not register Claude Code hooks with {}: {e}", jojod.display());

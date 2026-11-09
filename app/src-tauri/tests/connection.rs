@@ -1,5 +1,7 @@
 //! Starts a real jojod (target/debug/jojod.exe) through the app's daemon
-//! manager. Build it first: `cargo build -p jojod`.
+//! manager. Build it first: `cargo build -p jojod`. Windows only: the tests
+//! use named pipe endpoints and jojod.exe's sharing rules.
+#![cfg(windows)]
 
 use jojo_app::bridge::{Bridge, ENVELOPE_FRAME, ENVELOPE_STATUS};
 use jojo_app::daemon_manager::{connect_or_start, DaemonPaths};

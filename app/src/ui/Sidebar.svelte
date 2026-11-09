@@ -156,6 +156,13 @@
   }
   .brand {
     padding: 4px 8px 10px;
+  }
+  /* macOS: the traffic-light buttons sit left of the wordmark, at the
+     position set by trafficLightPosition in tauri.macos.conf.json. */
+  :global(html[data-platform="mac"]) .brand {
+    padding-left: 70px;
+  }
+  .brand {
     font-size: 17px;
     font-weight: 600;
     background: var(--jojo-brand-gradient);

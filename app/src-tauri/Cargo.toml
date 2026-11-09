@@ -41,5 +41,13 @@ windows-sys = { workspace = true, features = [
   "Win32_System_LibraryLoader",
 ] }
 
+[target.'cfg(unix)'.dependencies]
+# getpwuid (the user's login shell) and getuid.
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS notifications (spec 7.4 item 5).
+tauri-plugin-notification = "2"
+
 [dev-dependencies]
 tempfile.workspace = true

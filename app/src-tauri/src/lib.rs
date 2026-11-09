@@ -9,6 +9,7 @@ pub mod install;
 pub mod layout;
 pub mod links;
 pub mod machines;
+pub mod platform;
 pub mod settings;
 pub mod shells;
 #[cfg(windows)]

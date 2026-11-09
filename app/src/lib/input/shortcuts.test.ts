@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveShortcut, SHORTCUT_LABELS, type AppAction, type KeyInput } from "./shortcuts";
+import { MAC_SHORTCUT_LABELS, resolveShortcut, SHORTCUT_LABELS, WINDOWS_SHORTCUT_LABELS, type AppAction, type KeyInput } from "./shortcuts";
 
 function key(code: string, mods: Partial<KeyInput> = {}, keyValue = code): KeyInput {
   return { key: keyValue, code, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods };
@@ -51,9 +51,34 @@ describe("resolveShortcut", () => {
     expect(resolveShortcut(key("KeyA"), copyOn)).toBeNull();
   });
 
+  it("uses Command on macOS and leaves Ctrl and Option to the terminal", () => {
+    const mac = (input: KeyInput) => resolveShortcut(input, copyOn, true);
+    expect(mac(key("KeyT", { metaKey: true }, "t"))).toBe("new-claude-tab");
+    expect(mac(key("KeyN", { metaKey: true }, "n"))).toBe("new-shell-tab");
+    expect(mac(key("KeyW", { metaKey: true }, "w"))).toBe("close-pane");
+    expect(mac(key("KeyC", { metaKey: true }, "c"))).toBe("copy");
+    expect(mac(key("KeyV", { metaKey: true }, "v"))).toBe("paste");
+    expect(mac(key("KeyP", { metaKey: true }, "p"))).toBe("switcher");
+    expect(mac(key("KeyD", { metaKey: true }, "d"))).toBe("split-right");
+    expect(mac(key("KeyD", { metaKey: true, shiftKey: true }, "D"))).toBe("split-down");
+    expect(mac(key("Enter", { metaKey: true, shiftKey: true }, "Enter"))).toBe("zoom");
+    expect(mac(key("BracketRight", { metaKey: true, shiftKey: true }, "}"))).toBe("next-tab");
+    expect(mac(key("BracketLeft", { metaKey: true, shiftKey: true }, "{"))).toBe("previous-tab");
+    expect(mac(key("ArrowLeft", { metaKey: true, altKey: true }))).toBe("focus-left");
+    expect(mac(key("Tab", { ctrlKey: true }))).toBe("next-tab");
+    // The terminal's keys: Option+Arrow (word movement), Ctrl+C, Ctrl+Shift+T, ⌘Q (the app menu).
+    expect(mac(key("ArrowLeft", { altKey: true }))).toBeNull();
+    expect(mac(key("KeyC", { ctrlKey: true }, "c"))).toBeNull();
+    expect(mac(key("KeyT", { ctrlKey: true, shiftKey: true }, "T"))).toBeNull();
+    expect(mac(key("Equal", { altKey: true, shiftKey: true }, "±"))).toBeNull();
+    expect(mac(key("KeyQ", { metaKey: true }, "q"))).toBeNull();
+    for (const action of Object.keys(WINDOWS_SHORTCUT_LABELS) as AppAction[]) expect(MAC_SHORTCUT_LABELS[action], action).toBeTruthy();
+  });
+
   it("has a menu label for every action", () => {
-    expect(SHORTCUT_LABELS["split-right"]).toBe("Alt+Shift+=");
-    expect(SHORTCUT_LABELS.zoom).toBe("Alt+Shift+Z");
-    expect(SHORTCUT_LABELS["close-pane"]).toBe("Ctrl+Shift+W");
+    expect(WINDOWS_SHORTCUT_LABELS["split-right"]).toBe("Alt+Shift+=");
+    expect(WINDOWS_SHORTCUT_LABELS.zoom).toBe("Alt+Shift+Z");
+    expect(WINDOWS_SHORTCUT_LABELS["close-pane"]).toBe("Ctrl+Shift+W");
+    expect(SHORTCUT_LABELS).toBe(WINDOWS_SHORTCUT_LABELS);
   });
 });

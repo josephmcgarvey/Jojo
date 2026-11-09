@@ -54,7 +54,7 @@ pub fn ssh_config_hosts(config: &str) -> Vec<String> {
 }
 
 pub fn default_ssh_config() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".ssh").join("config"))
+    crate::platform::home_dir().map(|home| home.join(".ssh").join("config"))
 }
 
 /// The protocol number in a `jojod --version` line, `jojod 0.1.0 (protocol 3)`.

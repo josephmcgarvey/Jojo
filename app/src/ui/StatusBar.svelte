@@ -3,6 +3,7 @@
   // selected project's when no pane is focused), and the switcher hint.
   import { app, focusedSessionId, machineOfProject } from "../lib/state/app.svelte";
   import { SHORTCUT_LABELS } from "../lib/input/shortcuts";
+  import { LOCAL_LABEL } from "../lib/platform";
 
   const projectId = $derived.by(() => {
     const focused = focusedSessionId();
@@ -13,7 +14,7 @@
 </script>
 
 <footer class="status">
-  <span class="pill">{machine?.label ?? "This PC"}</span>
+  <span class="pill">{machine?.label ?? LOCAL_LABEL}</span>
   {#if project}<span class="pill path">{project.path}</span>{/if}
   <span class="grow"></span>
   <span><kbd>{SHORTCUT_LABELS.switcher}</kbd> to switch</span>

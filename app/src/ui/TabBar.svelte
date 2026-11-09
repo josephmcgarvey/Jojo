@@ -8,6 +8,7 @@
   import Badge from "./Badge.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
+  import { isMac } from "../lib/platform";
   import WindowControls from "./WindowControls.svelte";
 
   const project = $derived(currentProjectLayout());
@@ -55,7 +56,7 @@
     <button class="new" title="New terminal" aria-label="New terminal" onclick={() => newSession(app.selectedProjectId!, "shell")}><PlusCircle /></button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
-  <WindowControls />
+  {#if !isMac}<WindowControls />{/if}
 </div>
 
 <style>

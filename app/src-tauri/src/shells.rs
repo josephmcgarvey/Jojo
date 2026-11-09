@@ -13,6 +13,11 @@
 //!    `%ProgramFiles(x86)%` and `%LOCALAPPDATA%\Programs`, and its `program`
 //!    is that full path. `bash.exe` on `PATH` is not used, because
 //!    `C:\Windows\System32\bash.exe` is the WSL launcher, not Git Bash.
+//!
+//! On macOS and Linux (`detect_unix`) the shells are the zsh, bash and fish
+//! entries of `/etc/shells` whose file exists, plus the user's login shell
+//! when `/etc/shells` lacks it. Their `program` is the full path, which
+//! jojod runs as given.
 
 use serde::Serialize;
 use std::ffi::OsString;
@@ -52,15 +57,55 @@ pub fn detect(path: Option<OsString>, git_roots: &[PathBuf], exists: impl Fn(&Pa
     shells
 }
 
-/// The shells on this PC, detected on first use and cached for the app run.
+/// Shell names offered from `/etc/shells`, in menu order.
+const UNIX_SHELLS: [&str; 3] = ["zsh", "bash", "fish"];
+
+/// The macOS and Linux shells: the zsh, bash and fish paths listed in
+/// `etc_shells` (the text of `/etc/shells`) that exist, then `login` (the
+/// user's login shell) when it is not listed. A name found at more than one
+/// path (Homebrew's /opt/homebrew/bin/bash next to /bin/bash) is labeled
+/// with its path; a single one is labeled with its name.
+pub fn detect_unix(etc_shells: &str, login: Option<&str>, exists: impl Fn(&Path) -> bool) -> Vec<ShellOption> {
+    let mut programs: Vec<String> = Vec::new();
+    for name in UNIX_SHELLS {
+        for line in etc_shells.lines().map(str::trim) {
+            let is_name = Path::new(line).file_name().is_some_and(|f| f == name);
+            if line.starts_with('/') && is_name && exists(Path::new(line)) && !programs.iter().any(|p| p == line) {
+                programs.push(line.to_owned());
+            }
+        }
+    }
+    if let Some(login) = login.filter(|l| exists(Path::new(l)) && !programs.iter().any(|p| p == l)) {
+        programs.push(login.to_owned());
+    }
+    let name_of = |program: &str| Path::new(program).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_else(|| program.to_owned());
+    programs
+        .iter()
+        .map(|program| {
+            let name = name_of(program);
+            let shared = programs.iter().filter(|p| name_of(p) == name).count() > 1;
+            ShellOption { label: if shared { program.clone() } else { name }, program: program.clone() }
+        })
+        .collect()
+}
+
+/// The shells on this computer, detected on first use and cached for the app run.
 pub fn available() -> &'static [ShellOption] {
     static SHELLS: OnceLock<Vec<ShellOption>> = OnceLock::new();
     SHELLS.get_or_init(|| {
-        let mut git_roots: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)"].iter().filter_map(std::env::var_os).map(PathBuf::from).collect();
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            git_roots.push(PathBuf::from(local).join("Programs"));
+        #[cfg(windows)]
+        {
+            let mut git_roots: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)"].iter().filter_map(std::env::var_os).map(PathBuf::from).collect();
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                git_roots.push(PathBuf::from(local).join("Programs"));
+            }
+            detect(std::env::var_os("PATH"), &git_roots, Path::is_file)
         }
-        detect(std::env::var_os("PATH"), &git_roots, Path::is_file)
+        #[cfg(unix)]
+        {
+            let etc_shells = std::fs::read_to_string("/etc/shells").unwrap_or_default();
+            detect_unix(&etc_shells, crate::platform::login_shell().as_deref(), Path::is_file)
+        }
     })
 }
 
@@ -72,6 +117,22 @@ mod tests {
     fn files(paths: &[&str]) -> impl Fn(&Path) -> bool {
         let set: HashSet<PathBuf> = paths.iter().map(PathBuf::from).collect();
         move |p: &Path| set.contains(p)
+    }
+
+    #[test]
+    fn unix_shells_come_from_etc_shells_and_the_login_shell() {
+        let etc = "# List of acceptable shells\n/bin/bash\n/bin/csh\n/bin/zsh\n/opt/homebrew/bin/bash\n/usr/local/bin/fish\n";
+        let shells = detect_unix(etc, Some("/opt/homebrew/bin/nu"), files(&["/bin/bash", "/bin/zsh", "/opt/homebrew/bin/bash", "/opt/homebrew/bin/nu"]));
+        let got: Vec<(&str, &str)> = shells.iter().map(|s| (s.label.as_str(), s.program.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                ("zsh", "/bin/zsh"),
+                ("/bin/bash", "/bin/bash"),
+                ("/opt/homebrew/bin/bash", "/opt/homebrew/bin/bash"),
+                ("nu", "/opt/homebrew/bin/nu"),
+            ]
+        );
     }
 
     fn path_var(dirs: &[&str]) -> Option<OsString> {

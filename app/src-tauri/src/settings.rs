@@ -41,7 +41,7 @@ impl Default for Settings {
             scrollback_lines: 10_000,
             copy_on_select: true,
             toasts: true,
-            default_shell: "pwsh".into(),
+            default_shell: default_shell(),
             prompt_labels: false,
             sound: true,
             restore_sessions: true,
@@ -51,9 +51,17 @@ impl Default for Settings {
     }
 }
 
+/// `pwsh` on Windows; elsewhere the user's login shell (`/bin/zsh` on a
+/// default macOS account), or `/bin/sh` when it cannot be read.
+fn default_shell() -> String {
+    #[cfg(windows)]
+    return "pwsh".into();
+    #[cfg(unix)]
+    crate::platform::login_shell().unwrap_or_else(|| "/bin/sh".into())
+}
+
 pub fn default_path() -> PathBuf {
-    let roaming = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    roaming.join("Jojo").join("settings.json")
+    crate::platform::config_dir().join("settings.json")
 }
 
 /// Reads settings. A missing or unreadable file gives the defaults; keys
@@ -123,7 +131,7 @@ mod tests {
         let s = load(&path);
         assert_eq!(s.terminal_font_size, 15);
         assert_eq!(s.scrollback_lines, 10_000);
-        assert_eq!(s.default_shell, "pwsh");
+        assert_eq!(s.default_shell, default_shell());
     }
 
     #[test]

@@ -17,6 +17,7 @@ import "./app.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import { TERMINAL_FONTS, loadTerminalFont } from "./lib/fonts";
+import { isMac } from "./lib/platform";
 
 /**
  * xterm.js measures its character cell once, when a terminal opens, and the
@@ -31,6 +32,11 @@ import { TERMINAL_FONTS, loadTerminalFont } from "./lib/fonts";
 async function loadTerminalFonts(): Promise<void> {
   await Promise.all(TERMINAL_FONTS.filter((f) => f.source === "bundled").map((f) => loadTerminalFont(f.family)));
 }
+
+// macOS draws its traffic-light buttons over the sidebar's top row
+// (titleBarStyle Overlay in tauri.macos.conf.json); CSS keyed on this
+// attribute makes room for them.
+if (isMac) document.documentElement.dataset.platform = "mac";
 
 loadTerminalFonts().then(() => {
   mount(App, { target: document.getElementById("app")! });

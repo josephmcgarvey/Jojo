@@ -119,9 +119,18 @@ impl Drop for ComApartment {
     }
 }
 
-#[cfg(not(windows))]
-fn shell_open(_url: &str) -> Result<(), String> {
-    Err("opening links is only implemented on Windows".into())
+/// `open <url>` on macOS and `xdg-open <url>` elsewhere. The URL is one
+/// argument (no shell), and `open_url` has already checked that it is an
+/// http or https URL, so it cannot name a local file or another scheme.
+#[cfg(unix)]
+fn shell_open(url: &str) -> Result<(), String> {
+    let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let status = std::process::Command::new(program).arg(url).status().map_err(|e| format!("{program} could not start: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{program} failed with {status}"))
+    }
 }
 
 #[cfg(test)]

@@ -45,12 +45,11 @@ struct MachinesFile {
 }
 
 pub fn this_pc() -> Machine {
-    Machine { id: LOCAL_MACHINE.into(), label: "This PC".into(), kind: MachineKind::Local, ssh_host: None, enabled: true }
+    Machine { id: LOCAL_MACHINE.into(), label: crate::platform::LOCAL_MACHINE_LABEL.into(), kind: MachineKind::Local, ssh_host: None, enabled: true }
 }
 
 pub fn default_path() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    base.join("Jojo").join("machines.toml")
+    crate::platform::config_dir().join("machines.toml")
 }
 
 /// This PC first, then the file's remote machines in file order.

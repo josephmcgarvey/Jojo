@@ -7,7 +7,8 @@
   import { onMount } from "svelte";
   import type { Settings } from "../lib/backend/Settings";
   import { errorText } from "../lib/errors";
-  import { TERMINAL_FONTS, UI_FONTS, terminalFontStack, uiFontStack } from "../lib/fonts";
+  import { TERMINAL_FONTS, UI_FONTS, fontLabel, terminalFontStack } from "../lib/fonts";
+  import { LOCAL_LABEL, OS_NAME, isMac } from "../lib/platform";
   import { BASE_COLOR_PRESETS, effectiveAccent, parseHex } from "../lib/palette";
   import { app, confirmRestartLocalDaemon, focusedSessionId, rehydrateFocusedPane, runningSessions, saveSettings } from "../lib/state/app.svelte";
   import { shellChoices } from "../lib/state/shells";
@@ -24,7 +25,7 @@
     scrollbackLines: 10_000,
     copyOnSelect: true,
     toasts: true,
-    defaultShell: "pwsh",
+    defaultShell: isMac ? "/bin/zsh" : "pwsh",
     promptLabels: false,
     sound: true,
     restoreSessions: true,
@@ -112,7 +113,7 @@
         <span>Font</span>
         <select value={fontChoice} onchange={(e) => chooseFont(e.currentTarget.value)}>
           {#each TERMINAL_FONTS as font (font.family)}
-            <option value={font.family}>{font.family}{font.source === "windows" ? " (Windows)" : ""}</option>
+            <option value={font.family}>{fontLabel(font)}</option>
           {/each}
           <option value={OTHER_FONT}>Other installed font…</option>
         </select>
@@ -179,23 +180,23 @@
         <span>Interface font</span>
         <select bind:value={draft.uiFontFamily}>
           {#each UI_FONTS as font (font.family)}
-            <option value={font.family}>{font.family}{font.source === "windows" ? " (Windows)" : ""}</option>
+            <option value={font.family}>{fontLabel(font)}</option>
           {/each}
           {#if !UI_FONTS.some((f) => f.family === draft.uiFontFamily)}
             <option value={draft.uiFontFamily}>{draft.uiFontFamily}</option>
           {/if}
         </select>
       </label>
-      <label class="check"><input type="checkbox" bind:checked={draft.toasts} /><span>Windows notifications for sessions that need you, finish or fail</span></label>
+      <label class="check"><input type="checkbox" bind:checked={draft.toasts} /><span>{OS_NAME} notifications for sessions that need you, finish or fail</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.sound} /><span>Play a chime when a session finishes or needs a response</span></label>
-      <label class="check"><input type="checkbox" bind:checked={draft.restoreSessions} /><span>Restore sessions after Windows or jojod restarts (Claude conversations resume)</span></label>
+      <label class="check"><input type="checkbox" bind:checked={draft.restoreSessions} /><span>Restore sessions after {OS_NAME} or jojod restarts (Claude conversations resume)</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.promptLabels} /><span>Name sessions from Claude's first prompt (until you rename them)</span></label>
     </section>
 
     <section>
       <h3>Maintenance</h3>
       <div class="row">
-        <button onclick={() => void confirmRestartLocalDaemon()}>Restart daemon (This PC)</button>
+        <button onclick={() => void confirmRestartLocalDaemon()}>Restart daemon ({LOCAL_LABEL})</button>
         <span class="note">
           Ends {localSessions} running session{localSessions === 1 ? "" : "s"}. Sessions started afterwards see PATH changes made since jojod started.
         </span>

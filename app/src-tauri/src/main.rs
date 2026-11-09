@@ -182,17 +182,26 @@ async fn open_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("the link opener thread failed: {e}"))?
 }
 
-/// Shows a Windows toast for a session (spec 7.4). The frontend decides when
-/// one is due; clicking it emits `toast-activated` with `session_id`. The
-/// toast is shown on a blocking worker thread: a synchronous command would
-/// run on the main thread, which runs the window's event loop.
+/// Shows a notification for a session (spec 7.4). The frontend decides when
+/// one is due. On Windows it is a toast, shown on a blocking worker thread
+/// (a synchronous command would run on the main thread, which runs the
+/// window's event loop), and clicking it emits `toast-activated` with
+/// `session_id`. On macOS it is a Notification Center notification through
+/// tauri-plugin-notification, which reports no clicks, so clicking it only
+/// brings Jojo to the front.
 #[tauri::command]
 async fn notify(app: tauri::AppHandle, session_id: String, title: String, body: String) -> Result<(), String> {
     #[cfg(windows)]
     return tauri::async_runtime::spawn_blocking(move || jojo_app::toast::show(&app, session_id, &title, &body))
         .await
         .map_err(|e| format!("the toast thread failed: {e}"))?;
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = session_id;
+        app.notification().builder().title(title).body(body).show().map_err(|e| format!("the notification could not be shown: {e}"))
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         let _ = (app, session_id, title, body);
         Ok(())
@@ -210,16 +219,60 @@ fn set_maximize_button_rect(x: i32, y: i32, width: i32, height: i32) {
     let _ = (x, y, width, height);
 }
 
+/// The macOS menu bar. Tauri's default menu binds ⌘W to Close Window, which
+/// would close Jojo instead of the focused pane, so the app builds its own:
+/// Jojo (About, Hide, Quit), Edit (the clipboard items text fields need) and
+/// Window (Minimize, Zoom, Full Screen). The app's own ⌘ shortcuts are
+/// handled in the webview (app/src/lib/input/shortcuts.ts), which sees a key
+/// before the menu does.
+#[cfg(target_os = "macos")]
+fn mac_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, PredefinedMenuItem as Item, Submenu};
+    let jojo = Submenu::with_items(
+        app,
+        "Jojo",
+        true,
+        &[
+            &Item::about(app, None, None)?,
+            &Item::separator(app)?,
+            &Item::hide(app, None)?,
+            &Item::hide_others(app, None)?,
+            &Item::show_all(app, None)?,
+            &Item::separator(app)?,
+            &Item::quit(app, None)?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &Item::undo(app, None)?,
+            &Item::redo(app, None)?,
+            &Item::separator(app)?,
+            &Item::cut(app, None)?,
+            &Item::copy(app, None)?,
+            &Item::paste(app, None)?,
+            &Item::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(app, "Window", true, &[&Item::minimize(app, None)?, &Item::maximize(app, None)?, &Item::fullscreen(app, None)?])?;
+    Menu::with_items(app, &[&jojo, &edit, &window])
+}
+
 fn main() {
     let hub = Arc::new(Hub::default());
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    builder
         .manage(hub.clone())
         .invoke_handler(tauri::generate_handler![
             subscribe,
@@ -261,6 +314,8 @@ fn main() {
             }
             #[cfg(not(windows))]
             drop(window);
+            #[cfg(target_os = "macos")]
+            app.set_menu(mac_menu(app.handle())?)?;
             let source = app.path().resource_dir()?.join("daemon");
             for machine in machines::load(&machines::default_path()) {
                 hub.start(&machine, || DaemonPaths::for_app(source.clone()));
