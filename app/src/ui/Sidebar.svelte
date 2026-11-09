@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { addProject, app, displayLabel, focusPane, focusedSessionId, newSession, removeMachine, renameSession, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, displayLabel, focusPane, focusedSessionId, newSession, projectsInOrder, removeMachine, removeProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
   import type { Machine } from "../lib/backend/Machine";
   import type { MenuEntry } from "../lib/menu/types";
   import { shellChoices } from "../lib/state/shells";
-  import { sessionsForProject, sortedProjects } from "../lib/state/views";
-  import { emptyModel } from "../lib/state/reducer";
+  import { sessionsForProject } from "../lib/state/views";
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
@@ -36,8 +35,70 @@
     openMenu(event.clientX, event.clientY, entries);
   }
 
-  /** A machine's projects, sorted by name; empty until its first Projects reply. */
-  const projectsOf = (machineId: string) => sortedProjects(app.models[machineId] ?? emptyModel());
+  /** A machine's projects in sidebar order (dragged order, then by name); empty until its first Projects reply. */
+  const projectsOf = (machineId: string) => projectsInOrder(machineId);
+
+  /** Right-click on a project's name: new sessions and Remove project. */
+  function onProjectMenu(event: MouseEvent, projectId: string): void {
+    event.preventDefault();
+    openMenu(event.clientX, event.clientY, [
+      { kind: "action", label: "New terminal", run: () => newSession(projectId, "shell") },
+      { kind: "action", label: "New Claude session", run: () => newSession(projectId, "claude") },
+      { kind: "separator" },
+      { kind: "action", label: "Remove project…", run: () => void removeProject(projectId) },
+    ]);
+  }
+
+  /**
+   * Drag a project's name to reorder the projects of its machine, the same
+   * way tabs are dragged (TabBar.svelte): more than DRAG_THRESHOLD pixels
+   * starts a drag, and the drop position is the number of the machine's
+   * project rows whose vertical center is above the pointer. A project's
+   * sessions move with it. Projects do not move between machines.
+   */
+  const DRAG_THRESHOLD = 5;
+  let press: { machineId: string; projectId: string; startY: number; pointerId: number; element: HTMLElement } | null = null;
+  let dragging = $state<{ machineId: string; projectId: string; dropIndex: number } | null>(null);
+
+  function projectDropIndex(machineId: string, y: number): number {
+    const rows = [...document.querySelectorAll<HTMLElement>(`[data-project-machine="${CSS.escape(machineId)}"]`)];
+    return rows.filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.top + r.height / 2 < y;
+    }).length;
+  }
+
+  function onProjectPointerDown(event: PointerEvent, machineId: string, projectId: string): void {
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".add")) return;
+    press = { machineId, projectId, startY: event.clientY, pointerId: event.pointerId, element: event.currentTarget as HTMLElement };
+  }
+
+  function onProjectPointerMove(event: PointerEvent): void {
+    if (!press || event.pointerId !== press.pointerId) return;
+    if (!dragging) {
+      if (Math.abs(event.clientY - press.startY) < DRAG_THRESHOLD) return;
+      press.element.setPointerCapture(event.pointerId);
+    }
+    dragging = { machineId: press.machineId, projectId: press.projectId, dropIndex: projectDropIndex(press.machineId, event.clientY) };
+  }
+
+  function onProjectPointerUp(event: PointerEvent): void {
+    if (!press || event.pointerId !== press.pointerId) return;
+    if (dragging) {
+      reorderProject(dragging.machineId, dragging.projectId, dragging.dropIndex);
+      // As in TabBar: swallow only the click that follows this drag.
+      const swallow = (e: MouseEvent) => e.stopPropagation();
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+    }
+    press = null;
+    dragging = null;
+  }
+
+  function onProjectPointerCancel(): void {
+    press = null;
+    dragging = null;
+  }
   const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
 
   function isRenaming(sessionId: string): boolean {
@@ -89,9 +150,23 @@
       <button class="icon" title="Add project" aria-label={`Add project on ${machine.label}`} onclick={() => openDialog({ kind: "add-project", machineId: machine.id })}><PlusCircle /></button>
     {/if}
   </div>
-  {#each projectsOf(machine.id) as project (project.id)}
+  {#each projectsOf(machine.id) as project, index (project.id)}
     {@const count = sessionsForProject(app.model, project.id).length}
-    <div class="project" class:selected={app.selectedProjectId === project.id}>
+    {@const dropHere = dragging !== null && dragging.machineId === machine.id}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="project"
+      class:selected={app.selectedProjectId === project.id}
+      class:dragging={dragging?.projectId === project.id}
+      class:drop-before={dropHere && dragging?.dropIndex === index}
+      class:drop-after={dropHere && index === projectsOf(machine.id).length - 1 && dragging?.dropIndex === index + 1}
+      data-project-machine={machine.id}
+      oncontextmenu={(e) => onProjectMenu(e, project.id)}
+      onpointerdown={(e) => onProjectPointerDown(e, machine.id, project.id)}
+      onpointermove={onProjectPointerMove}
+      onpointerup={onProjectPointerUp}
+      onpointercancel={onProjectPointerCancel}
+    >
       <button class="name" onclick={() => selectProject(project.id)}>
         {project.name}{#if count > 0}<small class="count">{count}</small>{/if}
       </button>
@@ -243,6 +318,17 @@
     display: flex;
     align-items: center;
     padding: 6px 8px 2px;
+  }
+  .project.dragging {
+    opacity: 0.55;
+  }
+  /* The drop position: an accent line above the project the dragged one
+     will sit before, or below the machine's last project. */
+  .project.drop-before {
+    box-shadow: inset 0 2px 0 var(--jojo-accent);
+  }
+  .project.drop-after {
+    box-shadow: inset 0 -2px 0 var(--jojo-accent);
   }
   .project .name {
     flex: 1;

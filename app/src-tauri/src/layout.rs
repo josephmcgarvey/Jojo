@@ -64,11 +64,17 @@ pub struct ProjectLayout {
 pub struct LayoutFile {
     pub version: u32,
     pub projects: BTreeMap<String, ProjectLayout>,
+    /// The sidebar order of projects, as `<machine id>:<project id>` keys
+    /// (the keys of `projects`), set by dragging a project. A project that
+    /// is not listed goes after the listed ones of its machine, sorted by
+    /// name. Absent in files written before this field existed.
+    #[serde(default)]
+    pub project_order: Vec<String>,
 }
 
 impl Default for LayoutFile {
     fn default() -> Self {
-        LayoutFile { version: LAYOUT_VERSION, projects: BTreeMap::new() }
+        LayoutFile { version: LAYOUT_VERSION, projects: BTreeMap::new(), project_order: Vec::new() }
     }
 }
 
@@ -147,7 +153,7 @@ mod tests {
         };
         let mut projects = BTreeMap::new();
         projects.insert("local:P1".to_string(), ProjectLayout { tabs: vec![tab], active_tab: Some("T1".into()) });
-        LayoutFile { version: LAYOUT_VERSION, projects }
+        LayoutFile { version: LAYOUT_VERSION, projects, project_order: vec!["local:P1".into()] }
     }
 
     #[test]

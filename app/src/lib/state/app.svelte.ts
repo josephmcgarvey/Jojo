@@ -21,6 +21,7 @@ import { reconcileMachine } from "../layout/reconcile";
 import * as tabs from "../layout/tabs";
 import { isFull, paneIds, type LayoutNode, type LayoutPreset, type SplitDirection } from "../layout/tree";
 import type { ControlMsg } from "../protocol/ControlMsg";
+import type { ProjectInfo } from "../protocol/ProjectInfo";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
 import { router } from "../terminal/router";
@@ -45,7 +46,7 @@ import {
 import { toastFor } from "./toasts";
 import { chimeFor, playChime } from "./chime";
 import { shellProgram } from "./shells";
-import { sortedProjects } from "./views";
+import { orderedProjects, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
 import {
   createFailed,
   emptyWorkspace,
@@ -643,6 +644,50 @@ export function equalizeTabSizes(tabId: string): void {
 
 export function setTabRoot(tabId: string, root: LayoutNode): void {
   updateCurrentProject((p) => tabs.setTabRoot(p, tabId, root));
+}
+
+/** A machine's projects in sidebar order (layout.json's project_order). */
+export function projectsInOrder(machineId: string): ProjectInfo[] {
+  return orderedProjects(app.models[machineId] ?? emptyModel(), machineId, app.workspace.layout.project_order ?? []);
+}
+
+/** Moves a project of `machineId` to a drop position in its sidebar list; saved in layout.json. */
+export function reorderProject(machineId: string, projectId: string, toIndex: number): void {
+  const shown = projectsInOrder(machineId).map((p) => p.id);
+  const project_order = reorderedProjectOrder(app.workspace.layout.project_order ?? [], machineId, shown, projectId, toIndex);
+  commit({ ...app.workspace, layout: { ...app.workspace.layout, project_order } });
+}
+
+/** How long removeProject waits for the project's running sessions to end. */
+const REMOVE_PROJECT_WAIT_MS = 10_000;
+
+/**
+ * Removes a project from the sidebar and from its machine's jojod, after a
+ * confirmation that names the running sessions it ends. The folder on disk
+ * is not touched. jojod refuses RemoveProject while a session of the
+ * project runs, so those sessions are closed first and the request is sent
+ * once none is left (or after REMOVE_PROJECT_WAIT_MS, when jojod's refusal
+ * shows in the banner). Exited sessions are removed with the project.
+ */
+export async function removeProject(projectId: string): Promise<void> {
+  const project = app.model.projects[projectId];
+  if (!project) return;
+  const machine = machineOfProject(projectId);
+  const runningOf = () => sessionsForProject(app.model, projectId).filter((s) => s.state !== "exited");
+  const running = runningOf();
+  const ends = running.length === 0 ? "" : ` It ends ${running.length} running session${running.length === 1 ? "" : "s"}.`;
+  const confirmed = await askConfirm({
+    title: `Remove ${project.name}?`,
+    message: `Removes the project from Jojo.${ends} The folder ${project.path} and its files are not deleted; add it again with + to bring it back.`,
+    details: running.map((s) => displayLabel(s)),
+    confirmLabel: "Remove project",
+  });
+  if (!confirmed) return;
+  for (const session of running) sendClose(session.id);
+  const deadline = Date.now() + REMOVE_PROJECT_WAIT_MS;
+  while (runningOf().length > 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+  if (app.selectedProjectId === projectId) app.selectedProjectId = null;
+  void sendControl({ type: "RemoveProject", id: projectId }, machine).catch(() => {});
 }
 
 export async function addProject(): Promise<void> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyControl, emptyModel } from "./reducer";
-import { orderedSessions, sessionsForProject, sortedProjects } from "./views";
+import { orderedProjects, orderedSessions, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
 
 const base = { kind: "shell", command: "c", args: [] as string[], label: "l", state: "running", state_changed_at: 0, exit_code: null, claude_session_id: null, state_detail: null, renamed: false, prompt_label: null, attachable: true } as const;
 
@@ -40,5 +40,31 @@ describe("views", () => {
     });
     const ordered = orderedSessions([{ id: "local" }, { id: "srv" }], { local, srv: remote });
     expect(ordered.map((o) => `${o.machineId}:${o.session.id}`)).toEqual(["local:S1", "local:S2", "local:S3", "srv:S9"]);
+  });
+});
+
+describe("project order", () => {
+  const model = applyControl(emptyModel(), {
+    type: "Projects",
+    projects: [
+      { id: "A", path: "a", name: "alpha" },
+      { id: "B", path: "b", name: "beta" },
+      { id: "C", path: "c", name: "gamma" },
+    ],
+  });
+  const names = (order: string[]) => orderedProjects(model, "local", order).map((p) => p.name);
+
+  it("lists ordered projects first, then the rest by name", () => {
+    expect(names([])).toEqual(["alpha", "beta", "gamma"]);
+    expect(names(["local:C", "local:A"])).toEqual(["gamma", "alpha", "beta"]);
+    // Keys of another machine or of removed projects are ignored.
+    expect(names(["m2:A", "local:Z", "local:B"])).toEqual(["beta", "alpha", "gamma"]);
+  });
+
+  it("moves a dragged project and keeps other machines' keys", () => {
+    const order = reorderedProjectOrder(["m2:X"], "local", ["A", "B", "C"], "C", 0);
+    expect(order).toEqual(["m2:X", "local:C", "local:A", "local:B"]);
+    expect(reorderedProjectOrder(order, "local", ["C", "A", "B"], "C", 3)).toEqual(["m2:X", "local:A", "local:B", "local:C"]);
+    expect(reorderedProjectOrder(order, "local", ["C", "A", "B"], "Q", 0)).toEqual(order);
   });
 });

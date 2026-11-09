@@ -101,5 +101,8 @@ export function reconcileMachine(file: LayoutFile, machineId: string, model: Mod
     const sessionIds = sessionsForProject(model, project.id).map((s) => s.id);
     projects[key] = reconcileProject(file.projects[key], sessionIds, newTabId);
   }
-  return { version: file.version, projects };
+  // The sidebar order keeps other machines' keys and this machine's keys
+  // whose project still exists.
+  const project_order = (file.project_order ?? []).filter((key) => !key.startsWith(prefix) || key in projects);
+  return { version: file.version, projects, project_order };
 }

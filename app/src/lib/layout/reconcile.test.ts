@@ -110,6 +110,7 @@ describe("reconcileAll", () => {
         [layoutKey(LOCAL_MACHINE_ID, "OLD")]: { tabs: [newTab("T1", "Z")], active_tab: "T1" },
         "server1:P9": remote,
       },
+      project_order: [],
     };
     const result = reconcileAll(file, model, ids());
     expect(Object.keys(result.projects).sort()).toEqual(["local:P1", "server1:P9"]);
@@ -122,9 +123,15 @@ describe("reconcileAll", () => {
     let model = applyControl(emptyModel(), { type: "Projects", projects: [{ id: "P9", path: "/srv/app", name: "app" }] });
     model = applyControl(model, { type: "Sessions", sessions: [session("S9", "P9", 10)] });
     const local: ProjectLayout = { tabs: [newTab("L1", "S1")], active_tab: "L1" };
-    const file: LayoutFile = { version: 1, projects: { "local:P1": local, "server1:GONE": { tabs: [newTab("G1", "Q")], active_tab: "G1" } } };
+    const file: LayoutFile = {
+      version: 1,
+      projects: { "local:P1": local, "server1:GONE": { tabs: [newTab("G1", "Q")], active_tab: "G1" } },
+      project_order: ["local:P1", "server1:GONE", "server1:P9"],
+    };
     const result = reconcileMachine(file, "server1", model, ids());
     expect(Object.keys(result.projects).sort()).toEqual(["local:P1", "server1:P9"]);
+    // A removed project's key leaves the sidebar order; other machines' keys stay.
+    expect(result.project_order).toEqual(["local:P1", "server1:P9"]);
     expect(result.projects["local:P1"]).toBe(local);
     expect(result.projects["server1:P9"]!.tabs.map((t) => paneIds(t.root))).toEqual([["S9"]]);
   });
