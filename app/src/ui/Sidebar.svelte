@@ -11,6 +11,7 @@
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
+  import { isMac } from "../lib/platform";
   import Cog from "./Cog.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
@@ -71,7 +72,9 @@
 </script>
 
 <aside class="side">
-  <div class="brand" data-tauri-drag-region>Jojo</div>
+  <!-- macOS: the traffic-light buttons sit in this strip (trafficLightPosition
+       in tauri.macos.conf.json), and dragging it moves the window. -->
+  {#if isMac}<div class="traffic-lights" data-tauri-drag-region></div>{/if}
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}
   {@const statusText = machineStatusText(machine, status)}
@@ -154,21 +157,9 @@
     overflow-y: auto;
     min-height: 0;
   }
-  .brand {
-    padding: 4px 8px 10px;
-  }
-  /* macOS: the traffic-light buttons sit left of the wordmark, at the
-     position set by trafficLightPosition in tauri.macos.conf.json. */
-  :global(html[data-platform="mac"]) .brand {
-    padding-left: 70px;
-  }
-  .brand {
-    font-size: 17px;
-    font-weight: 600;
-    background: var(--jojo-brand-gradient);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  .traffic-lights {
+    flex: none;
+    height: 22px;
   }
   .machine {
     display: flex;
