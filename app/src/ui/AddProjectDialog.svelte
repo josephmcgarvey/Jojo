@@ -1,8 +1,12 @@
 <script lang="ts">
   // Adds a project on a remote machine: the folder is a path on that
-  // machine, so the Windows folder picker cannot choose it.
+  // machine, so the local folder picker cannot choose it. The dialog is a
+  // folder browser over jojod's ListDir: the list shows the subfolders of
+  // the folder in the path field, a click opens one, Up opens the parent,
+  // and Add adds the folder in the path field. Typing in the path field
+  // lists the folder typed so far and filters by the name being typed.
   import { addRemoteProject, app, listDir } from "../lib/state/app.svelte";
-  import { folderSuggestions, splitTypedPath } from "../lib/state/pathSuggest";
+  import { folderSuggestions, parentDir, splitTypedPath } from "../lib/state/pathSuggest";
   import { errorText } from "../lib/errors";
 
   let { machineId, onclose }: { machineId: string; onclose: () => void } = $props();
@@ -22,10 +26,11 @@
     const timer = setTimeout(() => listDir(machineId, dir), 150);
     return () => clearTimeout(timer);
   });
-  const suggestions = $derived(
-    app.dirEntries && app.dirEntries.machine === machineId && app.dirEntries.path === typed.dir
-      ? folderSuggestions(typed.dir, typed.prefix, app.dirEntries.entries)
-      : [],
+  let showHidden = $state(false);
+  /** The listed folder's entries, or null until jojod's DirEntries reply for it arrives. */
+  const listed = $derived(app.dirEntries && app.dirEntries.machine === machineId && app.dirEntries.path === typed.dir ? app.dirEntries.entries : null);
+  const folders = $derived(
+    listed === null ? [] : folderSuggestions(typed.dir, typed.prefix, showHidden ? listed : listed.filter((n) => !n.startsWith(".") || typed.prefix.startsWith(".")), Infinity),
   );
 
   async function add(): Promise<void> {
@@ -46,8 +51,13 @@
     if (event.key === "Enter" && event.target === input && path.trim()) void add();
   }
 
-  function choose(suggestion: string): void {
-    path = suggestion;
+  function choose(folder: string): void {
+    path = folder;
+    input.focus();
+  }
+
+  function up(): void {
+    path = parentDir(typed.dir);
     input.focus();
   }
 </script>
@@ -56,20 +66,26 @@
 <div class="scrim" onkeydown={onKeydown}>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-project-title">
     <h2 id="add-project-title">Add project on {machine?.label ?? "server"}</h2>
-    <p class="hint">The folder's path on the server, for example <code>/home/you/app</code>. Sessions in this project start there.</p>
+    <p class="hint">Open the project's folder on the server, then click Add. Sessions in this project start in that folder.</p>
     <!-- svelte-ignore a11y_autofocus -->
-    <input bind:this={input} bind:value={path} autofocus spellcheck="false" />
-    {#if suggestions.length > 0}
-      <ul class="suggestions">
-        {#each suggestions as suggestion (suggestion)}
-          <li><button onclick={() => choose(suggestion)}>{suggestion}</button></li>
+    <input bind:this={input} bind:value={path} autofocus spellcheck="false" aria-label="Folder path on the server" />
+    <ul class="folders" aria-label="Folders">
+      <li><button class="up" onclick={up} disabled={typed.dir === "/" && !typed.prefix}>↑ Up to {parentDir(typed.dir)}</button></li>
+      {#if listed === null}
+        <li class="note">Listing {typed.dir}…</li>
+      {:else if folders.length === 0}
+        <li class="note">{typed.prefix ? `No folder in ${typed.dir} starts with “${typed.prefix}”.` : `${typed.dir} has no subfolders.`}</li>
+      {:else}
+        {#each folders as folder (folder)}
+          <li><button onclick={() => choose(folder)}><span class="icon" aria-hidden="true">▸</span>{folder.slice(typed.dir.length)}</button></li>
         {/each}
-      </ul>
-    {/if}
+      {/if}
+    </ul>
+    <label class="hidden-toggle"><input type="checkbox" bind:checked={showHidden} /> Show hidden folders</label>
     {#if error}<p class="error">{error}</p>{/if}
     <div class="actions">
       <button onclick={onclose}>Cancel</button>
-      <button class="primary" onclick={add} disabled={!path.trim()}>Add project</button>
+      <button class="primary" onclick={add} disabled={!path.trim()} title={`Add ${path}`}>Add {path.replace(/\/+$/, "").split("/").pop() || path}</button>
     </div>
   </div>
 </div>
@@ -102,11 +118,10 @@
     color: var(--jojo-muted);
     font-size: 12px;
   }
-  code,
-  input {
+  input:not([type="checkbox"]) {
     font-family: var(--jojo-font-mono);
   }
-  input {
+  input:not([type="checkbox"]) {
     width: 100%;
     box-sizing: border-box;
     padding: 5px 8px;
@@ -115,16 +130,20 @@
     background: var(--jojo-pane);
     color: var(--jojo-fg);
   }
-  .suggestions {
-    margin: 4px 0 0;
+  .folders {
+    margin: 6px 0 0;
     padding: 4px;
-    max-height: 180px;
+    height: 240px;
     overflow-y: auto;
     list-style: none;
     border: 1px solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
+    background: var(--jojo-pane);
   }
-  .suggestions button {
+  .folders button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     width: 100%;
     padding: 3px 6px;
     text-align: left;
@@ -132,9 +151,31 @@
     font-family: var(--jojo-font-mono);
     border-radius: var(--jojo-radius-sm);
   }
-  .suggestions button:hover {
+  .folders button:hover:not(:disabled) {
     background: var(--jojo-sel);
     color: var(--jojo-fg);
+  }
+  .folders button:disabled {
+    opacity: 0.5;
+  }
+  .folders .up {
+    color: var(--jojo-muted);
+  }
+  .folders .icon {
+    color: var(--jojo-accent);
+  }
+  .folders .note {
+    padding: 3px 6px;
+    color: var(--jojo-muted);
+    font-size: 12px;
+  }
+  .hidden-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    color: var(--jojo-muted);
+    font-size: 12px;
   }
   .error {
     margin: 8px 0 0;

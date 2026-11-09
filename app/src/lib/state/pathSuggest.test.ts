@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { folderSuggestions, splitTypedPath } from "./pathSuggest";
+import { folderSuggestions, parentDir, splitTypedPath } from "./pathSuggest";
 
 describe("splitTypedPath", () => {
   it("splits at the last slash and lists home for a bare name", () => {
@@ -20,5 +20,16 @@ describe("folderSuggestions", () => {
   it("hides dot folders until a dot is typed", () => {
     expect(folderSuggestions("~/", "", entries)).toEqual(["~/Projects/", "~/projects-old/", "~/src/"]);
     expect(folderSuggestions("~/", ".", entries)).toEqual(["~/.cache/"]);
+  });
+});
+
+describe("parentDir", () => {
+  it("goes up one folder, from home to the root, and stays at the root", () => {
+    expect(parentDir("~/src/app/")).toBe("~/src/");
+    expect(parentDir("~/src/")).toBe("~/");
+    expect(parentDir("/srv/app/")).toBe("/srv/");
+    expect(parentDir("/srv/")).toBe("/");
+    expect(parentDir("~/")).toBe("/");
+    expect(parentDir("/")).toBe("/");
   });
 });

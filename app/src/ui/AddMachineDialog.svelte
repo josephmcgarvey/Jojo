@@ -8,7 +8,7 @@
   import type { InstallStep } from "../lib/backend/InstallStep";
   import type { Machine } from "../lib/backend/Machine";
   import { errorText } from "../lib/errors";
-  import { machineAdded } from "../lib/state/app.svelte";
+  import { app, machineAdded } from "../lib/state/app.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -23,6 +23,16 @@
 
   let hosts = $state<string[]>([]);
   let host = $state("");
+  /** The Host select's value for a host typed into the text field. */
+  const OTHER_HOST = "__other__";
+  let otherHost = $state(false);
+  const hostChoice = $derived(otherHost ? OTHER_HOST : host);
+  /** Hosts already in the sidebar, marked in the list (adding one again upgrades and reconnects it). */
+  const added = $derived(new Set(app.machines.map((m) => m.ssh_host).filter((h): h is string => !!h)));
+  function chooseHost(value: string): void {
+    otherHost = value === OTHER_HOST;
+    host = otherHost ? "" : value;
+  }
   let label = $state("");
   let running = $state(false);
   let done = $state(false);
@@ -32,7 +42,13 @@
   let steps = $state<InstallStep[]>([]);
 
   onMount(() => {
-    void invoke<string[]>("ssh_hosts").then((list) => (hosts = list)).catch(() => {});
+    void invoke<string[]>("ssh_hosts")
+      .then((list) => {
+        hosts = list;
+        // With no ~/.ssh/config hosts, the only choice is typing one.
+        if (list.length === 0) otherHost = true;
+      })
+      .catch(() => (otherHost = true));
   });
 
   /** The backend's prefix for "installing would end the running daemon" (install.rs RESTART_NEEDED). */
@@ -79,11 +95,21 @@
     </p>
     <label>
       <span>Host</span>
-      <input list="ssh-hosts" bind:value={host} placeholder="alias from ~/.ssh/config or user@host" disabled={running || done} />
-      <datalist id="ssh-hosts">
-        {#each hosts as alias (alias)}<option value={alias}></option>{/each}
-      </datalist>
+      <select value={hostChoice} onchange={(e) => chooseHost(e.currentTarget.value)} disabled={running || done}>
+        {#if !otherHost && !host}<option value="" disabled>Choose a host from ~/.ssh/config</option>{/if}
+        {#each hosts as alias (alias)}
+          <option value={alias}>{alias}{added.has(alias) ? " (added: upgrades and reconnects)" : ""}</option>
+        {/each}
+        <option value={OTHER_HOST}>Other host (user@host)…</option>
+      </select>
     </label>
+    {#if otherHost}
+      <label>
+        <span>Address</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input bind:value={host} placeholder="user@host or host" autofocus disabled={running || done} spellcheck="false" />
+      </label>
+    {/if}
     <label>
       <span>Label</span>
       <input bind:value={label} placeholder={host || "shown in the sidebar"} disabled={running || done} />
@@ -156,7 +182,8 @@
     margin-bottom: 8px;
     color: var(--jojo-fg2);
   }
-  input {
+  input,
+  select {
     padding: 5px 8px;
     border: 1px solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);

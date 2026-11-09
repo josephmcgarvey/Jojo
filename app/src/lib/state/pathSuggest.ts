@@ -24,3 +24,16 @@ export function folderSuggestions(dir: string, prefix: string, entries: string[]
     .slice(0, limit)
     .map((name) => `${dir}${name}/`);
 }
+
+/**
+ * The folder above `dir` (a listed folder ending in `/`): `~/src/app/` →
+ * `~/src/`, `/srv/` → `/`. The home folder `~/` goes to the file system
+ * root `/`, because its absolute path is known only to the server; `/`
+ * stays `/`.
+ */
+export function parentDir(dir: string): string {
+  const trimmed = dir.replace(/\/+$/, "");
+  if (trimmed === "" || trimmed === "~") return "/";
+  const slash = trimmed.lastIndexOf("/");
+  return slash < 0 ? "~/" : trimmed.slice(0, slash + 1);
+}
