@@ -465,6 +465,11 @@ export function selectTab(tabId: string): void {
   updateCurrentProject((p) => tabs.selectTab(p, tabId));
 }
 
+/** Moves a tab of the current project to a drop position in the tab bar (see tabs.reorderTab). */
+export function reorderTab(tabId: string, toIndex: number): void {
+  updateCurrentProject((p) => tabs.reorderTab(p, tabId, toIndex));
+}
+
 export function cycleTab(delta: 1 | -1): void {
   updateCurrentProject((p) => tabs.cycleTab(p, delta));
 }

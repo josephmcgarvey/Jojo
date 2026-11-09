@@ -67,6 +67,24 @@ export function cycleTab(project: ProjectLayout, delta: 1 | -1): ProjectLayout {
   return selectTab(project, next.id);
 }
 
+/**
+ * Moves a tab so it sits before the tab now at `toIndex` (0 to tabs.length;
+ * tabs.length puts it last), the drop position in the tab bar's current
+ * order. The active tab does not change. Returns the project unchanged when
+ * the tab is unknown or the move leaves the order as it was.
+ */
+export function reorderTab(project: ProjectLayout, tabId: string, toIndex: number): ProjectLayout {
+  const from = project.tabs.findIndex((t) => t.id === tabId);
+  if (from < 0) return project;
+  const target = Math.max(0, Math.min(project.tabs.length, Math.round(toIndex)));
+  // Removing the tab first shifts every later position left by one.
+  const insertAt = target > from ? target - 1 : target;
+  if (insertAt === from) return project;
+  const tabs = project.tabs.filter((t) => t.id !== tabId);
+  tabs.splice(insertAt, 0, project.tabs[from]);
+  return { ...project, tabs };
+}
+
 /** Removes a tab; when it was active, its right neighbor (else its left) becomes active. */
 export function closeTab(project: ProjectLayout, tabId: string): ProjectLayout {
   const index = project.tabs.findIndex((t) => t.id === tabId);

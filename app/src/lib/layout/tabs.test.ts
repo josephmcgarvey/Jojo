@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TabLayout } from "../backend/TabLayout";
 import {
+  reorderTab,
   activeTab,
   addTab,
   cycleTab,
@@ -218,5 +219,32 @@ describe("swap, presets, equalize, roots and replacement", () => {
     expect(next.active_tab).toBe("T1");
     expect(replaceSession(p, "Z", "N")).toBeNull();
     expect(replaceSession(p, "A", "B")).toBeNull();
+  });
+});
+
+describe("reorderTab", () => {
+  const project = (ids: string[], active: string) => ({ tabs: ids.map((id) => newTab(id, `s-${id}`)), active_tab: active });
+  const order = (p: { tabs: TabLayout[] }) => p.tabs.map((t) => t.id).join("");
+
+  it("moves a tab to the drop position and keeps the active tab", () => {
+    const p = project(["a", "b", "c", "d"], "b");
+    expect(order(reorderTab(p, "a", 2))).toBe("bacd");
+    expect(order(reorderTab(p, "a", 4))).toBe("bcda");
+    expect(order(reorderTab(p, "d", 0))).toBe("dabc");
+    expect(order(reorderTab(p, "c", 1))).toBe("acbd");
+    expect(reorderTab(p, "d", 0).active_tab).toBe("b");
+  });
+
+  it("returns the project unchanged for a drop beside the tab itself or an unknown tab", () => {
+    const p = project(["a", "b", "c"], "a");
+    expect(reorderTab(p, "b", 1)).toBe(p);
+    expect(reorderTab(p, "b", 2)).toBe(p);
+    expect(reorderTab(p, "zz", 0)).toBe(p);
+  });
+
+  it("clamps an out-of-range drop position", () => {
+    const p = project(["a", "b", "c"], "a");
+    expect(order(reorderTab(p, "a", 99))).toBe("bca");
+    expect(order(reorderTab(p, "c", -5))).toBe("cab");
   });
 });
