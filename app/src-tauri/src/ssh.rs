@@ -22,12 +22,23 @@ use tokio::process::{Child, ChildStdout};
 /// remote shell expands `~`.
 pub const REMOTE_JOJOD: &str = "~/.local/bin/jojod";
 
-/// `serve --daemonize` run through the user's login shell. A command run over
-/// SSH gets a minimal environment (on Debian and Ubuntu, ~/.profile is not
-/// read), so `~/.local/bin` and nvm paths, where Claude Code usually lives,
-/// would be missing from the PATH the daemon gives every session.
+/// Runs `inner` (a command without single quotes) through a login shell, so
+/// it gets the PATH a login gives. A command run over SSH gets a minimal
+/// environment (on Debian and Ubuntu, ~/.profile is not read), so
+/// `~/.local/bin` and nvm paths, where Claude Code usually lives, would be
+/// missing. The shell is `$SHELL` when that is an executable file, else
+/// bash, else /bin/sh: some hosts (RunCloud) set SHELL to a path that does
+/// not exist, such as /bin/rc-shell.
+pub fn login_shell_command(inner: &str) -> String {
+    format!(
+        "s=\"$SHELL\"; [ -x \"$s\" ] || s=$(command -v bash) || s=/bin/sh; [ -n \"$s\" ] || s=/bin/sh; exec \"$s\" -lc '{inner}'"
+    )
+}
+
+/// `serve --daemonize` run through the user's login shell (see
+/// `login_shell_command`), so sessions get the PATH a login gives.
 pub fn start_daemon_command() -> String {
-    format!("exec \"${{SHELL:-/bin/sh}}\" -lc '{REMOTE_JOJOD} serve --daemonize'")
+    login_shell_command(&format!("{REMOTE_JOJOD} serve --daemonize"))
 }
 
 /// How long a non-interactive command (`serve --daemonize`, a check) may run.
@@ -82,7 +93,7 @@ pub async fn run(host: &str, remote: &str, input: &[u8]) -> io::Result<CommandOu
 
 /// `run` with its own time limit (the daemon upload scales it with size).
 pub async fn run_with_timeout(host: &str, remote: &str, input: &[u8], timeout: Duration) -> io::Result<CommandOutput> {
-    let mut child = ssh_command(host, &[], remote).spawn()?;
+    let mut child = ssh_command(host, &[], &with_exit_marker(remote)).spawn()?;
     let mut stdin = child.stdin.take().expect("piped stdin");
     let input = input.to_vec();
     let writer = tokio::spawn(async move {
@@ -93,11 +104,40 @@ pub async fn run_with_timeout(host: &str, remote: &str, input: &[u8], timeout: D
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, format!("ssh {host} did not finish within {} s", timeout.as_secs())))??;
     let _ = writer.await;
+    let (stderr, remote_code) = take_exit_marker(&String::from_utf8_lossy(&output.stderr));
     Ok(CommandOutput {
-        code: output.status.code(),
+        code: remote_code.or(output.status.code()),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        stderr,
     })
+}
+
+/// The stderr line on which the remote shell reports `remote`'s exit status.
+const EXIT_MARKER: &str = "JOJO_EXIT_STATUS=";
+
+/// Runs `remote` in a subshell and then prints its exit status to stderr.
+/// Some hosts do not pass the remote exit status back to ssh: on RunCloud
+/// servers (SHELL=/bin/rc-shell) ssh exits with 0 even after `exit 3`, so a
+/// missing `jojod` (status 127) would look installed. The subshell keeps an
+/// `exec` inside `remote` from skipping the report.
+fn with_exit_marker(remote: &str) -> String {
+    format!("({remote}); echo \"{EXIT_MARKER}$?\" >&2")
+}
+
+/// Removes the exit-status line that `with_exit_marker` adds and returns the
+/// remaining stderr and the status. The status is None when the line is
+/// missing, for example when ssh failed before the command ran (code 255);
+/// the caller then uses ssh's own exit code.
+fn take_exit_marker(stderr: &str) -> (String, Option<i32>) {
+    let mut code = None;
+    let mut kept = String::with_capacity(stderr.len());
+    for line in stderr.split_inclusive('\n') {
+        match line.trim_end().strip_prefix(EXIT_MARKER).map(str::parse::<i32>) {
+            Some(Ok(status)) => code = Some(status),
+            _ => kept.push_str(line),
+        }
+    }
+    (kept, code)
 }
 
 /// True for ssh's own authentication failure (spec 8.3 rule 5):
@@ -236,6 +276,24 @@ mod tests {
             AttachFailure::Connect(_) => "other",
             AttachFailure::NoDaemon(_) => "no daemon",
         }
+    }
+
+    #[test]
+    fn exit_marker_gives_the_remote_status_and_is_removed_from_stderr() {
+        assert_eq!(with_exit_marker("jojod --version"), "(jojod --version); echo \"JOJO_EXIT_STATUS=$?\" >&2");
+        let (stderr, code) = take_exit_marker("bash: jojod: No such file or directory\nJOJO_EXIT_STATUS=127\n");
+        assert_eq!((stderr.as_str(), code), ("bash: jojod: No such file or directory\n", Some(127)));
+        // ssh failed before the command ran: no marker, ssh's own code is used.
+        let (stderr, code) = take_exit_marker("user@host: Permission denied (publickey).\r\n");
+        assert_eq!((stderr.as_str(), code), ("user@host: Permission denied (publickey).\r\n", None));
+    }
+
+    #[test]
+    fn login_shell_command_falls_back_when_shell_is_missing() {
+        let cmd = start_daemon_command();
+        // $SHELL is used only when it is an executable file (RunCloud sets it to /bin/rc-shell, which does not exist).
+        assert!(cmd.starts_with("s=\"$SHELL\"; [ -x \"$s\" ] || s=$(command -v bash) || s=/bin/sh;"), "{cmd}");
+        assert!(cmd.ends_with("exec \"$s\" -lc '~/.local/bin/jojod serve --daemonize'"), "{cmd}");
     }
 
     #[test]

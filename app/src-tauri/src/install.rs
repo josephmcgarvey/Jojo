@@ -165,7 +165,7 @@ pub async fn install(host: &str, daemon_dir: &Path, allow_restart: bool, mut rep
     // Through the login shell, like the daemon, so `command -v claude` sees
     // the PATH sessions will get.
     let check = format!("{REMOTE_JOJOD} install-hooks >/dev/null && (command -v claude >/dev/null || echo NO_CLAUDE)");
-    let hooks = run(host, &format!("exec \"${{SHELL:-/bin/sh}}\" -lc '{check}'"), b"")
+    let hooks = run(host, &crate::ssh::login_shell_command(&check), b"")
         .await
         .map_err(|e| fail(&mut report, "hooks", e.to_string()))?;
     if hooks.code != Some(0) {
