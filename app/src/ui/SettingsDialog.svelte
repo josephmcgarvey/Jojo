@@ -23,6 +23,7 @@
     defaultShell: "pwsh",
     promptLabels: false,
     sound: true,
+    restoreSessions: true,
   };
 
   let draft = $state<Settings>({ ...DEFAULTS, ...(app.settings ?? {}) });
@@ -103,6 +104,7 @@
       </label>
       <label class="check"><input type="checkbox" bind:checked={draft.toasts} /><span>Windows notifications for sessions that need you, finish or fail</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.sound} /><span>Play a chime when a session finishes or needs a response</span></label>
+      <label class="check"><input type="checkbox" bind:checked={draft.restoreSessions} /><span>Restore sessions after Windows or jojod restarts (Claude conversations resume)</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.promptLabels} /><span>Name sessions from Claude's first prompt (until you rename them)</span></label>
     </section>
 

@@ -22,7 +22,7 @@ import type { ControlMsg } from "../protocol/ControlMsg";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
 import { router } from "../terminal/router";
-import { LOCAL_MACHINE, sendControl, subscribe } from "../wire/bridge";
+import { LOCAL_MACHINE, sendControl, sendInput, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { askConfirm } from "./dialog.svelte";
 import { allTerminals, terminalControls } from "../terminal/registry";
@@ -31,6 +31,7 @@ import {
   busyStateText,
   canRestart,
   canResume,
+  restorePlan,
   closeTabMessage,
   closeTabNeedsConfirmation,
   closeTabSummary,
@@ -179,6 +180,8 @@ export function startApp(): () => void {
   void invoke<Settings>("get_settings")
     .then((s) => {
       app.settings = s;
+      // Sessions may have arrived before the settings did.
+      for (const machine of Object.keys(app.models)) restoreEndedSessions(machine);
     })
     .catch(() => {
       // Settings stay at their built-in defaults; nothing in the UI depends
@@ -308,6 +311,13 @@ function handleControl(machine: string, msg: ControlMsg): void {
       reconcile(machine);
       break;
     case "SessionCreated": {
+      // A restored shell gets `claude --resume <id>` typed into it; the PTY
+      // holds the input until the shell reads it.
+      const typed = typeAfterStart.get(msg.session.id);
+      if (typed) {
+        typeAfterStart.delete(msg.session.id);
+        void sendInput(msg.session.id, new TextEncoder().encode(typed), machine).catch(() => {});
+      }
       const result = sessionCreated(app.workspace, msg.session, newUlid, machine);
       commit(result.workspace);
       if (result.requested) app.selectedProjectId = msg.session.project_id;
@@ -334,10 +344,38 @@ function handleControl(machine: string, msg: ControlMsg): void {
   // Sessions carries every session's current attachable value; reattach only
   // once it has been applied, so a reconnect does not race an Attach against
   // stale attachable state from before the daemon restarted.
-  if (msg.type === "Sessions") router.reattachAll((sessionId) => machineOfSession(sessionId) === machine);
+  if (msg.type === "Sessions") {
+    router.reattachAll((sessionId) => machineOfSession(sessionId) === machine);
+    restoreEndedSessions(machine);
+  }
 }
 
 /** Spec 7.4: shows a toast when a session newly needs attention and the user is not looking at it. */
+/** Text to type into a session as soon as its SessionCreated arrives (restored shells). */
+const typeAfterStart = new Map<string, string>();
+/** Sessions already being restored, so a repeated Sessions reply does not restore them twice. */
+const restoring = new Set<string>();
+
+/**
+ * Brings back the sessions of `machine` that ended because Windows or jojod
+ * restarted (restorePlan), each in its own pane position, when the
+ * restoreSessions setting is on. Runs once the machine's sessions are
+ * listed and placed in the layout, and the settings are loaded.
+ */
+function restoreEndedSessions(machine: string): void {
+  if (!app.settings || app.settings.restoreSessions === false || !app.layoutLoaded) return;
+  const model = app.models[machine];
+  if (!model || !app.loaded[machine]?.sessions || !app.loaded[machine]?.projects) return;
+  for (const session of Object.values(model.sessions)) {
+    if (restoring.has(session.id) || !model.projects[session.project_id]) continue;
+    const plan = restorePlan(session);
+    if (!plan) continue;
+    restoring.add(session.id);
+    const id = newSession(session.project_id, plan.kind, { kind: "replace", oldId: session.id }, plan.kind === "shell" ? plan.shell : null, plan.resume);
+    if (plan.typeAfterStart) typeAfterStart.set(id, plan.typeAfterStart);
+  }
+}
+
 /** Plays the chime when a session newly finishes, needs a response or fails. */
 function maybeChime(previous: SessionInfo["state"] | undefined, session: SessionInfo): void {
   const now = Date.now();
@@ -457,7 +495,7 @@ export function newSession(
   placement: Placement = { kind: "tab" },
   shell?: string | null,
   resume: string | null = null,
-): void {
+): string {
   const id = newUlid();
   commit(requestCreate(app.workspace, id, { projectId, placement }));
   const machine = machineOfProject(projectId);
@@ -467,6 +505,7 @@ export function newSession(
     // explains why. Stop waiting for a SessionCreated that is never coming.
     commit(createFailed(app.workspace, id));
   });
+  return id;
 }
 
 /** `shell` is the program for a shell session; omitted, the defaultShell setting applies. */

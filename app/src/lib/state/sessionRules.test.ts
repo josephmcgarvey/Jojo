@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import {
+  restorePlan,
   busyStateText,
   canRestart,
   closeTabMessage,
@@ -67,5 +68,33 @@ describe("sessionRules", () => {
     expect(closesOnExit(1)).toBe(false);
     expect(closesOnExit(-1)).toBe(false);
     expect(closesOnExit(null)).toBe(false);
+  });
+});
+
+describe("restorePlan", () => {
+  const ended = { state: "exited" as const, exit_code: null, kind: "shell" as const, command: "pwsh.exe", claude_session_id: null };
+
+  it("restarts a terminal with its own shell, and resumes Claude in it when Claude was running there", () => {
+    expect(restorePlan(ended)).toEqual({ kind: "shell", shell: "pwsh.exe", resume: null, typeAfterStart: null });
+    expect(restorePlan({ ...ended, claude_session_id: "0f3c2a9e-1b2c" })?.typeAfterStart).toBe("claude --resume 0f3c2a9e-1b2c\r");
+  });
+
+  it("resumes a claude session's conversation", () => {
+    expect(restorePlan({ ...ended, kind: "claude", command: "claude.exe", claude_session_id: "abc-1" })).toEqual({
+      kind: "claude",
+      shell: null,
+      resume: "abc-1",
+      typeAfterStart: null,
+    });
+  });
+
+  it("leaves sessions that crashed, exited on their own or are still running alone", () => {
+    expect(restorePlan({ ...ended, exit_code: 0 })).toBeNull();
+    expect(restorePlan({ ...ended, exit_code: 1 })).toBeNull();
+    expect(restorePlan({ ...ended, state: "running" })).toBeNull();
+  });
+
+  it("does not type an id that is not a plain conversation id", () => {
+    expect(restorePlan({ ...ended, claude_session_id: "x; rm -rf ~" })?.typeAfterStart).toBeNull();
   });
 });

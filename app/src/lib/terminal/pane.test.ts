@@ -37,10 +37,10 @@ it("says a failed spawn failed to start and points at the log", () => {
   expect(message).toContain(String.raw`%LOCALAPPDATA%\Jojo\logs\jojod.<date>.log`);
 });
 
-it("says any other session without a screen ran in a previous jojod", () => {
+it("explains a session that ended with its jojod, and says any other ran in a previous jojod", () => {
   const previous = "This session has no screen: it ran in a previous jojod. Close it and start a new one.";
   // Running when its jojod stopped: reloaded as exited with no exit code.
-  expect(noScreenMessage(session({ exit_code: null, state_changed_at: 2000 }))).toBe(previous);
+  expect(noScreenMessage(session({ exit_code: null, state_changed_at: 2000 }))).toContain("ended when jojod stopped");
   // Ran, then exited with -1: state_changed_at is its exit time.
   expect(noScreenMessage(session({ state_changed_at: 2000 }))).toBe(previous);
   expect(noScreenMessage(session({ exit_code: 0, state_changed_at: 2000 }))).toBe(previous);

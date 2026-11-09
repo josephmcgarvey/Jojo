@@ -493,6 +493,11 @@ impl Daemon {
             // again, which shows `running` (spec 7.2).
             if matches!(event, HookEvent::SessionEnd) && info.kind == SessionKind::Shell && info.state == AgentState::Idle {
                 info.state = AgentState::Running;
+                // No Claude Code conversation runs in this shell any more, so
+                // restoring the session after a restart must not resume one:
+                // a shell session's claude_session_id means "Claude Code was
+                // running here".
+                info.claude_session_id = None;
                 changed = true;
             }
             changed

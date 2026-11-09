@@ -9,4 +9,10 @@ promptLabels: boolean,
 /**
  * Play a chime when a session finishes or needs a response.
  */
-sound: boolean, };
+sound: boolean, 
+/**
+ * Bring back sessions that ended because Windows or jojod restarted
+ * (user request, like Herdr): claude sessions with `claude --resume`,
+ * shells as the same shell in the same folder.
+ */
+restoreSessions: boolean, };

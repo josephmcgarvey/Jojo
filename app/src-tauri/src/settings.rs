@@ -20,6 +20,10 @@ pub struct Settings {
     pub prompt_labels: bool,
     /// Play a chime when a session finishes or needs a response.
     pub sound: bool,
+    /// Bring back sessions that ended because Windows or jojod restarted
+    /// (user request, like Herdr): claude sessions with `claude --resume`,
+    /// shells as the same shell in the same folder.
+    pub restore_sessions: bool,
 }
 
 impl Default for Settings {
@@ -35,6 +39,7 @@ impl Default for Settings {
             default_shell: "pwsh".into(),
             prompt_labels: false,
             sound: true,
+            restore_sessions: true,
         }
     }
 }

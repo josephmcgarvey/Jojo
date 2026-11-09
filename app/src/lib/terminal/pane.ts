@@ -32,5 +32,8 @@ export function noScreenMessage(session: SessionInfo): string {
   if (failedToStart(session)) {
     return `This session has no screen: ${session.command} failed to start. Logs are in %LOCALAPPDATA%\\Jojo\\logs\\jojod.<date>.log. Close it and start a new one.`;
   }
+  if (session.state === "exited" && session.exit_code === null) {
+    return "This session ended when jojod stopped (for example, when Windows restarted). Right-click it in the sidebar ▸ Resume or Restart, or turn on Settings ▸ Restore sessions.";
+  }
   return "This session has no screen: it ran in a previous jojod. Close it and start a new one.";
 }

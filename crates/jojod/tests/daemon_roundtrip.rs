@@ -584,7 +584,9 @@ async fn hook_events_drive_state_label_and_claude_session_id() {
 
     // Claude Code exits inside this shell session: it shows running again.
     relay(&endpoint, session.id, r#"{"hook_event_name":"SessionEnd"}"#).await;
-    assert_eq!(next_update(&mut c, session.id).await.state, jojo_proto::AgentState::Running);
+    let ended = next_update(&mut c, session.id).await;
+    assert_eq!(ended.state, jojo_proto::AgentState::Running);
+    assert_eq!(ended.claude_session_id, None, "a shell Claude Code has left has no conversation to resume");
 }
 
 #[tokio::test(flavor = "multi_thread")]

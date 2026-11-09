@@ -78,3 +78,35 @@ export function restartShell(session: Pick<SessionInfo, "kind" | "command">): st
 export function closesOnExit(exitCode: number | null): boolean {
   return exitCode === 0;
 }
+
+/** How a session that ended with its daemon is brought back (see `restorePlan`). */
+export interface RestorePlan {
+  kind: "claude" | "shell";
+  /** CreateSession.shell: the old session's own program for a shell. */
+  shell: string | null;
+  /** CreateSession.resume: the conversation a claude session continues. */
+  resume: string | null;
+  /** Typed into the new shell once it starts: `claude --resume <id>`. */
+  typeAfterStart: string | null;
+}
+
+/**
+ * Restoring sessions after Windows or jojod restarts (user request, like
+ * Herdr). A session qualifies when it is exited with no exit code, which
+ * is how the daemon marks sessions that were still running when it stopped
+ * (crates/jojod/src/store.rs); a session that crashed or that the user
+ * exited has a code and is left alone. A claude session continues its
+ * conversation with `claude --resume`. A shell restarts with its own
+ * program in its folder; when Claude Code was running in it (the daemon
+ * keeps a shell's claude_session_id only while Claude Code runs there),
+ * `claude --resume <id>` is typed into the new shell, so the shell remains
+ * when Claude exits. Conversation ids are accepted only as letters, digits
+ * and hyphens, because the id is typed into a shell.
+ */
+export function restorePlan(session: Pick<SessionInfo, "state" | "exit_code" | "kind" | "command" | "claude_session_id">): RestorePlan | null {
+  if (session.state !== "exited" || session.exit_code !== null) return null;
+  const id = session.claude_session_id && /^[A-Za-z0-9-]{1,128}$/.test(session.claude_session_id) ? session.claude_session_id : null;
+  if (session.kind === "claude") return { kind: "claude", shell: null, resume: id, typeAfterStart: null };
+  return { kind: "shell", shell: session.command, resume: null, typeAfterStart: id ? `claude --resume ${id}\r` : null };
+}
+
