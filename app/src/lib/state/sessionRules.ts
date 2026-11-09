@@ -74,9 +74,29 @@ export function restartShell(session: Pick<SessionInfo, "kind" | "command">): st
   return session.kind === "shell" ? session.command : null;
 }
 
-/** Amendment A (user request): a session that exits with code 0 closes its pane; any other exit code, or none, keeps the pane so its final output stays readable (spec 5.3). */
-export function closesOnExit(exitCode: number | null): boolean {
-  return exitCode === 0;
+/** A shell that exits sooner than this after starting keeps its pane, so a startup error stays readable. */
+export const SHELL_STARTUP_MS = 3_000;
+
+/**
+ * Amendment A (user request): whether a session's exit closes its pane.
+ *
+ * 1. No exit code (the daemon stopped, or the exit was not observed): the
+ *    pane stays.
+ * 2. Exit code 0: the pane closes.
+ * 3. A shell session that ran at least SHELL_STARTUP_MS: the pane closes
+ *    whatever the code. A shell ends only when told to (`exit`, Ctrl+D),
+ *    and zsh's and bash's `exit` returns the status of the last command
+ *    run, so `exit` after a failed command (127 for a command not found,
+ *    130 after Ctrl+C) reports a non-zero code. PowerShell's `exit`
+ *    returns 0, which is why rule 2 alone worked on Windows.
+ * 4. Otherwise (a Claude session that failed, or a shell that exited
+ *    during startup, for example from an error in ~/.zshrc): the pane
+ *    stays, so the final output stays readable (spec 5.3).
+ */
+export function closesOnExit(session: Pick<SessionInfo, "kind" | "created_at"> | undefined, exitCode: number | null, now: number): boolean {
+  if (exitCode === null) return false;
+  if (exitCode === 0) return true;
+  return session?.kind === "shell" && now - session.created_at >= SHELL_STARTUP_MS;
 }
 
 /** How a session that ended with its daemon is brought back (see `restorePlan`). */

@@ -63,11 +63,19 @@ describe("sessionRules", () => {
     expect(restartShell(session({ kind: "claude", command: "cmd.exe" }))).toBeNull();
   });
 
-  it("closes the pane only when the session exited with code 0 (Amendment A)", () => {
-    expect(closesOnExit(0)).toBe(true);
-    expect(closesOnExit(1)).toBe(false);
-    expect(closesOnExit(-1)).toBe(false);
-    expect(closesOnExit(null)).toBe(false);
+  it("closes the pane on exit code 0, and on any exit of a shell past startup (Amendment A)", () => {
+    const shell = { kind: "shell" as const, created_at: 1_000 };
+    const claude = { kind: "claude" as const, created_at: 1_000 };
+    expect(closesOnExit(claude, 0, 60_000)).toBe(true);
+    expect(closesOnExit(claude, 1, 60_000)).toBe(false);
+    expect(closesOnExit(claude, null, 60_000)).toBe(false);
+    // zsh's `exit` after a failed command reports that command's status.
+    expect(closesOnExit(shell, 127, 60_000)).toBe(true);
+    expect(closesOnExit(shell, 130, 60_000)).toBe(true);
+    expect(closesOnExit(shell, null, 60_000)).toBe(false);
+    // A shell that dies during startup keeps its error output on screen.
+    expect(closesOnExit(shell, 1, 2_000)).toBe(false);
+    expect(closesOnExit(undefined, 1, 60_000)).toBe(false);
   });
 });
 

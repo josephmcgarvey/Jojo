@@ -330,12 +330,11 @@ function handleControl(machine: string, msg: ControlMsg): void {
       break;
     }
     case "SessionExited":
-      // Plan 3 amendment A: an exit with code 0 (for example `exit` in a
-      // shell) closes the pane; any other code keeps the final output
-      // readable (spec 5.3). SessionExited is an event, so this applies only
-      // to exits observed while connected; sessions already exited in a
-      // Sessions reply are left for the user to close.
-      if (closesOnExit(msg.exit_code)) sendClose(msg.session_id);
+      // Plan 3 amendment A (see closesOnExit): `exit` in a shell closes the
+      // pane, as does any exit with code 0. SessionExited is an event, so
+      // this applies only to exits observed while connected; sessions
+      // already exited in a Sessions reply are left for the user to close.
+      if (closesOnExit(app.model.sessions[msg.session_id], msg.exit_code, Date.now())) sendClose(msg.session_id);
       break;
     case "SessionRemoved":
       commit(sessionRemoved(app.workspace, msg.session_id));
