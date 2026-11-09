@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import neonGlass from "./themes/neon-glass.json";
-  import { app, currentTab, focusedSessionId, markFocusedSessionSeen, startApp } from "./lib/state/app.svelte";
+  import { app, currentTab, focusedSessionId, startApp } from "./lib/state/app.svelte";
   import { closeDialog, closeMenu, ui } from "./lib/state/ui.svelte";
   import { resolveShortcut } from "./lib/input/shortcuts";
   import { runAction } from "./lib/state/actions";
@@ -49,9 +49,6 @@
     runAction(action);
   }
   const tab = $derived(currentTab());
-  // Reads the focused session, its state and the window focus, so it reruns
-  // when any of them changes (spec 7.3 rule 2).
-  $effect(markFocusedSessionSeen);
 
   /** Closing a menu returns keyboard focus to the focused pane's terminal. */
   function closeMenuAndRefocus(): void {

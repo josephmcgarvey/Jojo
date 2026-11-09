@@ -6,7 +6,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { WebglAddon } from "@xterm/addon-webgl";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
-  import { app, machineOfSession } from "../lib/state/app.svelte";
+  import { app, machineOfSession, markSeenOnInput } from "../lib/state/app.svelte";
   import { noScreenMessage } from "../lib/terminal/pane";
   import { contextMenuTarget } from "../lib/input/mouse";
   import { resolveShortcut } from "../lib/input/shortcuts";
@@ -163,6 +163,7 @@
     const encoder = new TextEncoder();
     const onData = created.onData((data) => {
       if (!session.attachable) return;
+      markSeenOnInput(id);
       void sendInput(id, encoder.encode(data), machine).catch(() => {});
     });
     const onBinary = created.onBinary((data) => {

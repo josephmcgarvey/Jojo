@@ -404,14 +404,15 @@ function maybeToast(previous: SessionInfo["state"] | undefined, session: Session
 }
 
 /**
- * Spec 7.3 rule 2: a done session becomes idle once its pane is focused in
- * the foreground window. App.svelte runs this whenever the focused session,
- * its state or the window focus changes.
+ * A done session becomes idle when the user types into its pane (user
+ * request, replacing spec 7.3 rule 2's "when its pane receives focus": a
+ * session that finished while its pane was in front flipped back to idle
+ * at once, so its done badge never showed). TerminalPane calls this for
+ * each keystroke; only the first one in the done state sends MarkSeen.
  */
-export function markFocusedSessionSeen(): void {
-  const id = focusedSessionId();
-  if (!id || !app.windowFocused || app.model.sessions[id]?.state !== "done") return;
-  void sendControl({ type: "MarkSeen", session_id: id }, machineOfSession(id)).catch(() => {});
+export function markSeenOnInput(sessionId: string): void {
+  if (app.model.sessions[sessionId]?.state !== "done") return;
+  void sendControl({ type: "MarkSeen", session_id: sessionId }, machineOfSession(sessionId)).catch(() => {});
 }
 
 export function projectLayout(projectId: string): ProjectLayout {
