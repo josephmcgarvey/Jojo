@@ -2,12 +2,16 @@
   // Spec 9.10: the settings screen. It edits a copy of the settings and
   // saves them with Save; terminal font changes apply to open panes at once,
   // scrollback to panes opened afterwards. It also offers Restart daemon
-  // (This PC) and Debug ▸ Rehydrate pane.
+  // (This PC) and Debug ▸ Rehydrate pane. The theme, base color and interface
+  // font preview live while the screen is open; Cancel restores the saved ones.
   import { onMount } from "svelte";
   import type { Settings } from "../lib/backend/Settings";
   import { errorText } from "../lib/errors";
+  import { TERMINAL_FONTS, UI_FONTS, terminalFontStack, uiFontStack } from "../lib/fonts";
+  import { BASE_COLOR_PRESETS, effectiveAccent, parseHex } from "../lib/palette";
   import { app, confirmRestartLocalDaemon, focusedSessionId, rehydrateFocusedPane, runningSessions, saveSettings } from "../lib/state/app.svelte";
   import { shellChoices } from "../lib/state/shells";
+  import { THEMES, themeById } from "../lib/theme";
   import { LOCAL_MACHINE } from "../lib/wire/bridge";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -24,12 +28,36 @@
     promptLabels: false,
     sound: true,
     restoreSessions: true,
+    uiFontFamily: "Geist Sans",
+    accentColor: "",
   };
+  /** The terminal font select's value for a family typed into the text field. */
+  const OTHER_FONT = "__other__";
 
   let draft = $state<Settings>({ ...DEFAULTS, ...(app.settings ?? {}) });
   $effect(() => {
     const match = app.shells.find((s) => s.program !== draft.defaultShell && sameProgram(s.program, draft.defaultShell));
     if (match) draft.defaultShell = match.program;
+  });
+  let otherFont = $state(!TERMINAL_FONTS.some((f) => f.family === draft.terminalFontFamily));
+  const fontChoice = $derived(otherFont ? OTHER_FONT : draft.terminalFontFamily);
+  function chooseFont(value: string): void {
+    otherFont = value === OTHER_FONT;
+    if (!otherFont) draft.terminalFontFamily = value;
+  }
+  const theme = $derived(themeById(draft.theme));
+  /** The base color in use: the chosen one clamped to the theme's lightness range, or the theme's own. */
+  const accent = $derived(effectiveAccent(theme, draft.accentColor));
+  const swatches = $derived([
+    { name: `${theme.name} default`, value: "", shown: theme.accent },
+    ...BASE_COLOR_PRESETS.map((p) => ({ name: p.name, value: p.color, shown: effectiveAccent(theme, p.color) })),
+  ]);
+  // Live preview of the appearance choices; cleared when the screen closes.
+  $effect(() => {
+    app.themePreview = { theme: draft.theme, accentColor: draft.accentColor, uiFontFamily: draft.uiFontFamily };
+  });
+  onMount(() => () => {
+    app.themePreview = null;
   });
   let error = $state<string | null>(null);
   let saving = $state(false);
@@ -54,6 +82,8 @@
       await saveSettings({
         ...draft,
         terminalFontFamily: draft.terminalFontFamily.trim() || DEFAULTS.terminalFontFamily,
+        uiFontFamily: draft.uiFontFamily.trim() || DEFAULTS.uiFontFamily,
+        accentColor: parseHex(draft.accentColor) ? draft.accentColor.toLowerCase() : "",
         terminalFontSize: Math.round(clamped(draft.terminalFontSize, 8, 32, DEFAULTS.terminalFontSize)),
         terminalLineHeight: clamped(draft.terminalLineHeight, 1, 2, DEFAULTS.terminalLineHeight),
         scrollbackLines: Math.round(clamped(draft.scrollbackLines, 10_000, 1_000_000, DEFAULTS.scrollbackLines)),
@@ -78,7 +108,19 @@
 
     <section>
       <h3>Terminal</h3>
-      <label><span>Font family</span><input bind:value={draft.terminalFontFamily} spellcheck="false" /></label>
+      <label>
+        <span>Font</span>
+        <select value={fontChoice} onchange={(e) => chooseFont(e.currentTarget.value)}>
+          {#each TERMINAL_FONTS as font (font.family)}
+            <option value={font.family}>{font.family}{font.source === "windows" ? " (Windows)" : ""}</option>
+          {/each}
+          <option value={OTHER_FONT}>Other installed font…</option>
+        </select>
+      </label>
+      {#if otherFont}
+        <label><span>Font name</span><input bind:value={draft.terminalFontFamily} spellcheck="false" placeholder="Font family name, for example Hack" /></label>
+      {/if}
+      <p class="sample" style:font-family={terminalFontStack(draft.terminalFontFamily)}>claude --resume  0O 1lI {"{}"} [] =&gt; ~/.jojo</p>
       <label><span>Font size</span><input type="number" min="8" max="32" step="1" bind:value={draft.terminalFontSize} /></label>
       <label><span>Line height</span><input type="number" min="1" max="2" step="0.05" bind:value={draft.terminalLineHeight} /></label>
       <label><span>Scrollback lines</span><input type="number" min="10000" max="1000000" step="1000" bind:value={draft.scrollbackLines} /></label>
@@ -100,7 +142,49 @@
       <h3>Appearance and notifications</h3>
       <label>
         <span>Theme</span>
-        <select bind:value={draft.theme}><option value="neon-glass">Neon Glass</option></select>
+        <select bind:value={draft.theme}>
+          {#each Object.entries(THEMES) as [id, t] (id)}
+            <option value={id}>{t.name} ({t.mode})</option>
+          {/each}
+        </select>
+      </label>
+      <div class="field">
+        <span>Base color</span>
+        <div class="swatches">
+          {#each swatches as swatch (swatch.name)}
+            <button
+              class="swatch"
+              class:chosen={swatch.shown === accent}
+              title={swatch.name}
+              aria-label={`Base color ${swatch.name}`}
+              aria-pressed={swatch.shown === accent}
+              style:background={swatch.shown}
+              onclick={() => (draft.accentColor = swatch.value)}
+            ></button>
+          {/each}
+          <input
+            type="color"
+            title="Any color"
+            aria-label="Any base color"
+            value={accent}
+            oninput={(e) => (draft.accentColor = e.currentTarget.value)}
+          />
+        </div>
+      </div>
+      <p class="note indent">
+        Panels, lines, text tints and the terminal background follow the base color. The state colors (working, needs you, done, error) do not change.
+        {#if parseHex(draft.accentColor) && accent !== draft.accentColor.toLowerCase()}Lightness is adjusted to {accent} to stay readable on {theme.name}.{/if}
+      </p>
+      <label>
+        <span>Interface font</span>
+        <select bind:value={draft.uiFontFamily}>
+          {#each UI_FONTS as font (font.family)}
+            <option value={font.family}>{font.family}{font.source === "windows" ? " (Windows)" : ""}</option>
+          {/each}
+          {#if !UI_FONTS.some((f) => f.family === draft.uiFontFamily)}
+            <option value={draft.uiFontFamily}>{draft.uiFontFamily}</option>
+          {/if}
+        </select>
       </label>
       <label class="check"><input type="checkbox" bind:checked={draft.toasts} /><span>Windows notifications for sessions that need you, finish or fail</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.sound} /><span>Play a chime when a session finishes or needs a response</span></label>
@@ -204,6 +288,52 @@
   .note {
     color: var(--jojo-muted);
     font-size: 12px;
+  }
+  .note.indent,
+  .sample {
+    margin: -2px 0 10px 138px;
+  }
+  .sample {
+    padding: 6px 8px;
+    border: 1px solid var(--jojo-line);
+    border-radius: var(--jojo-radius-sm);
+    background: var(--jojo-pane);
+    color: var(--jojo-fg);
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .field {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--jojo-fg2);
+  }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    box-shadow: inset 0 0 0 1px var(--jojo-line);
+  }
+  .swatch.chosen {
+    border-color: var(--jojo-fg);
+  }
+  input[type="color"] {
+    width: 30px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--jojo-line);
+    border-radius: var(--jojo-radius-sm);
+    background: none;
   }
   .error {
     color: var(--jojo-error);

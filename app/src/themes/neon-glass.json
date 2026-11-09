@@ -1,5 +1,7 @@
 {
   "name": "Neon Glass",
+  "mode": "dark",
+  "accent": "#9b8cff",
   "tokens": {
     "bg": "#060816",
     "bg-glow": "radial-gradient(700px 420px at 90% -20%, rgba(155, 140, 255, 0.55), transparent 60%), radial-gradient(520px 380px at 0% 120%, rgba(62, 230, 176, 0.32), transparent 60%), radial-gradient(400px 300px at 50% 60%, rgba(127, 212, 255, 0.12), transparent 70%), #060816",

@@ -14,6 +14,7 @@
   import { openLink } from "../lib/terminal/links";
   import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
+  import { terminalFontStack } from "../lib/fonts";
   import { registerTerminal } from "../lib/terminal/registry";
   import { router } from "../lib/terminal/router";
   import { clampSize } from "../lib/terminal/size";
@@ -29,6 +30,13 @@
   /** Set in onMount and cleared on unmount; read by the focus effect below. */
   let term: Terminal | undefined;
 
+  // A theme or base color change recolors open terminals; xterm.js repaints
+  // with the new palette without a resize.
+  $effect(() => {
+    const next = terminalTheme;
+    if (term) term.options.theme = next;
+  });
+
   onMount(() => {
     const settings = app.settings;
     const id = session.id;
@@ -36,7 +44,7 @@
     const machine = machineOfSession(id);
     const created = new Terminal({
       allowProposedApi: true,
-      fontFamily: settings?.terminalFontFamily ?? "Geist Mono",
+      fontFamily: terminalFontStack(settings?.terminalFontFamily ?? "Geist Mono"),
       fontSize: settings?.terminalFontSize ?? 13,
       lineHeight: settings?.terminalLineHeight ?? 1.25,
       scrollback: Math.max(settings?.scrollbackLines ?? 10_000, 10_000),

@@ -15,4 +15,13 @@ sound: boolean,
  * (user request, like Herdr): claude sessions with `claude --resume`,
  * shells as the same shell in the same folder.
  */
-restoreSessions: boolean, };
+restoreSessions: boolean, 
+/**
+ * The interface font family (Settings ▸ Interface font).
+ */
+uiFontFamily: string, 
+/**
+ * The base color the theme is redrawn around, as `#rrggbb`; empty uses
+ * the theme's own accent.
+ */
+accentColor: string, };

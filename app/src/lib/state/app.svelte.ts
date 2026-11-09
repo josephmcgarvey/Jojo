@@ -14,6 +14,7 @@ import type { Settings } from "../backend/Settings";
 import type { ShellOption } from "../backend/ShellOption";
 import type { TabLayout } from "../backend/TabLayout";
 import { errorText } from "../errors";
+import { loadTerminalFont, terminalFontStack } from "../fonts";
 import { focusNeighbor, layoutRects, type FocusDirection } from "../layout/geometry";
 import { reconcileMachine } from "../layout/reconcile";
 import * as tabs from "../layout/tabs";
@@ -22,6 +23,7 @@ import type { ControlMsg } from "../protocol/ControlMsg";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
 import { router } from "../terminal/router";
+import type { Appearance } from "../theme";
 import { LOCAL_MACHINE, sendControl, sendInput, subscribe } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { askConfirm } from "./dialog.svelte";
@@ -71,6 +73,8 @@ export const app = $state({
   /** True once any connection to jojod has succeeded in this app run. */
   everConnected: false,
   settings: null as Settings | null,
+  /** The Settings screen's unsaved theme, base color and interface font, shown while it is open. */
+  themePreview: null as Appearance | null,
   /** Shells installed on this PC (available_shells), for the New shell menus. */
   shells: [] as ShellOption[],
   selectedProjectId: null as string | null,
@@ -738,8 +742,10 @@ export function dismissError(): void {
 export async function saveSettings(settings: Settings): Promise<void> {
   await invoke("save_settings", { settings });
   app.settings = settings;
+  // The new font's faces load before the panes measure their cells with it.
+  await loadTerminalFont(settings.terminalFontFamily);
   for (const terminal of allTerminals()) {
-    terminal.applyFont(settings.terminalFontFamily, settings.terminalFontSize, settings.terminalLineHeight);
+    terminal.applyFont(terminalFontStack(settings.terminalFontFamily), settings.terminalFontSize, settings.terminalLineHeight);
   }
 }
 

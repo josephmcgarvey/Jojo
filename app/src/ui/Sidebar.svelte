@@ -11,6 +11,7 @@
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
+  import Cog from "./Cog.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
 
@@ -133,8 +134,8 @@
   </div>
   {/each}
   <div class="footer">
-    <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}>+ Machine</button>
-    <button class="settings" title="Settings" aria-label="Settings" onclick={() => openDialog({ kind: "settings" })}>⚙</button>
+    <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}><PlusCircle /><span>Machine</span></button>
+    <button class="settings" title="Settings" aria-label="Settings" onclick={() => openDialog({ kind: "settings" })}><Cog size={22} /></button>
   </div>
 </aside>
 
@@ -190,7 +191,18 @@
   }
   .add-machine,
   .settings {
+    display: flex;
+    align-items: center;
     color: var(--jojo-muted);
+  }
+  .add-machine {
+    gap: 6px;
+    padding: 4px 6px 4px 2px;
+    font-weight: 500;
+  }
+  .settings {
+    padding: 3px;
+    border-radius: var(--jojo-radius-sm);
   }
   .settings:hover,
   .add-machine:hover {

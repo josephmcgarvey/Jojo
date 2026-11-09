@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import neonGlass from "./themes/neon-glass.json";
   import { app, currentTab, focusedSessionId, startApp } from "./lib/state/app.svelte";
   import { closeDialog, closeMenu, ui } from "./lib/state/ui.svelte";
   import { resolveShortcut } from "./lib/input/shortcuts";
   import { runAction } from "./lib/state/actions";
   import { dialog } from "./lib/state/dialog.svelte";
   import { terminalControls } from "./lib/terminal/registry";
-  import { applyTheme, type Theme } from "./lib/theme";
+  import { applyTheme, resolveTheme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
   import ContextMenu from "./ui/ContextMenu.svelte";
@@ -20,9 +19,11 @@
   import StatusBar from "./ui/StatusBar.svelte";
   import TabBar from "./ui/TabBar.svelte";
 
-  const theme = neonGlass as Theme;
+  // The theme follows the saved appearance settings, or the Settings
+  // screen's unsaved choices while it is open (live preview).
+  const theme = $derived(resolveTheme(app.themePreview ?? app.settings));
+  $effect(() => applyTheme(theme));
   onMount(() => {
-    applyTheme(theme);
     window.addEventListener("keydown", onKeydown, true);
     const stopApp = startApp();
     return () => {
