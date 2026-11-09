@@ -135,10 +135,14 @@ mod tests {
         );
     }
 
+    // The Windows detection tests build a PATH with C:\ paths, which only
+    // split correctly with Windows' `;` separator.
+    #[cfg(windows)]
     fn path_var(dirs: &[&str]) -> Option<OsString> {
         Some(std::env::join_paths(dirs.iter().map(PathBuf::from)).unwrap())
     }
 
+    #[cfg(windows)]
     #[test]
     fn offers_only_the_shells_found_on_path_in_menu_order() {
         let exists = files(&[r"C:\Windows\System32\cmd.exe", r"C:\Program Files\PowerShell\7\pwsh.exe"]);
@@ -152,6 +156,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn finds_git_bash_under_the_first_root_that_has_it() {
         let exists = files(&[r"C:\Users\me\AppData\Local\Programs\Git\bin\bash.exe"]);
@@ -160,6 +165,7 @@ mod tests {
         assert_eq!(shells, vec![ShellOption { label: "Git Bash".into(), program: r"C:\Users\me\AppData\Local\Programs\Git\bin\bash.exe".into() }]);
     }
 
+    #[cfg(windows)]
     #[test]
     fn ignores_the_wsl_bash_launcher_on_path() {
         let exists = files(&[r"C:\Windows\System32\bash.exe"]);
