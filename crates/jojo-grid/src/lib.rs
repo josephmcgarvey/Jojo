@@ -9,19 +9,84 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term};
 use std::sync::{Arc, Mutex};
-use vte::ansi::Processor;
+use vte::ansi::{Processor, Rgb};
 
 /// Collects bytes the emulator wants to send back to the program, such as
-/// the answer to a cursor position request (`ESC [ 6 n`).
+/// the answer to a cursor position request (`ESC [ 6 n`) or a color query
+/// (`ESC ] 11 ; ? BEL`). Replies are appended in the order the queries
+/// appear in the output.
+///
+/// Color queries must be answered here, in that order, and not by the
+/// window. Programs such as `gh` (through termenv) send `OSC 11 ; ?` and
+/// then a cursor position request as an end marker, and stop reading at the
+/// first reply that is not a color: when the window answered the color
+/// query, its reply arrived after the daemon's cursor reply, the program had
+/// already exited, and the shell received `ESC ]11;rgb:0808/0b0b/1616` as
+/// typed text.
 #[derive(Clone, Default)]
 struct ReplyCollector(Arc<Mutex<Vec<u8>>>);
 
 impl EventListener for ReplyCollector {
     fn send_event(&self, event: Event) {
-        if let Event::PtyWrite(text) = event {
-            self.0.lock().expect("reply lock").extend_from_slice(text.as_bytes());
+        match event {
+            Event::PtyWrite(text) => self.0.lock().expect("reply lock").extend_from_slice(text.as_bytes()),
+            Event::ColorRequest(index, format) => {
+                self.0.lock().expect("reply lock").extend_from_slice(format(reported_color(index)).as_bytes());
+            }
+            _ => {}
         }
     }
+}
+
+/// The 16 ANSI colors of the Neon Glass terminal palette
+/// (app/src/themes/neon-glass.json, `terminal`).
+const ANSI: [(u8, u8, u8); 16] = [
+    (0x1b, 0x20, 0x40),
+    (0xff, 0x5c, 0x7a),
+    (0x3e, 0xe6, 0xb0),
+    (0xff, 0xb3, 0x47),
+    (0x7f, 0xa8, 0xff),
+    (0xc4, 0x9b, 0xff),
+    (0x7f, 0xd4, 0xff),
+    (0xd6, 0xdc, 0xff),
+    (0x5a, 0x63, 0x90),
+    (0xff, 0x8a, 0xa0),
+    (0x7f, 0xf0, 0xc8),
+    (0xff, 0xcc, 0x80),
+    (0xa8, 0xc4, 0xff),
+    (0xdc, 0xc4, 0xff),
+    (0xb0, 0xe6, 0xff),
+    (0xff, 0xff, 0xff),
+];
+const FOREGROUND: (u8, u8, u8) = (0xd6, 0xdc, 0xff);
+const BACKGROUND: (u8, u8, u8) = (0x08, 0x0b, 0x16);
+const CURSOR: (u8, u8, u8) = (0x9b, 0x8c, 0xff);
+
+/// The color reported for a query of palette `index`: 0 to 15 the ANSI
+/// colors, 16 to 231 the xterm 6x6x6 color cube, 232 to 255 the xterm gray
+/// ramp, 256 the foreground (OSC 10), 257 the background (OSC 11) and 258
+/// the cursor (OSC 12). Any other index reports the foreground.
+///
+/// These are the Neon Glass defaults. The daemon does not know the theme
+/// or base color the window shows (Settings), so a program asking under
+/// Daylight or another base color is told the Neon Glass colors.
+fn reported_color(index: usize) -> Rgb {
+    const CUBE: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    let (r, g, b) = match index {
+        0..=15 => ANSI[index],
+        16..=231 => {
+            let i = index - 16;
+            (CUBE[i / 36], CUBE[(i / 6) % 6], CUBE[i % 6])
+        }
+        232..=255 => {
+            let level = (8 + 10 * (index - 232)) as u8;
+            (level, level, level)
+        }
+        257 => BACKGROUND,
+        258 => CURSOR,
+        _ => FOREGROUND,
+    };
+    Rgb { r, g, b }
 }
 
 /// Smallest grid width accepted by `TermGrid::new` and `resize`. Below this,
@@ -162,6 +227,19 @@ mod tests {
         g.feed(b"ab\x1b[6n");
         assert_eq!(g.take_replies(), b"\x1b[1;3R".to_vec());
         assert!(g.take_replies().is_empty());
+    }
+
+    #[test]
+    fn color_queries_are_answered_in_order_with_the_other_replies() {
+        let mut g = TermGrid::new(80, 24, 1000);
+        // termenv's background query followed by its end marker.
+        g.feed(b"\x1b]11;?\x07\x1b[6n");
+        assert_eq!(g.take_replies(), b"\x1b]11;rgb:0808/0b0b/1616\x07\x1b[1;1R".to_vec());
+        g.feed(b"\x1b]10;?\x1b\\\x1b]4;1;?\x07\x1b]4;196;?\x07");
+        assert_eq!(
+            String::from_utf8(g.take_replies()).unwrap(),
+            "\x1b]10;rgb:d6d6/dcdc/ffff\x1b\\\x1b]4;1;rgb:ffff/5c5c/7a7a\x07\x1b]4;196;rgb:ffff/0000/0000\x07"
+        );
     }
 
     #[test]
