@@ -15,6 +15,7 @@
 
   const renaming = $derived(ui.renaming?.kind === "session" && ui.renaming.where === "pane" && ui.renaming.sessionId === session.id);
   const notice = $derived(notices[session.id]);
+  const project = $derived(app.model.projects[session.project_id]);
   const machineId = $derived(machineOfSession(session.id));
   const overlay = $derived(disconnectedOverlay(app.machines.find((m) => m.id === machineId), app.statuses[machineId]));
 
@@ -51,6 +52,8 @@
     {/if}
     {#if notice}
       <span class="notice" class:error={notice.tone === "error"} role="status">{notice.text}</span>
+    {:else if project}
+      <span class="project">{project.name}</span>
     {/if}
   </header>
   <div class="body">
@@ -64,31 +67,39 @@
 </div>
 
 <style>
+  /* Design pass 1.3: frosted cards; the terminal inside stays opaque. */
   .pane {
     display: flex;
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background: var(--jojo-pane);
+    background: var(--jojo-glass-pane);
+    backdrop-filter: blur(10px);
     border: 1px solid var(--jojo-line);
-    border-radius: var(--jojo-radius-sm);
+    border-radius: var(--jojo-radius-lg);
     overflow: hidden;
   }
-  /* Spec 9.3 rule 4: the focused pane has a 1 px accent outline. */
+  /* Spec 9.3 rule 4, design pass 1.3: the focused pane's accent border and glow. */
   .pane.focused {
-    border-color: var(--jojo-accent);
+    border-color: var(--jojo-focus-border);
+    box-shadow: var(--jojo-focus-ring);
   }
   .strip {
     display: flex;
     align-items: center;
     gap: 7px;
     flex: none;
-    height: 24px;
-    padding: 0 10px;
-    font-size: 11.5px;
+    height: 28px;
+    padding: 0 14px;
+    font-size: 10.5px;
+    color: var(--jojo-muted);
+  }
+  .pane.focused .strip {
     color: var(--jojo-fg2);
-    background: var(--jojo-bar);
-    border-bottom: 1px solid var(--jojo-line);
+  }
+  .project {
+    flex: none;
+    color: var(--jojo-muted);
   }
   .label {
     flex: 1;
@@ -125,6 +136,6 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    padding: 6px 8px;
+    padding: 2px 10px 10px;
   }
 </style>

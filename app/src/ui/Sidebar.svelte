@@ -11,6 +11,7 @@
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
+  import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
 
   /** Right-click on a machine header (spec 8.4): Reconnect, and Remove for remote machines. */
@@ -69,7 +70,7 @@
 </script>
 
 <aside class="side">
-  <div class="brand" data-tauri-drag-region>jojo</div>
+  <div class="brand" data-tauri-drag-region>Jojo</div>
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}
   {@const statusText = machineStatusText(machine, status)}
@@ -79,9 +80,9 @@
     <span class="dot" class:ok={status?.state === "connected"}></span>
     <span class="grow">{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</span>
     {#if machine.kind === "local"}
-      <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}>+</button>
+      <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}><PlusCircle /></button>
     {:else}
-      <button class="icon" title="Add project" aria-label={`Add project on ${machine.label}`} onclick={() => openDialog({ kind: "add-project", machineId: machine.id })}>+</button>
+      <button class="icon" title="Add project" aria-label={`Add project on ${machine.label}`} onclick={() => openDialog({ kind: "add-project", machineId: machine.id })}><PlusCircle /></button>
     {/if}
   </div>
   {#each projectsOf(machine.id) as project (project.id)}
@@ -98,7 +99,7 @@
         aria-label={`New terminal in ${project.name}`}
         onclick={() => newSession(project.id, "shell")}
         oncontextmenu={(e) => onNewSessionMenu(e, project.id, machine.kind === "local")}
-      >+</button>
+      ><PlusCircle /></button>
     </div>
     {#each sessionsForProject(app.model, project.id) as session (session.id)}
       {#if isRenaming(session.id)}
@@ -138,19 +139,23 @@
 </aside>
 
 <style>
+  /* Design pass 1.2: a floating frosted panel. */
   .side {
     display: flex;
     flex-direction: column;
     gap: 1px;
+    margin: 8px 0 8px 8px;
     padding: 10px 8px;
-    background: var(--jojo-side);
-    border-right: 1px solid var(--jojo-line);
+    background: var(--jojo-glass-side);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--jojo-line);
+    border-radius: var(--jojo-radius);
     overflow-y: auto;
     min-height: 0;
   }
   .brand {
     padding: 4px 8px 10px;
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 600;
     background: var(--jojo-brand-gradient);
     -webkit-background-clip: text;
@@ -210,12 +215,19 @@
   .grow {
     flex: 1;
   }
+  /* Design pass 2.2: the filled + icons. */
   .icon {
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    border-radius: 50%;
     color: var(--jojo-muted);
-    padding: 0 4px;
   }
   .icon:hover {
     color: var(--jojo-fg);
+  }
+  .icon:active {
+    color: var(--jojo-accent);
   }
   .project {
     display: flex;
@@ -248,9 +260,8 @@
     text-align: left;
   }
   .session.active {
-    background: var(--jojo-sel);
+    background: var(--jojo-sel-gradient);
     color: var(--jojo-fg);
-    box-shadow: inset 2px 0 0 var(--jojo-accent);
   }
   .label {
     flex: 1;

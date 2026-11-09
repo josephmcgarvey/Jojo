@@ -72,14 +72,15 @@
 </div>
 
 <style>
+  /* Design pass 1.3: pane cards 10 px apart (5 px area padding plus 5 px slot padding). */
   .area {
     position: absolute;
     inset: 0;
-    padding: 3px;
+    padding: 0 5px 5px;
   }
   .slot {
     position: absolute;
-    padding: 3px;
+    padding: 5px;
     min-width: 0;
     min-height: 0;
   }
@@ -88,13 +89,13 @@
     z-index: 1;
   }
   .divider.row {
-    width: 6px;
-    margin-left: -3px;
+    width: 10px;
+    margin-left: -5px;
     cursor: col-resize;
   }
   .divider.column {
-    height: 6px;
-    margin-top: -3px;
+    height: 10px;
+    margin-top: -5px;
     cursor: row-resize;
   }
   .divider:hover {

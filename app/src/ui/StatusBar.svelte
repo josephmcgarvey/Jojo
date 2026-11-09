@@ -13,24 +13,41 @@
 </script>
 
 <footer class="status">
-  <span>{machine?.label ?? "This PC"}</span>
-  {#if project}<span class="path">{project.path}</span>{/if}
+  <span class="pill">{machine?.label ?? "This PC"}</span>
+  {#if project}<span class="pill path">{project.path}</span>{/if}
   <span class="grow"></span>
-  <span>{SHORTCUT_LABELS.switcher} to switch</span>
+  <span><kbd>{SHORTCUT_LABELS.switcher}</kbd> to switch</span>
 </footer>
 
 <style>
   .path {
     font-family: var(--jojo-font-mono);
   }
+  /* Design pass 2.6: pills over the window glow. */
   .status {
     display: flex;
-    gap: 14px;
-    padding: 5px 12px;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 12px 8px;
     font-size: 11px;
     color: var(--jojo-muted);
-    background: var(--jojo-bar);
-    border-top: 1px solid var(--jojo-line);
+  }
+  .pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--jojo-pill);
+    border: 1px solid var(--jojo-line);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  kbd {
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--jojo-line);
+    color: var(--jojo-fg2);
+    font-family: var(--jojo-font-mono);
+    font-size: 10px;
   }
   .grow {
     flex: 1;

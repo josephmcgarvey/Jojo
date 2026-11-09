@@ -6,6 +6,7 @@
   import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
+  import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
   import WindowControls from "./WindowControls.svelte";
 
@@ -48,38 +49,35 @@
     </div>
   {/each}
   {#if app.selectedProjectId}
-    <button class="new" title="New Claude session" aria-label="New Claude session" onclick={() => newSession(app.selectedProjectId!, "claude")}>+</button>
+    <button class="new" title="New terminal" aria-label="New terminal" onclick={() => newSession(app.selectedProjectId!, "shell")}><PlusCircle /></button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
   <WindowControls />
 </div>
 
 <style>
+  /* Design pass 2.4: underline tabs over the window glow. */
   .tabs {
     display: flex;
     align-items: flex-end;
-    gap: 4px;
-    height: 38px;
-    padding: 6px 0 0 8px;
-    background: var(--jojo-bar);
-    border-bottom: 1px solid var(--jojo-line);
+    gap: 2px;
+    height: 40px;
+    padding: 6px 0 0 10px;
   }
   .tab {
     display: flex;
     align-items: center;
     gap: 4px;
     padding: 0 6px 0 12px;
-    height: 31px;
+    height: 32px;
     max-width: 260px;
-    border-radius: var(--jojo-radius) var(--jojo-radius) 0 0;
+    border-bottom: 2px solid transparent;
     color: var(--jojo-muted);
   }
   .tab.on {
-    background: var(--jojo-pane);
     color: var(--jojo-fg);
-    border: 1px solid var(--jojo-line);
-    border-bottom-color: transparent;
-    margin-bottom: -1px;
+    border-bottom-color: var(--jojo-accent);
+    text-shadow: var(--jojo-tab-glow);
   }
   .title {
     display: flex;
@@ -108,9 +106,17 @@
     color: var(--jojo-fg);
   }
   .new {
-    height: 31px;
-    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 8px;
     color: var(--jojo-muted);
+  }
+  .new:hover {
+    color: var(--jojo-fg);
+  }
+  .new:active {
+    color: var(--jojo-accent);
   }
   .drag {
     flex: 1;

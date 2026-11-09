@@ -98,7 +98,7 @@
 <style>
   .window {
     display: grid;
-    grid-template-columns: 250px 1fr;
+    grid-template-columns: 268px 1fr;
     height: 100%;
     background: var(--jojo-bg-glow);
   }
