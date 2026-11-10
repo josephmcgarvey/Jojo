@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectionBanner } from "./banner";
+import { connectionBanner, errorBannerText } from "./banner";
 
 const LOG = String.raw`%LOCALAPPDATA%\Jojo\logs\jojod.<date>.log`;
 
@@ -40,5 +40,17 @@ describe("connectionBanner", () => {
     });
     expect(connectionBanner({ state: "version_mismatch", message: "x" }, true, 3)?.action).toBe("Restart now (ends 3 sessions)");
     expect(connectionBanner({ state: "version_mismatch", message: "x" }, true, 1)?.action).toBe("Restart now (ends 1 session)");
+  });
+});
+
+describe("errorBannerText", () => {
+  it("explains an error from a daemon older than the app", () => {
+    expect(errorBannerText({ request: "Frame", message: "bad control JSON: unknown variant `RenameProject`, expected one of `Hello`" })).toBe(
+      "This jojod is older than the app and does not support RenameProject. On This PC, use Settings ▸ Restart daemon; for a remote location, add it again with Remote location, which installs the new jojod.",
+    );
+  });
+
+  it("shows other errors as request and message", () => {
+    expect(errorBannerText({ request: "AddProject", message: "not a directory: /srv/x" })).toBe("AddProject: not a directory: /srv/x");
   });
 });

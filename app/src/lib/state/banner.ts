@@ -55,3 +55,18 @@ export function connectionBanner(status: ConnectionStatus, everConnected: boolea
       return { text: "Auth failed. Load your key with ssh-add, then Reconnect.", action: "Reconnect" };
   }
 }
+
+/**
+ * The text of the error banner for a daemon Error. A daemon older than the
+ * app answers a message it does not know with `Frame: bad control JSON:
+ * unknown variant ...`; that is shown as what happened and how to update
+ * the daemon (the running jojod keeps its old code until it restarts).
+ * Every other error shows as `<request>: <message>`.
+ */
+export function errorBannerText(error: { request: string; message: string }): string {
+  const unknown = error.request === "Frame" ? /unknown variant [`'"]?(\w+)/.exec(error.message) : null;
+  if (unknown) {
+    return `This jojod is older than the app and does not support ${unknown[1]}. On This PC, use Settings ▸ Restart daemon; for a remote location, add it again with Remote location, which installs the new jojod.`;
+  }
+  return `${error.request}: ${error.message}`;
+}

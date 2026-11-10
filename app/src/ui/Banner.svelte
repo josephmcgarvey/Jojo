@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { app, dismissError, restartDaemon } from "../lib/state/app.svelte";
-  import { connectionBanner } from "../lib/state/banner";
+  import { connectionBanner, errorBannerText } from "../lib/state/banner";
 
   /** This PC's running sessions, read from state.json when its jojod speaks another protocol. */
   let runningSessions = $state<number | null>(null);
@@ -36,7 +36,7 @@
 {/if}
 {#if error}
   <div class="banner error">
-    {error.request}: {error.message}
+    {errorBannerText(error)}
     <button class="action" aria-label="Dismiss" onclick={dismissError}>×</button>
   </div>
 {/if}
