@@ -8,9 +8,10 @@
 # Artifacts).
 name: macOS
 
+# Run by hand only (Actions > macOS > Run workflow, or
+# `gh workflow run macos.yml`): macOS builds are made when asked for, not on
+# every push.
 on:
-  push:
-    branches: [master, "mac/**"]
   workflow_dispatch:
 
 concurrency:
