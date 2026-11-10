@@ -236,15 +236,23 @@
     flex: none;
     height: 22px;
   }
+  /* A machine's name heads its projects: 13 px semibold in the main text
+     color, above the 12.5 px project names, so each machine's block reads
+     as one group. */
   .machine {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 10px 8px 4px;
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--jojo-muted);
+    gap: 8px;
+    padding: 8px 8px 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--jojo-fg);
+  }
+  /* A line and space between one machine's block and the next. */
+  .machine-group + .machine-group {
+    margin-top: 8px;
+    padding-top: 4px;
+    border-top: 1px solid var(--jojo-line);
   }
   /* Spec 8.3 rule 1: a machine that is not connected keeps its sessions
      and their last badges, dimmed. */
@@ -285,12 +293,14 @@
     opacity: 0.55;
   }
   .state {
-    text-transform: none;
-    letter-spacing: 0;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--jojo-muted);
   }
   .dot {
-    width: 6px;
-    height: 6px;
+    flex: none;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--jojo-needs-you);
   }
