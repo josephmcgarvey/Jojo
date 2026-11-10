@@ -10,7 +10,7 @@ name: macOS
 
 on:
   push:
-    branches: [master, design-pass, "mac/**"]
+    branches: [master, "mac/**"]
   workflow_dispatch:
 
 concurrency:
@@ -52,30 +52,22 @@ jobs:
       - name: Rust tests
         run: cargo test --workspace --no-fail-fast
 
+  # Both installers are built in one job, one after the other. With two
+  # jobs, GitHub sometimes found a macOS machine for one and none for the
+  # other ("The job was not acquired by Runner ... after multiple
+  # attempts"), and the Apple Silicon installer was missing from the run.
   build:
-    name: Build (${{ matrix.name }})
+    name: Build (Apple Silicon and Intel)
     needs: test
     runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Apple Silicon
-            target: aarch64-apple-darwin
-            artifact: Jojo-macos-apple-silicon
-          - name: Intel
-            target: x86_64-apple-darwin
-            artifact: Jojo-macos-intel
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }},x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-      # The Linux daemons that Add machine installs on servers are built with
-      # cargo-zigbuild (scripts/stage-daemon.sh).
+      # The Linux daemons that Add remote location installs on servers are
+      # built with cargo-zigbuild (scripts/stage-daemon.sh).
       - uses: mlugg/setup-zig@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -91,11 +83,19 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: app
-      - name: Build the app and the .dmg
-        run: pnpm tauri build --target ${{ matrix.target }} --bundles app,dmg
+      - name: Build the Apple Silicon app and .dmg
+        run: pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg
         working-directory: app
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          name: Jojo-macos-apple-silicon
+          path: target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+      - name: Build the Intel app and .dmg
+        run: pnpm tauri build --target x86_64-apple-darwin --bundles app,dmg
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jojo-macos-intel
+          path: target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
