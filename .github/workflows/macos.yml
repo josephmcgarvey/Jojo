@@ -21,12 +21,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test (macOS)
+  # One job tests and then builds both installers on the same machine. With
+  # separate jobs, the test job always found a macOS machine and the build
+  # job that waited for it often did not ("The job was not acquired by
+  # Runner of type hosted even after multiple attempts"), so three runs in a
+  # row produced no Apple Silicon installer.
+  build:
+    name: Test and build (macOS)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
         with:
@@ -51,38 +58,12 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Rust tests
         run: cargo test --workspace --no-fail-fast
-
-  # Both installers are built in one job, one after the other. With two
-  # jobs, GitHub sometimes found a macOS machine for one and none for the
-  # other ("The job was not acquired by Runner ... after multiple
-  # attempts"), and the Apple Silicon installer was missing from the run.
-  build:
-    name: Build (Apple Silicon and Intel)
-    needs: test
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
-      - uses: Swatinem/rust-cache@v2
       # The Linux daemons that Add remote location installs on servers are
       # built with cargo-zigbuild (scripts/stage-daemon.sh).
       - uses: mlugg/setup-zig@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: app
       - name: Build the Apple Silicon app and .dmg
         run: pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg
         working-directory: app
