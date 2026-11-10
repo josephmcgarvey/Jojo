@@ -84,6 +84,13 @@ pub enum ControlMsg {
     ProjectAdded { project: ProjectInfo },
     RemoveProject { id: ProjectId },
     ProjectRemoved { id: ProjectId },
+    /// Sets a project's display name (the sidebar label). App to daemon;
+    /// answered by a `ProjectUpdated` broadcast. Added within protocol 3:
+    /// a daemon built before it answers `Error { request: "Frame" }` and
+    /// keeps the connection.
+    RenameProject { id: ProjectId, name: String },
+    /// A project's fields changed (its name, after `RenameProject`).
+    ProjectUpdated { project: ProjectInfo },
     ListDir { path: String },
     DirEntries { path: String, entries: Vec<String> },
 

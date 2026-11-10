@@ -25,6 +25,7 @@ export function applyControl(model: Model, msg: ControlMsg): Model {
     case "Projects":
       return { ...model, projects: Object.fromEntries(msg.projects.map((p) => [p.id, p])) };
     case "ProjectAdded":
+    case "ProjectUpdated":
       return { ...model, projects: { ...model.projects, [msg.project.id]: msg.project } };
     case "ProjectRemoved":
       return { ...model, projects: without(model.projects, msg.id) };

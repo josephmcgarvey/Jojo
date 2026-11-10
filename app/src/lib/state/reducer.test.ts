@@ -65,3 +65,11 @@ describe("applyControl", () => {
     expect(clearConnectionErrors(empty)).toBe(empty);
   });
 });
+
+describe("ProjectUpdated", () => {
+  it("replaces the project's fields, so a renamed project shows its new name", () => {
+    const added = applyControl(emptyModel(), { type: "ProjectAdded", project: { id: "P1", path: "/srv/app", name: "app" } });
+    const renamed = applyControl(added, { type: "ProjectUpdated", project: { id: "P1", path: "/srv/app", name: "Website" } });
+    expect(renamed.projects.P1).toEqual({ id: "P1", path: "/srv/app", name: "Website" });
+  });
+});

@@ -660,3 +660,40 @@ async fn a_project_path_starting_with_a_tilde_is_the_home_directory() {
     let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap();
     assert_eq!(added.path, home);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_renamed_project_is_broadcast_and_kept_across_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+
+    c.send(Frame::Control(ControlMsg::RenameProject { id: project.id, name: "  Website  ".into() })).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::ProjectUpdated { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::ProjectUpdated { project: updated }) => {
+            assert_eq!(updated.id, project.id);
+            assert_eq!(updated.name, "Website", "the name is trimmed");
+            assert_eq!(updated.path, project.path, "renaming does not move the folder");
+        }
+        _ => unreachable!(),
+    }
+
+    c.send(Frame::Control(ControlMsg::RenameProject { id: project.id, name: "   ".into() })).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Error { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Error { request, .. }) => assert_eq!(request, "RenameProject"),
+        _ => unreachable!(),
+    }
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+    drop(c);
+
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    c.send(Frame::Control(ControlMsg::ListProjects)).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Projects { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Projects { projects }) => assert_eq!(projects[0].name, "Website"),
+        _ => unreachable!(),
+    }
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}

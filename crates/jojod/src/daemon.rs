@@ -157,6 +157,22 @@ impl Daemon {
                 self.broadcast(ControlMsg::ProjectAdded { project });
                 drop(store);
             }
+            ControlMsg::RenameProject { id, name } => {
+                let name = name.trim().to_owned();
+                if name.is_empty() {
+                    return Self::error(reply, "RenameProject", "a project name cannot be empty");
+                }
+                let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+                let Some(project) = store.data.projects.iter_mut().find(|p| p.id == id) else {
+                    return Self::error(reply, "RenameProject", "unknown project");
+                };
+                project.name = name;
+                let project = project.clone();
+                self.save(&store);
+                // Broadcast while holding `store`, as AddProject does.
+                self.broadcast(ControlMsg::ProjectUpdated { project });
+                drop(store);
+            }
             ControlMsg::RemoveProject { id } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 if !store.data.projects.iter().any(|p| p.id == id) {

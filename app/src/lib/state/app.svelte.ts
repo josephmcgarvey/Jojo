@@ -580,6 +580,18 @@ export function renameTab(tabId: string, name: string): void {
   });
 }
 
+/**
+ * Sets a project's sidebar name. jojod stores it and broadcasts
+ * ProjectUpdated; a blank name, or the name it already has, sends nothing.
+ * The folder is not renamed.
+ */
+export function renameProject(projectId: string, name: string): void {
+  const project = app.model.projects[projectId];
+  const trimmed = name.trim();
+  if (!project || trimmed === "" || trimmed === project.name) return;
+  void sendControl({ type: "RenameProject", id: projectId, name: trimmed }, machineOfProject(projectId)).catch(() => {});
+}
+
 /** RenameSession is handled by jojod, which broadcasts SessionUpdated with the new label. */
 export function renameSession(sessionId: string, label: string): void {
   const session = app.model.sessions[sessionId];

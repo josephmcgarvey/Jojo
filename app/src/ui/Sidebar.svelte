@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addProject, app, displayLabel, focusPane, focusedSessionId, newSession, projectsInOrder, removeMachine, removeProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, displayLabel, focusPane, focusedSessionId, newSession, projectsInOrder, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
@@ -45,6 +45,7 @@
       { kind: "action", label: "New terminal", run: () => newSession(projectId, "shell") },
       { kind: "action", label: "New Claude session", run: () => newSession(projectId, "claude") },
       { kind: "separator" },
+      { kind: "action", label: "Rename project", run: () => beginRename({ kind: "project", projectId }) },
       { kind: "action", label: "Remove project…", run: () => void removeProject(projectId) },
     ]);
   }
@@ -167,9 +168,21 @@
       onpointerup={onProjectPointerUp}
       onpointercancel={onProjectPointerCancel}
     >
-      <button class="name" onclick={() => selectProject(project.id)}>
-        {project.name}{#if count > 0}<small class="count">{count}</small>{/if}
-      </button>
+      {#if ui.renaming?.kind === "project" && ui.renaming.projectId === project.id}
+        <RenameField
+          value={project.name}
+          label="Project name"
+          onCommit={(value) => {
+            endRename();
+            renameProject(project.id, value);
+          }}
+          onCancel={endRename}
+        />
+      {:else}
+        <button class="name" title={project.path} onclick={() => selectProject(project.id)} ondblclick={() => beginRename({ kind: "project", projectId: project.id })}>
+          {project.name}{#if count > 0}<small class="count">{count}</small>{/if}
+        </button>
+      {/if}
       <!-- A click opens a terminal in the project (type `claude` in it);
            right-click offers a Claude session and other shells. -->
       <button
