@@ -95,7 +95,7 @@ describe("reconcileAll", () => {
     claude_session_id: null,
     state_detail: null,
     renamed: false,
-    prompt_label: null,
+    prompt_label: null, context_tokens: null, context_window: null,
     attachable: true,
   } as const;
   const session = (id: string, project_id: string, created_at: number): SessionInfo => ({ ...base, id, project_id, created_at });

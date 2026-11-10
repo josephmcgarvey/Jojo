@@ -8,6 +8,8 @@
 //! release that adds hooks or fields does not break the daemon (spec 14,
 //! risk 3). Everything here is pure; the clock is passed in.
 
+pub mod context;
+
 use jojo_proto::AgentState;
 use serde_json::Value;
 

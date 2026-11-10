@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyControl, emptyModel } from "./reducer";
 import { orderedProjects, orderedSessions, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
 
-const base = { kind: "shell", command: "c", args: [] as string[], label: "l", state: "running", state_changed_at: 0, exit_code: null, claude_session_id: null, state_detail: null, renamed: false, prompt_label: null, attachable: true } as const;
+const base = { kind: "shell", command: "c", args: [] as string[], label: "l", state: "running", state_changed_at: 0, exit_code: null, claude_session_id: null, state_detail: null, renamed: false, prompt_label: null, context_tokens: null, context_window: null, attachable: true } as const;
 
 describe("views", () => {
   it("orders sessions by creation and projects by name", () => {

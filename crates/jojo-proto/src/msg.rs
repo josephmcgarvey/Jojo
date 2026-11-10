@@ -64,6 +64,18 @@ pub struct SessionInfo {
     /// from a prompt.
     #[serde(default)]
     pub prompt_label: Option<String>,
+    /// Tokens in the context of the Claude Code conversation running in
+    /// this session, read from its transcript after each hook event
+    /// (jojo_agent::context). `None` before its first reply and after
+    /// Claude Code exits in a shell session.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub context_tokens: Option<u64>,
+    /// The context window `context_tokens` counts against (200,000 or
+    /// 1,000,000; see jojo_agent::context::context_window).
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub context_window: Option<u64>,
     /// True when this daemon still holds a screen for the session, so
     /// `Attach` will succeed. Computed by the daemon for every message that
     /// carries a `SessionInfo`; the value stored in state.json is ignored.

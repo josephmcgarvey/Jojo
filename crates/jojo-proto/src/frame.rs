@@ -10,6 +10,11 @@ pub(crate) const FRAME_INPUT: u8 = 2;
 pub(crate) const FRAME_OUTPUT: u8 = 3;
 pub(crate) const FRAME_SNAPSHOT: u8 = 4;
 
+// `Control` (a `ControlMsg`, up to a `SessionInfo`) is larger than the other
+// variants. A frame lives only from decode to dispatch, or from build to
+// write, so the extra bytes per frame do not add up; boxing the message would
+// change every place a frame is built and matched for no measurable gain.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Frame {
     Control(ControlMsg),

@@ -21,7 +21,7 @@ function session(id: string, project_id = "P1"): SessionInfo {
     claude_session_id: null,
     state_detail: null,
     renamed: false,
-    prompt_label: null,
+    prompt_label: null, context_tokens: null, context_window: null,
     attachable: true,
   };
 }

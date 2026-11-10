@@ -32,6 +32,18 @@ renamed: boolean,
  */
 prompt_label: string | null, 
 /**
+ * Tokens in the context of the Claude Code conversation running in
+ * this session, read from its transcript after each hook event
+ * (jojo_agent::context). `None` before its first reply and after
+ * Claude Code exits in a shell session.
+ */
+context_tokens: number | null, 
+/**
+ * The context window `context_tokens` counts against (200,000 or
+ * 1,000,000; see jojo_agent::context::context_window).
+ */
+context_window: number | null, 
+/**
  * True when this daemon still holds a screen for the session, so
  * `Attach` will succeed. Computed by the daemon for every message that
  * carries a `SessionInfo`; the value stored in state.json is ignored.

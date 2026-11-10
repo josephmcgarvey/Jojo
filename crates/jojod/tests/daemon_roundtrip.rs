@@ -697,3 +697,34 @@ async fn a_renamed_project_is_broadcast_and_kept_across_restart() {
     c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hook_events_report_the_context_usage_from_the_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+
+    let transcript = dir.path().join("transcript.jsonl");
+    std::fs::write(
+        &transcript,
+        concat!(
+            r#"{"type":"user","message":{"content":"Fix the login bug"}}"#,
+            "\n",
+            r#"{"type":"assistant","isSidechain":false,"message":{"model":"claude-sonnet-5","usage":{"input_tokens":4,"cache_creation_input_tokens":2000,"cache_read_input_tokens":148000,"output_tokens":300}}}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    let payload = serde_json::json!({ "hook_event_name": "Stop", "transcript_path": transcript }).to_string();
+    relay(&endpoint, session.id, &payload).await;
+    let updated = next_update(&mut c, session.id).await;
+    assert_eq!(updated.context_tokens, Some(150_004));
+    assert_eq!(updated.context_window, Some(200_000));
+
+    // Claude Code exits inside the shell: the meter goes away with it.
+    relay(&endpoint, session.id, r#"{"hook_event_name":"SessionEnd"}"#).await;
+    let ended = next_update(&mut c, session.id).await;
+    assert_eq!(ended.context_tokens, None);
+}

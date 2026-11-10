@@ -102,6 +102,8 @@ mod tests {
             state_detail: None,
             renamed: false,
             prompt_label: None,
+            context_tokens: None,
+            context_window: None,
             attachable: false,
         }
     }

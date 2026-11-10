@@ -350,6 +350,8 @@ impl Daemon {
             state_detail: None,
             renamed: false,
             prompt_label: None,
+            context_tokens: None,
+            context_window: None,
             attachable: false,
         };
         // Hold the store lock across the duplicate-id check, the project
@@ -481,8 +483,17 @@ impl Daemon {
             tracing::debug!(session = %id, "ignored a hook payload without hook_event_name");
             return;
         };
+        // Read before taking the store lock: file I/O must not hold it.
+        let context = transcript_path(payload).and_then(|path| read_tail(&path)).and_then(|tail| jojo_agent::context::context_usage(&tail));
         self.update_session(id, |info| {
             let mut changed = false;
+            if let Some(usage) = &context {
+                if info.context_tokens != Some(usage.tokens) || info.context_window != Some(usage.window) {
+                    info.context_tokens = Some(usage.tokens);
+                    info.context_window = Some(usage.window);
+                    changed = true;
+                }
+            }
             match &event {
                 HookEvent::SessionStart { claude_session_id: Some(claude_id), .. }
                     if info.claude_session_id.as_ref() != Some(claude_id) && jojo_agent::is_valid_claude_session_id(claude_id) =>
@@ -514,6 +525,8 @@ impl Daemon {
                 // a shell session's claude_session_id means "Claude Code was
                 // running here".
                 info.claude_session_id = None;
+                info.context_tokens = None;
+                info.context_window = None;
                 changed = true;
             }
             changed
@@ -614,4 +627,24 @@ fn expand_home(path: &str) -> String {
         Some(rest) if rest.starts_with(['/', '\\']) => format!("{home}{rest}"),
         _ => path.to_owned(),
     }
+}
+
+/// The `transcript_path` of a Claude Code hook payload: the conversation's
+/// JSONL file on this machine.
+fn transcript_path(payload: &str) -> Option<std::path::PathBuf> {
+    let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+    value["transcript_path"].as_str().filter(|p| !p.is_empty()).map(std::path::PathBuf::from)
+}
+
+/// The last `jojo_agent::context::TAIL_BYTES` of a file as text (invalid
+/// UTF-8, such as a character cut at the start, is replaced). None when the
+/// file cannot be read.
+fn read_tail(path: &std::path::Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(jojo_agent::context::TAIL_BYTES))).ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }

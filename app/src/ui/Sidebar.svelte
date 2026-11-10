@@ -7,6 +7,7 @@
   import type { MenuEntry } from "../lib/menu/types";
   import { shellChoices } from "../lib/state/shells";
   import { sessionsForProject } from "../lib/state/views";
+  import { contextMeter, contextTooltip } from "../lib/state/context";
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
@@ -217,6 +218,14 @@
         >
           <Badge agentState={session.state} title={stateTooltip(session)} />
           <span class="label">{displayLabel(session)}</span>
+          {#if session.context_tokens !== null}
+            {@const meter = contextMeter(session.context_tokens, session.context_window)}
+            {#if meter}
+              <span class="ctx {meter.level}" title={contextTooltip(meter)} aria-label={contextTooltip(meter)}>
+                <span class="fill" style:width={`${Math.max(4, meter.fraction * 100)}%`}></span>
+              </span>
+            {/if}
+          {/if}
           <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>
         </button>
       {/if}
@@ -368,6 +377,29 @@
   .project:hover .add,
   .project:focus-within .add {
     opacity: 1;
+  }
+  /* The context meter: how full the Claude conversation's context window
+     is (lib/state/context.ts). Accent while there is room, amber from 70%,
+     red from 85%. */
+  .ctx {
+    flex: none;
+    width: 30px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--jojo-line);
+    overflow: hidden;
+  }
+  .ctx .fill {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--jojo-accent);
+  }
+  .ctx.warn .fill {
+    background: var(--jojo-needs-you);
+  }
+  .ctx.full .fill {
+    background: var(--jojo-error);
   }
   .session {
     display: flex;
