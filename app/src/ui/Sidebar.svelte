@@ -13,6 +13,7 @@
   import Badge from "./Badge.svelte";
   import { isMac } from "../lib/platform";
   import Cog from "./Cog.svelte";
+  import NeedsYouQueue from "./NeedsYouQueue.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
 
@@ -138,6 +139,7 @@
   <!-- macOS: the traffic-light buttons sit in this strip (trafficLightPosition
        in tauri.macos.conf.json), and dragging it moves the window. -->
   {#if isMac}<div class="traffic-lights" data-tauri-drag-region></div>{/if}
+  <NeedsYouQueue />
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}
   {@const statusText = machineStatusText(machine, status)}

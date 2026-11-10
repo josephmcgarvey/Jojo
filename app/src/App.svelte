@@ -17,7 +17,7 @@
   import SwitcherDialog from "./ui/SwitcherDialog.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
-  import StatusBar from "./ui/StatusBar.svelte";
+  import StateStrip from "./ui/StateStrip.svelte";
   import TabBar from "./ui/TabBar.svelte";
 
   // The theme follows the saved appearance settings, or the Settings
@@ -73,7 +73,7 @@
         <p class="empty">Add a project folder with + next to {LOCAL_LABEL}.</p>
       {/if}
     </div>
-    <StatusBar />
+    <StateStrip />
   </section>
 </div>
 {#if ui.dialog?.kind === "add-machine"}

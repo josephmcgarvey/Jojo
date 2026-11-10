@@ -3,8 +3,11 @@
   import { countPanes } from "../lib/layout/tree";
   import { displayLabel, app, closeTab, currentProjectLayout, newSession, renameTab, reorderTab, selectTab } from "../lib/state/app.svelte";
   import { tabMenu } from "../lib/state/contextMenus";
-  import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
+  import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
   import { stateTooltip } from "../lib/state/toasts";
+  import { STATE_WORDS, stateToken } from "../lib/state/attention";
+  import { formatElapsed } from "../lib/state/elapsed";
+  import { SHORTCUT_LABELS } from "../lib/input/shortcuts";
   import Badge from "./Badge.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
@@ -84,10 +87,16 @@
   }
 </script>
 
+<!-- "Agents first" D: each tab is a card for its focused session: name,
+     elapsed time in its state, the state word in its color, and what it is
+     asking (state detail) or its project. Cards keep the tab behaviors:
+     click selects, double-click renames, drag reorders, right-click opens
+     the tab menu, × closes. -->
 <div class="tabs" bind:this={tabsElement}>
   {#each project?.tabs ?? [] as tab, index (tab.id)}
     {@const focusedSession = app.model.sessions[tab.focused]}
     {@const panes = countPanes(tab.root)}
+    {@const token = focusedSession ? stateToken(focusedSession.state) : null}
     <!-- The tab's buttons are its keyboard controls; the container only adds the right-click menu. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -96,6 +105,7 @@
       class:dragging={dragging?.tabId === tab.id}
       class:drop-before={dragging !== null && dragging.dropIndex === index}
       class:drop-after={dragging !== null && index === (project?.tabs.length ?? 0) - 1 && dragging.dropIndex === index + 1}
+      style:--state={token ? `var(${token})` : "var(--jojo-muted)"}
       data-tab-id={tab.id}
       oncontextmenu={(e) => onTabMenu(e, tab.id)}
       onpointerdown={(e) => onTabPointerDown(e, tab.id)}
@@ -115,9 +125,18 @@
         />
       {:else}
         <button class="title" onclick={() => selectTab(tab.id)} ondblclick={() => beginRename({ kind: "tab", tabId: tab.id })}>
-          {#if focusedSession}<Badge agentState={focusedSession.state} title={stateTooltip(focusedSession)} size={11} />{/if}
-          <span class="name">{tabLabel(tab, labelOf)}</span>
-          {#if panes > 1}<span class="count">{panes}</span>{/if}
+          <span class="top">
+            {#if focusedSession}<Badge agentState={focusedSession.state} title={stateTooltip(focusedSession)} size={11} />{/if}
+            <span class="name">{tabLabel(tab, labelOf)}</span>
+            {#if panes > 1}<span class="count" title="{panes} panes">{panes}</span>{/if}
+            {#if focusedSession}<span class="time">{formatElapsed(app.now - focusedSession.state_changed_at)}</span>{/if}
+          </span>
+          {#if focusedSession}
+            <span class="meta">
+              <span class="state">{STATE_WORDS[focusedSession.state]}</span>
+              <span class="detail">{focusedSession.state_detail ?? app.model.projects[focusedSession.project_id]?.name ?? ""}</span>
+            </span>
+          {/if}
         </button>
       {/if}
       <button class="close" aria-label="Close tab {tabLabel(tab, labelOf)}" onclick={() => void closeTab(tab.id)}>×</button>
@@ -127,65 +146,112 @@
     <button class="new" title="New terminal" aria-label="New terminal" onclick={() => newSession(app.selectedProjectId!, "shell")}><PlusCircle /></button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
-  {#if !isMac}<WindowControls />{/if}
+  <!-- "Agents first" C: the switcher, reached by click as well as by its shortcut. -->
+  <button class="search" onclick={() => openDialog({ kind: "switcher" })}>
+    <span>Search sessions and commands</span><kbd>{SHORTCUT_LABELS.switcher}</kbd>
+  </button>
+  {#if !isMac}<div class="chrome"><WindowControls /></div>{/if}
 </div>
 
 <style>
-  /* Design pass 2.4: underline tabs over the window glow. */
   .tabs {
     display: flex;
-    align-items: flex-end;
-    gap: 2px;
-    height: 40px;
-    padding: 6px 0 0 10px;
+    align-items: center;
+    gap: 8px;
+    height: 64px;
+    padding: 6px 0 4px 10px;
   }
   .tab {
+    position: relative;
     display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 6px 0 12px;
-    height: 32px;
-    max-width: 260px;
-    border-bottom: 2px solid transparent;
-    color: var(--jojo-muted);
+    align-items: stretch;
+    flex: 0 1 210px;
+    min-width: 120px;
+    height: 50px;
+    border-radius: var(--jojo-radius);
+    background: var(--jojo-pill);
+    border: 1px solid var(--jojo-line);
+    color: var(--jojo-fg2);
+  }
+  .tab.on {
+    color: var(--jojo-fg);
+    border-color: var(--jojo-focus-border);
+    box-shadow: var(--jojo-focus-ring);
   }
   .tab.dragging {
     opacity: 0.55;
   }
-  /* The drop position: an accent bar on the left edge of the tab the
-     dragged one will sit before, or the right edge of the last tab. */
+  /* The drop position: an accent bar on the left edge of the card the
+     dragged one will sit before, or the right edge of the last card. */
   .tab.drop-before {
-    box-shadow: inset 2px 0 0 var(--jojo-accent);
+    box-shadow: inset 3px 0 0 var(--jojo-accent);
   }
   .tab.drop-after {
-    box-shadow: inset -2px 0 0 var(--jojo-accent);
-  }
-  .tab.on {
-    color: var(--jojo-fg);
-    border-bottom-color: var(--jojo-accent);
-    text-shadow: var(--jojo-tab-glow);
+    box-shadow: inset -3px 0 0 var(--jojo-accent);
   }
   .title {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    padding: 0 4px 0 10px;
+    text-align: left;
+  }
+  .top {
     display: flex;
     align-items: center;
     gap: 7px;
     min-width: 0;
-    max-width: 220px;
-    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 500;
   }
   .name {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .count {
+    flex: none;
     padding: 0 5px;
     border-radius: var(--jojo-radius-sm);
     font-size: 10.5px;
     color: var(--jojo-muted);
     background: var(--jojo-sel);
   }
+  .time {
+    flex: none;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--jojo-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .meta {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .state {
+    flex: none;
+    color: var(--state);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .detail {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--jojo-muted);
+  }
   .close {
-    padding: 0 4px;
+    align-self: flex-start;
+    padding: 4px 7px;
     color: var(--jojo-muted);
   }
   .close:hover {
@@ -194,7 +260,7 @@
   .new {
     display: flex;
     align-items: center;
-    height: 32px;
+    height: 50px;
     padding: 0 8px;
     color: var(--jojo-muted);
   }
@@ -207,5 +273,35 @@
   .drag {
     flex: 1;
     align-self: stretch;
+  }
+  .search {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--jojo-line);
+    border-radius: var(--jojo-radius);
+    background: var(--jojo-pane);
+    color: var(--jojo-muted);
+    font-size: 12.5px;
+  }
+  .search:hover,
+  .search:focus-visible {
+    color: var(--jojo-fg2);
+    border-color: var(--jojo-focus-border);
+  }
+  .search kbd {
+    font-family: var(--jojo-font-mono);
+    font-size: 11px;
+    color: var(--jojo-fg2);
+  }
+  /* Windows: the HTML window controls keep their 36 px row at the top. */
+  .chrome {
+    display: flex;
+    align-self: flex-start;
+    height: 36px;
+    margin-top: -6px;
   }
 </style>
