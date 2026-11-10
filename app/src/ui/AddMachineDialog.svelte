@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Spec 8.2: the Add machine dialog. The user picks a host alias from
+  // Spec 8.2: the Add machine dialog, shown as "Add remote location". The user picks a host alias from
   // ~/.ssh/config (or types user@host) and a label; Install runs the steps
   // in the backend (connectivity, platform, install or upgrade, start,
   // logout survival, hooks) and shows each one as it finishes.
@@ -88,7 +88,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="scrim" onkeydown={onKeydown}>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-machine-title">
-    <h2 id="add-machine-title">Add machine</h2>
+    <h2 id="add-machine-title">Add remote location</h2>
     <p class="hint">
       A Linux server (x86_64 or aarch64) you can reach with <code>ssh -o BatchMode=yes</code>: its key must be loaded in the
       OpenSSH Authentication Agent, and its host key accepted once. Jojo installs <code>~/.local/bin/jojod</code> there.

@@ -28,7 +28,7 @@
       entries.push(
         { kind: "action", label: "Add project…", run: () => openDialog({ kind: "add-project", machineId: machine.id }) },
         { kind: "separator" },
-        { kind: "action", label: "Remove machine…", run: () => void removeMachine(machine.id, false) },
+        { kind: "action", label: "Remove remote location…", run: () => void removeMachine(machine.id, false) },
         { kind: "action", label: "Remove and uninstall from server…", run: () => void removeMachine(machine.id, true) },
       );
     }
@@ -225,7 +225,7 @@
   </div>
   {/each}
   <div class="footer">
-    <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}><PlusCircle /><span>Machine</span></button>
+    <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}><PlusCircle /><span>Remote location</span></button>
     <button class="settings" title="Settings" aria-label="Settings" onclick={() => openDialog({ kind: "settings" })}><Cog size={22} /></button>
   </div>
 </aside>

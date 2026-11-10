@@ -58,7 +58,7 @@
     const actions: Omit<Item, "key" | "kind">[] = [
       { label: "New terminal", detail: "Ctrl+Shift+N", run: () => project && newSession(project, "shell") },
       { label: "New Claude session", detail: "Ctrl+Shift+T", run: () => project && newSession(project, "claude") },
-      { label: "Add machine…", detail: "Linux server over SSH", run: () => openDialog({ kind: "add-machine" }) },
+      { label: "Add remote location…", detail: "Linux server over SSH", run: () => openDialog({ kind: "add-machine" }) },
       { label: "Settings…", detail: "", run: () => openDialog({ kind: "settings" }) },
       { label: `Restart daemon (${LOCAL_LABEL})…`, detail: `Ends ${LOCAL_LABEL}'s sessions`, run: () => void confirmRestartLocalDaemon() },
       { label: "Debug ▸ Rehydrate pane", detail: "New snapshot for the focused pane", run: rehydrateFocusedPane },

@@ -230,7 +230,7 @@ fn classify(host: &str, stderr: &str, handshake: io::Error) -> AttachFailure {
     if lower.contains(".local/bin/jojod") && (lower.contains("no such file") || lower.contains("not found")) {
         return AttachFailure::Connect(ConnectError::Io(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("jojod is not installed on {host}; remove the machine and add it again"),
+            format!("jojod is not installed on {host}; remove the remote location and add it again"),
         )));
     }
     // jojod reports a missing or refusing socket as "Error: ... (os error 2)"
