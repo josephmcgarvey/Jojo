@@ -728,3 +728,41 @@ async fn hook_events_report_the_context_usage_from_the_transcript() {
     let ended = next_update(&mut c, session.id).await;
     assert_eq!(ended.context_tokens, None);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn search_finds_text_in_a_sessions_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+
+    c.send(Frame::Input { session_id: session.id, bytes: b"echo JOJO-SEARCH-MARKER\r".to_vec() }).await.unwrap();
+    // The shell echoes the command, then prints its output; ask until the
+    // output has reached the session's grid.
+    let deadline = std::time::Instant::now() + WAIT;
+    let hits = loop {
+        c.send(Frame::Control(ControlMsg::Search { request_id: "r1".into(), query: "jojo-search-marker".into() })).await.unwrap();
+        let hits = match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SearchResults { .. }))).await.unwrap() {
+            Frame::Control(ControlMsg::SearchResults { request_id, hits }) => {
+                assert_eq!(request_id, "r1");
+                hits
+            }
+            _ => unreachable!(),
+        };
+        if !hits.is_empty() || std::time::Instant::now() > deadline {
+            break hits;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
+    assert!(!hits.is_empty(), "the marker was not found");
+    assert!(hits.iter().all(|h| h.session_id == session.id));
+    assert!(hits.iter().any(|h| h.text.contains("JOJO-SEARCH-MARKER")));
+
+    // A one-character query finds nothing.
+    c.send(Frame::Control(ControlMsg::Search { request_id: "r2".into(), query: "J".into() })).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SearchResults { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::SearchResults { hits, .. }) => assert!(hits.is_empty()),
+        _ => unreachable!(),
+    }
+}

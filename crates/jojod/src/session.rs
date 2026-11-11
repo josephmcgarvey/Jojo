@@ -359,6 +359,11 @@ impl Session {
     pub fn visible_text(&self) -> String {
         self.shared.lock().expect("session lock").grid.visible_text()
     }
+
+    /// Searches this session's scrollback and screen (TermGrid::search).
+    pub fn search(&self, query: &str, max: usize) -> Vec<jojo_grid::GridMatch> {
+        self.shared.lock().expect("session lock").grid.search(query, max)
+    }
 }
 
 impl Drop for Session {

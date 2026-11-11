@@ -83,6 +83,17 @@ pub struct SessionInfo {
     pub attachable: bool,
 }
 
+/// One line found by `Search`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+pub struct SearchHit {
+    pub session_id: SessionId,
+    /// The matching line, shortened around the match when it is long.
+    pub text: String,
+    /// How many lines of the session's output are below this one (0 for
+    /// the last line).
+    pub lines_from_bottom: u32,
+}
+
 /// Every control message. Serialized as JSON with a `type` tag naming the
 /// variant, for example `{"type":"ListSessions"}`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
@@ -103,6 +114,11 @@ pub enum ControlMsg {
     RenameProject { id: ProjectId, name: String },
     /// A project's fields changed (its name, after `RenameProject`).
     ProjectUpdated { project: ProjectInfo },
+    /// Finds text in the scrollback of every session this daemon holds a
+    /// screen for. App to daemon; answered by `SearchResults` with the same
+    /// `request_id`. Added within protocol 3 (see `RenameProject`).
+    Search { request_id: String, query: String },
+    SearchResults { request_id: String, hits: Vec<SearchHit> },
     ListDir { path: String },
     DirEntries { path: String, entries: Vec<String> },
 

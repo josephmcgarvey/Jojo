@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Terminal, type ITheme } from "@xterm/xterm";
+  import { SearchAddon } from "@xterm/addon-search";
   import { FitAddon } from "@xterm/addon-fit";
   import { Unicode11Addon } from "@xterm/addon-unicode11";
   import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -59,6 +60,11 @@
     term = created;
     const fit = new FitAddon();
     created.loadAddon(fit);
+    // Jump to a match from the search of every session's output.
+    const search = new SearchAddon();
+    created.loadAddon(search);
+    let clearFind: ReturnType<typeof setTimeout> | undefined;
+    created.onKey(() => search.clearDecorations());
     created.loadAddon(new Unicode11Addon());
     created.unicode.activeVersion = "11";
     // Plain URLs found in the output. Their text is the URL itself, so they
@@ -161,6 +167,28 @@
       },
       rehydrate: () => {
         if (session.attachable) stream.reattach(true);
+      },
+      find: (query) => {
+        // From the bottom up, so the latest match is the one shown. The
+        // highlight uses the theme's needs-you and accent colors and clears
+        // after a few seconds or on the next keystroke.
+        created.scrollToBottom();
+        const css = getComputedStyle(document.documentElement);
+        const color = (name: string) => css.getPropertyValue(name).trim() || undefined;
+        const found = search.findPrevious(query, {
+          caseSensitive: false,
+          decorations: {
+            matchOverviewRuler: color("--jojo-accent") ?? "",
+            activeMatchColorOverviewRuler: color("--jojo-needs-you") ?? "",
+            activeMatchBackground: color("--jojo-needs-you"),
+            matchBackground: color("--jojo-sel"),
+          },
+        });
+        if (found) {
+          clearTimeout(clearFind);
+          clearFind = setTimeout(() => search.clearDecorations(), 6_000);
+        }
+        return found;
       },
     });
 

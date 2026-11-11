@@ -22,6 +22,7 @@ import * as tabs from "../layout/tabs";
 import { isFull, paneIds, type LayoutNode, type LayoutPreset, type SplitDirection } from "../layout/tree";
 import type { ControlMsg } from "../protocol/ControlMsg";
 import type { ProjectInfo } from "../protocol/ProjectInfo";
+import type { SearchHit } from "../protocol/SearchHit";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
 import { router } from "../terminal/router";
@@ -75,6 +76,8 @@ export const app = $state({
   /** True once any connection to jojod has succeeded in this app run. */
   everConnected: false,
   settings: null as Settings | null,
+  /** The latest search of every session's output (searchOutput); null before the first. */
+  outputSearch: null as OutputSearch | null,
   /** The Settings screen's unsaved theme, base color and interface font, shown while it is open. */
   themePreview: null as Appearance | null,
   /** Shells installed on this PC (available_shells), for the New shell menus. */
@@ -277,6 +280,16 @@ function markLoaded(machine: string, part: "projects" | "sessions"): void {
 }
 
 function handleControl(machine: string, msg: ControlMsg): void {
+  if (msg.type === "SearchResults") {
+    searchResultsArrived(machine, msg.request_id, msg.hits);
+    return;
+  }
+  // A daemon older than Search answers it with a Frame error; that location
+  // is reported in the search results instead of the error banner.
+  if (msg.type === "Error" && msg.request === "Frame" && /unknown variant [`'"]?Search\b/.test(msg.message) && app.outputSearch?.pending.includes(machine)) {
+    app.outputSearch = { ...app.outputSearch, pending: app.outputSearch.pending.filter((m) => m !== machine), outdated: [...app.outputSearch.outdated, machine] };
+    return;
+  }
   // Folder listings feed the Add project suggestions and nothing else; a
   // folder that does not exist (a half-typed path) is not an error to show.
   if (msg.type === "DirEntries") {
@@ -668,6 +681,69 @@ export function reorderProject(machineId: string, projectId: string, toIndex: nu
   const shown = projectsInOrder(machineId).map((p) => p.id);
   const project_order = reorderedProjectOrder(app.workspace.layout.project_order ?? [], machineId, shown, projectId, toIndex);
   commit({ ...app.workspace, layout: { ...app.workspace.layout, project_order } });
+}
+
+/** One search of every session's output across the connected locations. */
+export interface OutputSearch {
+  requestId: string;
+  query: string;
+  /** Matches in arrival order, each with the location it came from. */
+  hits: { machine: string; hit: SearchHit }[];
+  /** Locations whose reply has not arrived. */
+  pending: string[];
+  /** Locations whose jojod is older than Search. */
+  outdated: string[];
+}
+
+/**
+ * Searches the scrollback of every session on every connected location
+ * (jojod's Search message). Each location answers on its own; results are
+ * collected in app.outputSearch as they arrive, and a reply to an older
+ * search is ignored. A query shorter than two characters clears the search.
+ */
+export function searchOutput(query: string): void {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    app.outputSearch = null;
+    return;
+  }
+  const machines = app.machines.filter((m) => machineConnected(m.id)).map((m) => m.id);
+  const requestId = newUlid();
+  app.outputSearch = { requestId, query: trimmed, hits: [], pending: machines, outdated: [] };
+  for (const machine of machines) {
+    void sendControl({ type: "Search", request_id: requestId, query: trimmed }, machine).catch(() => {
+      if (app.outputSearch?.requestId === requestId) app.outputSearch = { ...app.outputSearch, pending: app.outputSearch.pending.filter((m) => m !== machine) };
+    });
+  }
+}
+
+function searchResultsArrived(machine: string, requestId: string, hits: SearchHit[]): void {
+  const search = app.outputSearch;
+  if (!search || search.requestId !== requestId) return;
+  app.outputSearch = {
+    ...search,
+    hits: [...search.hits, ...hits.map((hit) => ({ machine, hit }))],
+    pending: search.pending.filter((m) => m !== machine),
+  };
+}
+
+/** How long jumpToMatch keeps looking for the match while a pane mounts and fills. */
+const JUMP_WAIT_MS = 3_000;
+
+/**
+ * Opens the session's pane and scrolls its terminal to the latest line
+ * containing `query`, highlighted. A pane in another tab mounts and fills
+ * from its snapshot first, so the search is retried until it finds the
+ * text or JUMP_WAIT_MS passes.
+ */
+export function jumpToMatch(sessionId: string, query: string): void {
+  focusPane(sessionId);
+  const deadline = Date.now() + JUMP_WAIT_MS;
+  const attempt = () => {
+    if (terminalControls(sessionId)?.find(query)) return;
+    if (Date.now() < deadline) setTimeout(attempt, 150);
+  };
+  setTimeout(attempt, 50);
 }
 
 /** How long removeProject waits for the project's running sessions to end. */

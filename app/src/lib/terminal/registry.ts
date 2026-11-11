@@ -13,6 +13,8 @@ export interface TerminalControls {
   applyFont(family: string, size: number, lineHeight: number): void;
   /** Spec 10, Debug ▸ Rehydrate pane: requests a new snapshot, which repaints the terminal. */
   rehydrate(): void;
+  /** Scrolls to the latest line containing `query` (ignoring case) and highlights it; false when it is not in the buffer. */
+  find(query: string): boolean;
 }
 
 const terminals = new Map<string, TerminalControls>();

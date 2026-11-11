@@ -173,6 +173,10 @@ impl Daemon {
                 self.broadcast(ControlMsg::ProjectUpdated { project });
                 drop(store);
             }
+            ControlMsg::Search { request_id, query } => {
+                let hits = self.search(&query);
+                let _ = reply.send(Frame::Control(ControlMsg::SearchResults { request_id, hits }));
+            }
             ControlMsg::RemoveProject { id } => {
                 let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
                 if !store.data.projects.iter().any(|p| p.id == id) {
@@ -531,6 +535,37 @@ impl Daemon {
             }
             changed
         });
+    }
+
+    /// Most lines `Search` returns per session, and in total, so a common
+    /// word does not flood the reply.
+    const SEARCH_PER_SESSION: usize = 20;
+    const SEARCH_TOTAL: usize = 200;
+
+    /// Searches every session this daemon holds a screen for, in creation
+    /// order, newest lines first within each session. A query shorter than
+    /// two characters after trimming finds nothing.
+    fn search(&self, query: &str) -> Vec<jojo_proto::SearchHit> {
+        if query.trim().chars().count() < 2 {
+            return Vec::new();
+        }
+        let order: Vec<SessionId> = self.store.lock().unwrap_or_else(PoisonError::into_inner).data.sessions.iter().map(|s| s.id).collect();
+        // Clone the handles so no daemon lock is held while grids are scanned.
+        let sessions: Vec<Arc<Session>> = {
+            let map = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            order.iter().filter_map(|id| map.get(id).cloned()).collect()
+        };
+        let mut hits = Vec::new();
+        for session in sessions {
+            let room = Self::SEARCH_TOTAL - hits.len();
+            for m in session.search(query, Self::SEARCH_PER_SESSION.min(room)) {
+                hits.push(jojo_proto::SearchHit { session_id: session.id, text: m.text, lines_from_bottom: m.lines_from_bottom });
+            }
+            if hits.len() >= Self::SEARCH_TOTAL {
+                break;
+            }
+        }
+        hits
     }
 
     /// Spec 7.3 rule 3, run once a second by the server: a `working` session

@@ -1,6 +1,8 @@
 <script lang="ts">
-  // Spec 9.6, Ctrl+Shift+P: fuzzy search over sessions, projects and actions.
-  // Up and Down move the highlight, Enter runs it, Esc closes.
+  // Spec 9.6, Ctrl+Shift+P: fuzzy search over sessions, projects and actions,
+  // followed by the lines of every session's output that contain the query
+  // ("In output", searchOutput in app.svelte.ts). Up and Down move the
+  // highlight, Enter runs it, Esc closes.
   import { LOCAL_LABEL } from "../lib/platform";
   import { onMount, tick } from "svelte";
   import { terminalControls } from "../lib/terminal/registry";
@@ -10,22 +12,25 @@
     displayLabel,
     focusedSessionId,
     focusPane,
+    jumpToMatch,
     newSession,
+    searchOutput,
     rehydrateFocusedPane,
     selectProject,
   } from "../lib/state/app.svelte";
   import { orderedSessions } from "../lib/state/views";
   import { openDialog, ui } from "../lib/state/ui.svelte";
   import { fuzzyFilter } from "../lib/switcher/fuzzy";
+  import { highlightParts } from "../lib/switcher/highlight";
   import { stateTooltip } from "../lib/state/toasts";
   import { LOCAL_MACHINE } from "../lib/wire/bridge";
 
   let { onclose }: { onclose: () => void } = $props();
 
   interface Item {
-    /** Unique among the items: `session:<id>`, `project:<machine>:<id>` or `action:<label>`. */
+    /** Unique among the items: `session:<id>`, `project:<machine>:<id>`, `action:<label>` or `output:<n>`. */
     key: string;
-    kind: "Session" | "Project" | "Action";
+    kind: "Session" | "Project" | "Action" | "Output";
     label: string;
     detail: string;
     run: () => void;
@@ -69,7 +74,31 @@
     return list;
   });
 
-  const matches = $derived(fuzzyFilter(items, query, (item) => `${item.label} ${item.detail}`).slice(0, 50));
+  const fuzzy = $derived(fuzzyFilter(items, query, (item) => `${item.label} ${item.detail}`).slice(0, 50));
+
+  // Search every session's output 200 ms after the last keystroke.
+  $effect(() => {
+    const q = query;
+    const timer = setTimeout(() => searchOutput(q), 200);
+    return () => clearTimeout(timer);
+  });
+  const search = $derived(app.outputSearch && app.outputSearch.query === query.trim() ? app.outputSearch : null);
+  const outputItems = $derived(
+    (search?.hits ?? []).map(({ machine, hit }, n): Item => {
+      const session = app.model.sessions[hit.session_id];
+      return {
+        key: `output:${n}`,
+        kind: "Output",
+        label: session ? displayLabel(session) : "session",
+        detail: hit.text,
+        run: () => jumpToMatch(hit.session_id, search!.query),
+        // The location is shown next to the session name.
+        location: machineLabel(machine),
+      } as Item & { location: string };
+    }),
+  );
+  const matches = $derived([...fuzzy, ...outputItems]);
+  const outdatedNames = $derived((search?.outdated ?? []).map(machineLabel));
 
   $effect(() => {
     // A new query starts at the best match.
@@ -84,9 +113,9 @@
     // Close first: an action that opens another dialog replaces this one.
     onclose();
     item.run();
-    // A session item focuses its own pane; otherwise keys return to the
-    // focused pane's terminal instead of staying on the page.
-    if (item.kind !== "Session") void tick().then(refocusTerminal);
+    // A session or output item focuses its own pane; otherwise keys return
+    // to the focused pane's terminal instead of staying on the page.
+    if (item.kind !== "Session" && item.kind !== "Output") void tick().then(refocusTerminal);
   }
 
   function close(): void {
@@ -120,19 +149,35 @@
 <div class="scrim" onclick={close}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="switcher" role="dialog" aria-modal="true" aria-label="Switcher" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-    <input bind:this={input} bind:value={query} onkeydown={onKeydown} placeholder="Jump to a session, project or action" spellcheck="false" />
+    <input bind:this={input} bind:value={query} onkeydown={onKeydown} placeholder="Jump to a session, project or action, or search every session's output" spellcheck="false" />
     <ul role="listbox">
       {#each matches as item, i (item.key)}
+        {#if item.kind === "Output" && (i === 0 || matches[i - 1].kind !== "Output")}
+          <li class="heading" role="presentation">In output</li>
+        {/if}
         <li role="option" aria-selected={i === highlight}>
-          <button class:on={i === highlight} onmouseenter={() => (highlight = i)} onclick={() => choose(item)}>
-            <span class="kind">{item.kind}</span>
-            <span class="label">{item.label}</span>
-            <span class="detail">{item.detail}</span>
+          <button class:on={i === highlight} class:output={item.kind === "Output"} onmouseenter={() => (highlight = i)} onclick={() => choose(item)}>
+            {#if item.kind === "Output"}
+              <span class="label">{item.label} <small>{(item as Item & { location: string }).location}</small></span>
+              <span class="line">{#each highlightParts(item.detail, search?.query ?? "") as part, p (p)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+            {:else}
+              <span class="kind">{item.kind}</span>
+              <span class="label">{item.label}</span>
+              <span class="detail">{item.detail}</span>
+            {/if}
           </button>
         </li>
       {:else}
-        <li class="empty">No matches</li>
+        {#if !search?.pending.length}<li class="empty">No matches</li>{/if}
       {/each}
+      {#if search && search.pending.length > 0}
+        <li class="note">Searching output on {search.pending.length} location{search.pending.length === 1 ? "" : "s"}…</li>
+      {:else if search && search.hits.length === 0 && query.trim().length >= 2}
+        <li class="note">No output contains “{search.query}”.</li>
+      {/if}
+      {#if outdatedNames.length > 0}
+        <li class="note">Not searched: {outdatedNames.join(", ")} (jojod is older than the app; restart it or add the remote location again to update it).</li>
+      {/if}
     </ul>
   </div>
 </div>
@@ -208,8 +253,48 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .empty {
+  .empty,
+  .note {
     padding: 8px 10px;
     color: var(--jojo-muted);
+    font-size: 12px;
+  }
+  /* "In output": a heading, then one row per matching line: the session
+     and its location above the line, the match marked. */
+  .heading {
+    margin-top: 6px;
+    padding: 6px 10px 2px;
+    border-top: 1px solid var(--jojo-line);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--jojo-muted);
+  }
+  button.output {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  button.output .label {
+    font-size: 12px;
+  }
+  button.output small {
+    margin-left: 6px;
+    color: var(--jojo-muted);
+    font-size: 11px;
+  }
+  .line {
+    font-family: var(--jojo-font-mono);
+    font-size: 12px;
+    color: var(--jojo-fg2);
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  mark {
+    padding: 0 1px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--jojo-needs-you) 35%, transparent);
+    color: var(--jojo-fg);
   }
 </style>

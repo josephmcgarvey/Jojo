@@ -173,25 +173,107 @@ impl TermGrid {
         let grid = self.term.grid();
         let mut lines = Vec::with_capacity(grid.screen_lines());
         for line in 0..grid.screen_lines() as i32 {
-            let row = &grid[Line(line)];
-            let mut text = String::new();
-            for col in 0..grid.columns() {
-                let cell = &row[Column(col)];
-                if cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
-                    continue;
-                }
-                text.push(if cell.c == '\t' { ' ' } else { cell.c });
-                if let Some(extra) = cell.zerowidth() {
-                    text.extend(extra.iter());
-                }
-            }
-            lines.push(text.trim_end().to_string());
+            lines.push(self.row_text(Line(line)).0.trim_end().to_string());
         }
         while lines.last().is_some_and(|l| l.is_empty()) {
             lines.pop();
         }
         lines.join("\n")
     }
+
+    /// One grid row as text (wide-character spacers skipped, tabs as
+    /// spaces), and whether the row continues on the next one because the
+    /// terminal wrapped it (the last cell's WRAPLINE flag).
+    fn row_text(&self, line: Line) -> (String, bool) {
+        let grid = self.term.grid();
+        let row = &grid[line];
+        let mut text = String::new();
+        for col in 0..grid.columns() {
+            let cell = &row[Column(col)];
+            if cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
+                continue;
+            }
+            text.push(if cell.c == '\t' { ' ' } else { cell.c });
+            if let Some(extra) = cell.zerowidth() {
+                text.extend(extra.iter());
+            }
+        }
+        let wraps = row[Column(grid.columns() - 1)].flags.contains(Flags::WRAPLINE);
+        (text, wraps)
+    }
+
+    /// Finds `query` in the scrollback and the screen, ignoring case, and
+    /// returns at most `max` matching lines, newest first. A line the
+    /// terminal wrapped over several rows is searched as one logical line,
+    /// so a match split by the wrap is found. Trailing spaces are removed and
+    /// lines longer than MATCH_TEXT_CHARS are shortened around the match.
+    pub fn search(&self, query: &str, max: usize) -> Vec<GridMatch> {
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() || max == 0 {
+            return Vec::new();
+        }
+        let grid = self.term.grid();
+        let first = -(grid.history_size() as i32);
+        // Logical lines, oldest first: rows joined while a row wraps.
+        let mut logical: Vec<String> = Vec::new();
+        let mut current = String::new();
+        for line in first..grid.screen_lines() as i32 {
+            let (text, wraps) = self.row_text(Line(line));
+            current.push_str(&text);
+            if !wraps {
+                logical.push(std::mem::take(&mut current).trim_end().to_string());
+            }
+        }
+        if !current.is_empty() {
+            logical.push(current.trim_end().to_string());
+        }
+        let total = logical.len();
+        let mut matches = Vec::new();
+        for (index, text) in logical.iter().enumerate().rev() {
+            if let Some(at) = text.to_lowercase().find(&needle) {
+                matches.push(GridMatch { text: excerpt(text, at, needle.len()), lines_from_bottom: (total - 1 - index) as u32 });
+                if matches.len() == max {
+                    break;
+                }
+            }
+        }
+        matches
+    }
+}
+
+/// The longest line text a search match returns; longer lines are cut to a
+/// window around the match.
+pub const MATCH_TEXT_CHARS: usize = 240;
+
+/// One line found by `TermGrid::search`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GridMatch {
+    pub text: String,
+    /// How many logical lines are below this one (0 for the last line).
+    pub lines_from_bottom: u32,
+}
+
+/// `text` cut to MATCH_TEXT_CHARS characters around the match at byte
+/// offset `at` (of the lowercased text, whose offsets equal the original's
+/// for the ASCII text terminals mostly show), with "…" where it was cut.
+fn excerpt(text: &str, at: usize, len: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= MATCH_TEXT_CHARS {
+        return text.to_string();
+    }
+    let at_char = text.char_indices().take_while(|(i, _)| *i < at).count();
+    let len_chars = len.min(MATCH_TEXT_CHARS);
+    let start = at_char.saturating_sub((MATCH_TEXT_CHARS - len_chars) / 2).min(chars.len() - MATCH_TEXT_CHARS);
+    let end = start + MATCH_TEXT_CHARS;
+    let mut out = String::new();
+    if start > 0 {
+        out.push('…');
+    }
+    out.extend(&chars[start..end]);
+    if end < chars.len() {
+        out.push('…');
+    }
+    out
 }
 
 #[cfg(test)]
@@ -240,6 +322,45 @@ mod tests {
             String::from_utf8(g.take_replies()).unwrap(),
             "\x1b]10;rgb:d6d6/dcdc/ffff\x1b\\\x1b]4;1;rgb:ffff/5c5c/7a7a\x07\x1b]4;196;rgb:ffff/0000/0000\x07"
         );
+    }
+
+    #[test]
+    fn search_finds_lines_newest_first_ignoring_case() {
+        let mut g = TermGrid::new(40, 5, 1000);
+        for i in 0..30 {
+            g.feed(format!("line {i}\r\n").as_bytes());
+        }
+        g.feed(b"Error: ECONNREFUSED 127.0.0.1:5432\r\nok\r\nerror again\r\n");
+        let found = g.search("error", 10);
+        assert_eq!(found.iter().map(|m| m.text.as_str()).collect::<Vec<_>>(), ["error again", "Error: ECONNREFUSED 127.0.0.1:5432"]);
+        assert!(found[0].lines_from_bottom < found[1].lines_from_bottom);
+        // Lines that scrolled off the screen are searched too.
+        assert_eq!(g.search("LINE 3", 5).iter().map(|m| m.text.as_str()).collect::<Vec<_>>(), ["line 3"]);
+        assert_eq!(g.search("error", 1).len(), 1);
+        assert!(g.search("   ", 10).is_empty());
+        assert!(g.search("absent", 10).is_empty());
+    }
+
+    #[test]
+    fn search_joins_lines_the_terminal_wrapped() {
+        let mut g = TermGrid::new(10, 5, 100);
+        // 24 characters on a 10-column grid wrap over three rows; the match
+        // spans the first wrap.
+        g.feed(b"aaaaaaaFAILEDbbbbbbbbbbb\r\n");
+        let found = g.search("failed", 5);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text, "aaaaaaaFAILEDbbbbbbbbbbb");
+    }
+
+    #[test]
+    fn search_shortens_long_lines_around_the_match() {
+        let mut g = TermGrid::new(500, 5, 100);
+        let long = format!("{}NEEDLE{}", "x".repeat(200), "y".repeat(200));
+        g.feed(format!("{long}\r\n").as_bytes());
+        let text = &g.search("needle", 1)[0].text;
+        assert!(text.contains("NEEDLE"));
+        assert!(text.starts_with('…') && text.ends_with('…'));
+        assert_eq!(text.chars().count(), MATCH_TEXT_CHARS + 2);
     }
 
     #[test]
