@@ -12,6 +12,8 @@ import "@fontsource/ibm-plex-mono/700.css";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
+// The JOJO logo at the top of the sidebar (Latin letters only).
+import "@fontsource/alexandria/latin-600.css";
 import "@xterm/xterm/css/xterm.css";
 import "./app.css";
 import { mount } from "svelte";

@@ -11,7 +11,6 @@
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
   import Badge from "./Badge.svelte";
-  import { isMac } from "../lib/platform";
   import Cog from "./Cog.svelte";
   import NeedsYouQueue from "./NeedsYouQueue.svelte";
   import PlusCircle from "./PlusCircle.svelte";
@@ -136,9 +135,10 @@
 </script>
 
 <aside class="side">
-  <!-- macOS: the traffic-light buttons sit in this strip (trafficLightPosition
-       in tauri.macos.conf.json), and dragging it moves the window. -->
-  {#if isMac}<div class="traffic-lights" data-tauri-drag-region></div>{/if}
+  <!-- The JOJO logo (Alexandria SemiBold in the brand gradient). Dragging the
+       row moves the window; on macOS the traffic-light buttons sit at its
+       left (trafficLightPosition in tauri.macos.conf.json). -->
+  <div class="brand" data-tauri-drag-region><span class="logo" data-tauri-drag-region>JOJO</span></div>
   <NeedsYouQueue />
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}
@@ -256,9 +256,26 @@
     overflow-y: auto;
     min-height: 0;
   }
-  .traffic-lights {
+  .brand {
     flex: none;
-    height: 22px;
+    padding: 2px 6px 10px;
+  }
+  /* macOS: room for the traffic-light buttons left of the logo. */
+  :global(html[data-platform="mac"]) .brand {
+    padding-left: 72px;
+  }
+  .logo {
+    display: inline-block;
+    font-family: "Alexandria", var(--jojo-font-ui);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    background: var(--jojo-brand-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    user-select: none;
   }
   /* A machine's name heads its projects: 13 px semibold in the main text
      color, above the 12.5 px project names, so each machine's block reads

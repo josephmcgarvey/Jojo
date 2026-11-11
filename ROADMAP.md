@@ -43,19 +43,7 @@ structure as well as the colors.
    (text 7:1, secondary text 4.5:1, primary button 4.5:1) under its own colors
    and under every base color preset.
 
-## 2. Jojo logo at the top of the sidebar
-
-**Status:** waiting for the SVG from the user.
-
-The "Jojo" wordmark was removed from the top of the sidebar. A logo replaces
-it once the user provides the artwork. Requirements for the file: a `viewBox`
-with no fixed `width` or `height` (the app sizes it to about 24–28 px tall);
-either `currentColor`, so it follows the theme, or fixed colors that read on
-both dark and light themes; text converted to outlines. On Windows it sits at
-the top left of the sidebar above the Needs you queue; on macOS it sits to the
-right of the window's traffic-light buttons.
-
-## 3. Last line of output on session cards
+## 2. Last line of output on session cards
 
 **Status:** deferred from the agents-first layout (commit `a1cb61f`).
 
@@ -67,7 +55,7 @@ needs jojod to send it, for example as a field on `SessionInfo` updated from
 the session's grid, throttled so a busy session does not flood the
 connection.
 
-## 4. Terminal color replies that follow the theme
+## 3. Terminal color replies that follow the theme
 
 **Status:** known limitation (commit `c8ccca6`).
 
@@ -78,7 +66,7 @@ Under Daylight, a program that adapts to the background (`gh`, editors) is
 told the background is dark. Fixing it needs the window to send its terminal
 colors to the daemon, a new control message.
 
-## 5. macOS version
+## 4. macOS version
 
 **Status:** built once, then paused at the user's request (2026-11-10).
 
@@ -90,7 +78,7 @@ until the user asks for one. Never verified on a real Mac: the traffic-light
 position against the sidebar, starting the daemon through `zsh -l -i`, and
 notifications for an unsigned app.
 
-## 6. Video demo with voiceover
+## 5. Video demo with voiceover
 
 **Status:** postponed by the user (2026-11-10); approach not chosen.
 
