@@ -29,7 +29,7 @@
     promptLabels: false,
     sound: true,
     restoreSessions: true,
-    uiFontFamily: "Geist Sans",
+    uiFontFamily: "",
     accentColor: "",
     sidebarWidth: 268,
   };
@@ -48,6 +48,8 @@
     if (!otherFont) draft.terminalFontFamily = value;
   }
   const theme = $derived(themeById(draft.theme));
+  /** The theme's own interface font, named in the Theme default option: the first family of its font-ui token. */
+  const themeFont = $derived(/^\s*"?([^",]+)/.exec(theme.tokens["font-ui"] ?? "")?.[1] ?? "Geist Sans");
   /** The base color in use: the chosen one clamped to the theme's lightness range, or the theme's own. */
   const accent = $derived(effectiveAccent(theme, draft.accentColor));
   const swatches = $derived([
@@ -180,10 +182,11 @@
       <label>
         <span>Interface font</span>
         <select bind:value={draft.uiFontFamily}>
+          <option value="">Theme default ({themeFont})</option>
           {#each UI_FONTS as font (font.family)}
             <option value={font.family}>{fontLabel(font)}</option>
           {/each}
-          {#if !UI_FONTS.some((f) => f.family === draft.uiFontFamily)}
+          {#if draft.uiFontFamily && !UI_FONTS.some((f) => f.family === draft.uiFontFamily)}
             <option value={draft.uiFontFamily}>{draft.uiFontFamily}</option>
           {/if}
         </select>
@@ -232,7 +235,7 @@
     overflow-y: auto;
     padding: 18px 20px 16px;
     background: var(--jojo-menu);
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius);
     box-shadow: var(--jojo-shadow);
   }
@@ -264,7 +267,7 @@
   input:not([type="checkbox"]),
   select {
     padding: 5px 8px;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     background: var(--jojo-pane);
     color: var(--jojo-fg);
@@ -280,7 +283,7 @@
   .row button,
   .actions button {
     padding: 5px 12px;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     color: var(--jojo-fg2);
   }
@@ -297,7 +300,7 @@
   }
   .sample {
     padding: 6px 8px;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     background: var(--jojo-pane);
     color: var(--jojo-fg);
@@ -333,7 +336,7 @@
     width: 30px;
     height: 24px;
     padding: 0;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     background: none;
   }

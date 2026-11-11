@@ -174,7 +174,7 @@
     font-size: 12px;
     color: var(--jojo-fg);
     background: var(--jojo-menu);
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     box-shadow: var(--jojo-shadow);
     outline: none;

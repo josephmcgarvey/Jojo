@@ -66,7 +66,7 @@
   .dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--jojo-dot-radius);
     background: var(--jojo-needs-you);
     box-shadow: 0 0 8px var(--jojo-needs-you-glow);
   }

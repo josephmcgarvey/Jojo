@@ -48,7 +48,7 @@
     gap: 10px;
     padding: 6px 12px;
     background: var(--jojo-banner);
-    border-bottom: 1px solid var(--jojo-line);
+    border-bottom: var(--jojo-bw) solid var(--jojo-line);
     color: var(--jojo-fg2);
   }
   .banner.error {
@@ -57,7 +57,7 @@
   .action {
     margin-left: auto;
     padding: 2px 8px;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
   }
 </style>

@@ -17,7 +17,8 @@ sound: boolean,
  */
 restoreSessions: boolean, 
 /**
- * The interface font family (Settings ▸ Interface font).
+ * The interface font family (Settings ▸ Interface font); empty uses
+ * the theme's own interface font.
  */
 uiFontFamily: string, 
 /**

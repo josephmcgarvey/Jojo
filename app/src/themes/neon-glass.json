@@ -39,7 +39,15 @@
     "tab-glow": "0 0 12px rgba(155, 140, 255, 0.6)",
     "sel-gradient": "linear-gradient(90deg, rgba(155, 140, 255, 0.28), rgba(155, 140, 255, 0.06))",
     "pill": "rgba(20, 26, 54, 0.6)",
-    "radius-lg": "12px"
+    "radius-lg": "12px",
+    "side-blur": "16px",
+    "pane-blur": "10px",
+    "side-margin": "8px 0 8px 8px",
+    "side-radius": "9px",
+    "bw": "1px",
+    "dot-radius": "50%",
+    "text-glow": "none",
+    "panel-shadow": "none"
   },
   "terminal": {
     "background": "#080b16",

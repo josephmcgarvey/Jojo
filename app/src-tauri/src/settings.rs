@@ -24,7 +24,8 @@ pub struct Settings {
     /// (user request, like Herdr): claude sessions with `claude --resume`,
     /// shells as the same shell in the same folder.
     pub restore_sessions: bool,
-    /// The interface font family (Settings ▸ Interface font).
+    /// The interface font family (Settings ▸ Interface font); empty uses
+    /// the theme's own interface font.
     pub ui_font_family: String,
     /// The base color the theme is redrawn around, as `#rrggbb`; empty uses
     /// the theme's own accent.
@@ -47,7 +48,7 @@ impl Default for Settings {
             prompt_labels: false,
             sound: true,
             restore_sessions: true,
-            ui_font_family: "Geist Sans".into(),
+            ui_font_family: String::new(),
             accent_color: String::new(),
             sidebar_width: 268,
         }

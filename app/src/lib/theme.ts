@@ -2,8 +2,12 @@
 // :root, `terminal` is the xterm.js palette (spec section 9.9). `accent` is
 // the base color the theme is drawn around (see palette.ts).
 import type { ITheme } from "@xterm/xterm";
+import contrast from "../themes/contrast.json";
 import daylight from "../themes/daylight.json";
+import graphite from "../themes/graphite.json";
 import neonGlass from "../themes/neon-glass.json";
+import phosphor from "../themes/phosphor.json";
+import porcelain from "../themes/porcelain.json";
 import { uiFontStack } from "./fonts";
 import { recolorTheme } from "./palette";
 
@@ -19,6 +23,10 @@ export interface Theme {
 export const THEMES: Record<string, Theme> = {
   "neon-glass": neonGlass as Theme,
   daylight: daylight as Theme,
+  graphite: graphite as Theme,
+  phosphor: phosphor as Theme,
+  porcelain: porcelain as Theme,
+  contrast: contrast as Theme,
 };
 
 export const DEFAULT_THEME_ID = "neon-glass";

@@ -8,6 +8,7 @@ body {
   background: var(--jojo-bg);
   color: var(--jojo-fg);
   font-family: var(--jojo-font-ui);
+  text-shadow: var(--jojo-text-glow);
   font-size: 12.5px;
   overflow: hidden;
   user-select: none;

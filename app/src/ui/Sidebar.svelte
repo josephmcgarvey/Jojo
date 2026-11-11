@@ -247,12 +247,13 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    margin: 8px 0 8px 8px;
+    margin: var(--jojo-side-margin);
     padding: 10px 8px;
     background: var(--jojo-glass-side);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
+    backdrop-filter: blur(var(--jojo-side-blur));
+    border: var(--jojo-bw) solid var(--jojo-line);
+    border-radius: var(--jojo-side-radius);
+    box-shadow: var(--jojo-panel-shadow);
     overflow-y: auto;
     min-height: 0;
   }
@@ -293,7 +294,7 @@
   .machine-group + .machine-group {
     margin-top: 8px;
     padding-top: 4px;
-    border-top: 1px solid var(--jojo-line);
+    border-top: var(--jojo-bw) solid var(--jojo-line);
   }
   /* Spec 8.3 rule 1: a machine that is not connected keeps its sessions
      and their last badges, dimmed. */
@@ -309,7 +310,7 @@
     align-items: center;
     margin-top: auto;
     padding: 8px;
-    border-top: 1px solid var(--jojo-line);
+    border-top: var(--jojo-bw) solid var(--jojo-line);
   }
   .add-machine,
   .settings {
@@ -342,7 +343,7 @@
     flex: none;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--jojo-dot-radius);
     background: var(--jojo-needs-you);
   }
   .dot.ok {

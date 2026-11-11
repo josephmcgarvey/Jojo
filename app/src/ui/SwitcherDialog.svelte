@@ -198,7 +198,7 @@
     display: flex;
     flex-direction: column;
     background: var(--jojo-menu);
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius);
     box-shadow: var(--jojo-shadow);
     overflow: hidden;
@@ -207,7 +207,7 @@
   input {
     padding: 10px 14px;
     border: none;
-    border-bottom: 1px solid var(--jojo-line);
+    border-bottom: var(--jojo-bw) solid var(--jojo-line);
     background: transparent;
     color: var(--jojo-fg);
     font: inherit;
@@ -264,7 +264,7 @@
   .heading {
     margin-top: 6px;
     padding: 6px 10px 2px;
-    border-top: 1px solid var(--jojo-line);
+    border-top: var(--jojo-bw) solid var(--jojo-line);
     font-size: 10.5px;
     font-weight: 600;
     letter-spacing: 0.06em;

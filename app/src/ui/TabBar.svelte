@@ -170,7 +170,8 @@
     height: 50px;
     border-radius: var(--jojo-radius);
     background: var(--jojo-pill);
-    border: 1px solid var(--jojo-line);
+    box-shadow: var(--jojo-panel-shadow);
+    border: var(--jojo-bw) solid var(--jojo-line);
     color: var(--jojo-fg2);
   }
   .tab.on {
@@ -281,7 +282,7 @@
     gap: 12px;
     height: 32px;
     padding: 0 10px;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius);
     background: var(--jojo-pane);
     color: var(--jojo-muted);

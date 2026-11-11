@@ -88,8 +88,9 @@
     width: 100%;
     height: 100%;
     background: var(--jojo-glass-pane);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--jojo-line);
+    backdrop-filter: blur(var(--jojo-pane-blur));
+    box-shadow: var(--jojo-panel-shadow);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-lg);
     overflow: hidden;
   }

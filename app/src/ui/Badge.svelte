@@ -10,7 +10,7 @@
   .badge {
     display: inline-block;
     flex: none;
-    border-radius: 50%;
+    border-radius: var(--jojo-dot-radius);
     border: 2px solid var(--jojo-idle);
   }
   .badge.working {

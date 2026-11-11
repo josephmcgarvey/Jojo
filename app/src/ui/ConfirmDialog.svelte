@@ -52,7 +52,7 @@
     width: min(420px, calc(100% - 32px));
     padding: 18px 20px 16px;
     background: var(--jojo-menu);
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius);
     box-shadow: var(--jojo-shadow);
     outline: none;
@@ -80,7 +80,7 @@
   }
   .actions button {
     padding: 5px 12px;
-    border: 1px solid var(--jojo-line);
+    border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     color: var(--jojo-fg2);
   }
