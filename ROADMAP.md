@@ -89,3 +89,38 @@ Silicon and Intel. The workflow runs only when started by hand
 until the user asks for one. Never verified on a real Mac: the traffic-light
 position against the sidebar, starting the daemon through `zsh -l -i`, and
 notifications for an unsigned app.
+
+## 6. Video demo with voiceover
+
+**Status:** postponed by the user (2026-11-10); approach not chosen.
+
+Two ways to make it, which differ in how the screen is recorded:
+
+1. **Record the real app, then add a voiceover.** Claude writes a script
+   (scenes, the clicks in each, narration text and rough timings). The user
+   records the screen while following it, with the Windows 11 Snipping Tool
+   (video mode) or OBS, using real Claude sessions. The voiceover is either
+   the user's own recording or generated from the script with ElevenLabs
+   (needs an API key). Claude assembles the result with ffmpeg: trims, title
+   and end cards, the voice track, music ducked under the voice, and
+   captions. No new code. Recommended for a first video.
+2. **Scripted recording with the `demo-video-kit` plugin** (installed,
+   version 0.15.0). It drives the app with Playwright and records it with an
+   animated cursor, click ripples, captions, zoom and voiceover timed to each
+   step, and can re-record after changes with one command. It records web
+   apps in a browser, so Jojo would need a browser "demo mode" of its
+   interface with made-up sessions and scripted terminal output, because the
+   real interface depends on the Rust backend and live terminals. On Windows
+   its voices come from ElevenLabs or a recorded file (its built-in `say`
+   voice is macOS only), and it needs the Playwright MCP server, which failed
+   to connect on 2026-11-10.
+
+Both need ffmpeg (`winget install Gyan.FFmpeg`).
+
+**Open questions for the user:**
+
+1. Which approach.
+2. The user's own voice or an AI voice; for an AI voice, whether there is an
+   ElevenLabs account.
+3. The audience and length, for example a 60–90 second overview for a
+   website or a 3–5 minute walkthrough for people trying Jojo.
