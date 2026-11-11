@@ -64,6 +64,7 @@ async fn create_shell(c: &mut Client, project: &ProjectInfo) -> SessionInfo {
         rows: 24,
         shell: Some(test_shell()),
         resume: None,
+        replaces: None,
     }))
     .await
     .unwrap();
@@ -263,6 +264,7 @@ async fn spawn_failure_reports_session_id_and_marks_session_unattachable() {
         rows: 24,
         shell: Some("definitely-not-a-real-program-jojo".into()),
         resume: None,
+        replaces: None,
     }))
     .await
     .unwrap();
@@ -398,6 +400,7 @@ async fn create_session_rejects_a_duplicate_id() {
         rows: 24,
         shell: Some(test_shell()),
         resume: None,
+        replaces: None,
     }))
     .await
     .unwrap();
@@ -414,6 +417,7 @@ async fn create_session_rejects_a_duplicate_id() {
         rows: 24,
         shell: Some(test_shell()),
         resume: None,
+        replaces: None,
     }))
     .await
     .unwrap();
@@ -445,6 +449,7 @@ async fn create_session_with_out_of_range_size_reports_the_requested_session_id(
         rows: 0,
         shell: Some(test_shell()),
         resume: None,
+        replaces: None,
     }))
     .await
     .unwrap();
@@ -631,6 +636,7 @@ async fn resume_keeps_the_label_of_the_session_it_continues() {
         rows: 24,
         shell: None,
         resume: Some("0f3c2a9e-1b2c-4d5e-8f90-123456789abc".into()),
+        replaces: None,
     }))
     .await
     .unwrap();
@@ -765,4 +771,44 @@ async fn search_finds_text_in_a_sessions_output() {
         Frame::Control(ControlMsg::SearchResults { hits, .. }) => assert!(hits.is_empty()),
         _ => unreachable!(),
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_that_replaces_another_keeps_its_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, _server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let old = create_shell(&mut c, &project).await;
+    c.send(Frame::Control(ControlMsg::RenameSession { session_id: old.id, label: "dev server".into() })).await.unwrap();
+    assert!(next_update(&mut c, old.id).await.renamed);
+
+    // A restored or restarted shell names the session it takes the place of.
+    let session_id = jojo_proto::SessionId::new();
+    c.send(Frame::Control(ControlMsg::CreateSession {
+        session_id,
+        project_id: project.id,
+        kind: SessionKind::Shell,
+        cols: 80,
+        rows: 24,
+        shell: Some(test_shell()),
+        resume: None,
+        replaces: Some(old.id),
+    }))
+    .await
+    .unwrap();
+    let created = match c
+        .recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::SessionCreated { session }) if session.id == session_id))
+        .await
+        .unwrap()
+    {
+        Frame::Control(ControlMsg::SessionCreated { session }) => session,
+        _ => unreachable!(),
+    };
+    assert_eq!(created.label, "dev server");
+    assert!(created.renamed, "a name the user chose stays a user name");
+
+    // Without `replaces`, a new shell gets the default name.
+    let fresh = create_shell(&mut c, &project).await;
+    assert_ne!(fresh.label, "dev server");
 }

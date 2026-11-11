@@ -524,7 +524,9 @@ export function newSession(
   commit(requestCreate(app.workspace, id, { projectId, placement }));
   const machine = machineOfProject(projectId);
   const program = shellProgram(kind, shell, app.settings?.defaultShell, machine === LOCAL_MACHINE);
-  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume }, machine).catch(() => {
+  // A session that takes another's place (restore, Restart, Resume) keeps its name.
+  const replaces = placement.kind === "replace" ? placement.oldId : null;
+  void sendControl({ type: "CreateSession", session_id: id, project_id: projectId, kind, cols: 120, rows: 30, shell: program, resume, replaces }, machine).catch(() => {
     // Refused (for example, not connected): the reconnecting banner already
     // explains why. Stop waiting for a SessionCreated that is never coming.
     commit(createFailed(app.workspace, id));

@@ -36,6 +36,7 @@ struct NewSession<'a> {
     rows: u16,
     shell: Option<&'a str>,
     resume: Option<&'a str>,
+    replaces: Option<SessionId>,
 }
 
 pub struct Daemon {
@@ -225,13 +226,13 @@ impl Daemon {
                 let sessions = self.session_infos();
                 let _ = reply.send(Frame::Control(ControlMsg::Sessions { sessions }));
             }
-            ControlMsg::CreateSession { session_id, project_id, kind, cols, rows, shell, resume } => {
+            ControlMsg::CreateSession { session_id, project_id, kind, cols, rows, shell, resume, replaces } => {
                 if !size_in_range(cols, rows) {
                     return Self::error_for(reply, "CreateSession", Some(session_id), size_error_message(cols, rows));
                 }
                 self.create_session(
                     reply,
-                    NewSession { id: session_id, project_id, kind, cols, rows, shell: shell.as_deref(), resume: resume.as_deref() },
+                    NewSession { id: session_id, project_id, kind, cols, rows, shell: shell.as_deref(), resume: resume.as_deref(), replaces },
                 )
             }
             ControlMsg::Attach { session_id, cols, rows } => {
@@ -333,7 +334,7 @@ impl Daemon {
     }
 
     fn create_session(self: &Arc<Self>, reply: &Reply, req: NewSession<'_>) {
-        let NewSession { id, project_id, kind, cols, rows, shell, resume } = req;
+        let NewSession { id, project_id, kind, cols, rows, shell, resume, replaces } = req;
         // Resume applies to claude sessions with a plain session id only (the
         // id reaches a command line; see jojo_agent::is_valid_claude_session_id).
         let resume = resume.filter(|id| kind == SessionKind::Claude && jojo_agent::is_valid_claude_session_id(id));
@@ -371,10 +372,15 @@ impl Daemon {
         // one), so a concurrent RemoveProject cannot remove the project
         // between the lookup and the session row being inserted.
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
-        // Spec 5.4: a resumed session replaces the row it continues, so it keeps
-        // that row's label, including a name the user chose.
+        // A session that takes another's place keeps that session's label,
+        // including a name the user chose: the one named by `replaces` (a
+        // restored or restarted session of any kind), else, spec 5.4, the
+        // row whose Claude conversation a resumed session continues.
         let mut info = info;
-        if let Some(previous) = resume.and_then(|r| store.data.sessions.iter().find(|s| s.claude_session_id.as_deref() == Some(r))) {
+        let previous = replaces
+            .and_then(|old| store.data.sessions.iter().find(|s| s.id == old))
+            .or_else(|| resume.and_then(|r| store.data.sessions.iter().find(|s| s.claude_session_id.as_deref() == Some(r))));
+        if let Some(previous) = previous {
             info.label = previous.label.clone();
             info.renamed = previous.renamed;
             info.prompt_label = previous.prompt_label.clone();

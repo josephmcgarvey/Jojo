@@ -142,6 +142,13 @@ pub enum ControlMsg {
         /// daemon runs `claude --resume <id>` (spec 5.4).
         #[serde(default)]
         resume: Option<String>,
+        /// The session this one takes the place of (a restore after a
+        /// restart, or Restart from the session menu). The daemon copies
+        /// that session's label, renamed flag and prompt label, so the
+        /// session keeps its name. Ignored when no such session is stored;
+        /// a daemon built before this field ignores it.
+        #[serde(default)]
+        replaces: Option<SessionId>,
     },
     SessionCreated { session: SessionInfo },
     SessionUpdated { session: SessionInfo },

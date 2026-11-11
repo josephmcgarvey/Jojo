@@ -156,6 +156,7 @@ mod tests {
             rows: 40,
             shell: None,
             resume: None,
+            replaces: None,
         };
         let frame = Frame::Control(msg);
         assert_eq!(roundtrip(frame.clone()).await, frame);

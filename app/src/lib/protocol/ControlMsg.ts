@@ -28,7 +28,15 @@ shell: string | null,
  * For `SessionKind::Claude`: a `claude_session_id` to continue. The
  * daemon runs `claude --resume <id>` (spec 5.4).
  */
-resume: string | null, } | { "type": "SessionCreated", session: SessionInfo, } | { "type": "SessionUpdated", session: SessionInfo, } | { "type": "Attach", session_id: SessionId, cols: number, rows: number, } | { "type": "Detach", session_id: SessionId, } | { "type": "Resize", session_id: SessionId, cols: number, rows: number, } | { "type": "Kill", session_id: SessionId, } | { "type": "CloseSession", session_id: SessionId, } | { "type": "SessionRemoved", session_id: SessionId, } | { "type": "RenameSession", session_id: SessionId, label: string, } | { "type": "SessionExited", session_id: SessionId, exit_code: number | null, } | { "type": "MarkSeen", session_id: SessionId, } | { "type": "HookEvent", session_id: SessionId, payload: string, } | { "type": "Shutdown" } | { "type": "Error", 
+resume: string | null, 
+/**
+ * The session this one takes the place of (a restore after a
+ * restart, or Restart from the session menu). The daemon copies
+ * that session's label, renamed flag and prompt label, so the
+ * session keeps its name. Ignored when no such session is stored;
+ * a daemon built before this field ignores it.
+ */
+replaces: SessionId | null, } | { "type": "SessionCreated", session: SessionInfo, } | { "type": "SessionUpdated", session: SessionInfo, } | { "type": "Attach", session_id: SessionId, cols: number, rows: number, } | { "type": "Detach", session_id: SessionId, } | { "type": "Resize", session_id: SessionId, cols: number, rows: number, } | { "type": "Kill", session_id: SessionId, } | { "type": "CloseSession", session_id: SessionId, } | { "type": "SessionRemoved", session_id: SessionId, } | { "type": "RenameSession", session_id: SessionId, label: string, } | { "type": "SessionExited", session_id: SessionId, exit_code: number | null, } | { "type": "MarkSeen", session_id: SessionId, } | { "type": "HookEvent", session_id: SessionId, payload: string, } | { "type": "Shutdown" } | { "type": "Error", 
 /**
  * Almost always the `type` tag of the message that caused the error
  * (for example `"Resize"`). Four values instead name a condition
