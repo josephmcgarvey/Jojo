@@ -29,6 +29,8 @@ pub struct Settings {
     /// The base color the theme is redrawn around, as `#rrggbb`; empty uses
     /// the theme's own accent.
     pub accent_color: String,
+    /// The sidebar's width in CSS pixels, set by dragging its right edge.
+    pub sidebar_width: u32,
 }
 
 impl Default for Settings {
@@ -47,6 +49,7 @@ impl Default for Settings {
             restore_sessions: true,
             ui_font_family: "Geist Sans".into(),
             accent_color: String::new(),
+            sidebar_width: 268,
         }
     }
 }

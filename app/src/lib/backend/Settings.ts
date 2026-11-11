@@ -24,4 +24,8 @@ uiFontFamily: string,
  * The base color the theme is redrawn around, as `#rrggbb`; empty uses
  * the theme's own accent.
  */
-accentColor: string, };
+accentColor: string, 
+/**
+ * The sidebar's width in CSS pixels, set by dragging its right edge.
+ */
+sidebarWidth: number, };

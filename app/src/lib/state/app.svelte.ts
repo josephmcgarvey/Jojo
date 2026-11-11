@@ -878,6 +878,14 @@ export function dismissError(): void {
   mergeModels();
 }
 
+/** Saves the sidebar's width (dragged at its right edge); the other settings are unchanged. */
+export async function saveSidebarWidth(width: number): Promise<void> {
+  if (!app.settings) return;
+  const settings = { ...app.settings, sidebarWidth: width };
+  app.settings = settings;
+  await invoke("save_settings", { settings }).catch(() => {});
+}
+
 /** Saves the settings screen's values and applies the terminal font to open panes (spec 9.10). */
 export async function saveSettings(settings: Settings): Promise<void> {
   await invoke("save_settings", { settings });

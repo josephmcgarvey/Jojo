@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { app, currentTab, focusedSessionId, startApp } from "./lib/state/app.svelte";
+  import { app, currentTab, focusedSessionId, saveSidebarWidth, startApp } from "./lib/state/app.svelte";
   import { closeDialog, closeMenu, ui } from "./lib/state/ui.svelte";
   import { resolveShortcut } from "./lib/input/shortcuts";
   import { runAction } from "./lib/state/actions";
   import { dialog } from "./lib/state/dialog.svelte";
   import { terminalControls } from "./lib/terminal/registry";
   import { LOCAL_LABEL } from "./lib/platform";
+  import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, SIDEBAR_KEY_STEP } from "./lib/layout/sidebar";
   import { applyTheme, resolveTheme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
@@ -52,6 +53,45 @@
   }
   const tab = $derived(currentTab());
 
+  /**
+   * The sidebar's width: while its right edge is dragged, the dragged
+   * width; otherwise the sidebarWidth setting. Dragging changes the width
+   * live (the panes refit through their resize observers) and saves it on
+   * release; a double-click returns to the default; Left and Right on the
+   * focused edge move it by SIDEBAR_KEY_STEP.
+   */
+  let dragWidth = $state<number | null>(null);
+  const sidebarWidth = $derived(dragWidth ?? clampSidebarWidth(app.settings?.sidebarWidth));
+  let resizeStart: { x: number; width: number; pointerId: number } | null = null;
+
+  function onResizeDown(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    resizeStart = { x: event.clientX, width: sidebarWidth, pointerId: event.pointerId };
+    dragWidth = sidebarWidth;
+  }
+
+  function onResizeMove(event: PointerEvent): void {
+    if (!resizeStart || event.pointerId !== resizeStart.pointerId) return;
+    dragWidth = clampSidebarWidth(resizeStart.width + event.clientX - resizeStart.x);
+  }
+
+  function onResizeUp(event: PointerEvent): void {
+    if (!resizeStart || event.pointerId !== resizeStart.pointerId) return;
+    const width = dragWidth ?? sidebarWidth;
+    resizeStart = null;
+    // The setting takes the new width before the dragged value is dropped, so the edge does not jump back.
+    void saveSidebarWidth(width).finally(() => (dragWidth = null));
+  }
+
+  function onResizeKey(event: KeyboardEvent): void {
+    const step = event.key === "ArrowLeft" ? -SIDEBAR_KEY_STEP : event.key === "ArrowRight" ? SIDEBAR_KEY_STEP : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    void saveSidebarWidth(clampSidebarWidth(sidebarWidth + step));
+  }
+
   /** Closing a menu returns keyboard focus to the focused pane's terminal. */
   function closeMenuAndRefocus(): void {
     closeMenu();
@@ -59,8 +99,28 @@
   }
 </script>
 
-<div class="window">
+<div class="window" class:resizing={dragWidth !== null} style:--side-w={`${sidebarWidth}px`}>
   <Sidebar />
+  <!-- A focusable separator is a widget in ARIA (it has a value and takes
+       Left and Right), which Svelte's check does not know. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="resizer"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Sidebar width"
+    aria-valuenow={sidebarWidth}
+    aria-valuemin={MIN_SIDEBAR_WIDTH}
+    aria-valuemax={MAX_SIDEBAR_WIDTH}
+    tabindex="0"
+    title="Drag to resize the sidebar; double-click for the default width"
+    onpointerdown={onResizeDown}
+    onpointermove={onResizeMove}
+    onpointerup={onResizeUp}
+    onpointercancel={onResizeUp}
+    ondblclick={() => void saveSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
+    onkeydown={onResizeKey}
+  ></div>
   <section class="main">
     <TabBar />
     <Banner />
@@ -96,8 +156,9 @@
 
 <style>
   .window {
+    position: relative;
     display: grid;
-    grid-template-columns: 268px 1fr;
+    grid-template-columns: var(--side-w) 1fr;
     height: 100%;
     background: var(--jojo-bg-glow);
   }
@@ -116,5 +177,39 @@
     margin: 40px auto;
     text-align: center;
     color: var(--jojo-muted);
+  }
+  /* The sidebar's right edge: an 8 px handle over the gap between the
+     sidebar and the panes, with an accent line while hovered, focused or
+     dragged. Positioned, not a grid column, so it takes no width. */
+  .resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--side-w) - 2px);
+    z-index: 5;
+    width: 8px;
+    cursor: col-resize;
+    outline: none;
+  }
+  .resizer::after {
+    content: "";
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    left: 3px;
+    width: 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background 120ms;
+  }
+  .resizer:hover::after,
+  .resizer:focus-visible::after,
+  .resizing .resizer::after {
+    background: var(--jojo-accent);
+  }
+  /* While dragging, the cursor stays a resize cursor and text is not selected. */
+  .resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 </style>
