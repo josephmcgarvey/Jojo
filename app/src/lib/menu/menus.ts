@@ -5,7 +5,7 @@ import { SHORTCUT_LABELS } from "../input/shortcuts";
 import { countPanes, MAX_PANES, paneIds, type LayoutPreset, type SplitDirection } from "../layout/tree";
 import type { SessionInfo } from "../protocol/SessionInfo";
 import type { SessionKind } from "../protocol/SessionKind";
-import { canRestart, canResume } from "../state/sessionRules";
+import { canCompact, canRestart, canResume, compactBlocker } from "../state/sessionRules";
 import { SEPARATOR, type MenuEntry } from "./types";
 
 /** Spec 9.4, "Limits": the tooltip of split items and Move-to targets in a full tab. */
@@ -154,6 +154,7 @@ export interface SessionMenuActions {
   restart(): void;
   resume(): void;
   kill(): void;
+  compact(): void;
 }
 
 /**
@@ -173,7 +174,14 @@ function openInSplitBlocker(ctx: SessionMenuContext): string | undefined {
 export function buildSessionMenu(ctx: SessionMenuContext, actions: SessionMenuActions): MenuEntry[] {
   const blocked = openInSplitBlocker(ctx);
   const alone = !ctx.sessionTab || countPanes(ctx.sessionTab.root) < 2;
+  // Compact conversation leads the menu for a session running Claude Code,
+  // so right-clicking the context meter (which opens this menu) puts it
+  // first.
+  const compact: MenuEntry[] = canCompact(ctx.session)
+    ? [{ kind: "action", label: "Compact conversation", disabledReason: compactBlocker(ctx.session), run: actions.compact }, SEPARATOR]
+    : [];
   const entries: MenuEntry[] = [
+    ...compact,
     { kind: "action", label: "Open in split right", disabledReason: blocked, run: () => actions.openInSplit("row") },
     { kind: "action", label: "Open in split down", disabledReason: blocked, run: () => actions.openInSplit("column") },
     { kind: "action", label: "Move to new tab", disabledReason: alone ? ALONE_IN_TAB : undefined, run: actions.moveToNewTab },

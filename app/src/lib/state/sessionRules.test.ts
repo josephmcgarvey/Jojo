@@ -3,7 +3,9 @@ import type { SessionInfo } from "../protocol/SessionInfo";
 import {
   restorePlan,
   busyStateText,
+  canCompact,
   canRestart,
+  compactBlocker,
   closeTabMessage,
   closeTabNeedsConfirmation,
   closeTabSummary,
@@ -104,5 +106,21 @@ describe("restorePlan", () => {
 
   it("does not type an id that is not a plain conversation id", () => {
     expect(restorePlan({ ...ended, claude_session_id: "x; rm -rf ~" })?.typeAfterStart).toBeNull();
+  });
+});
+
+describe("Compact conversation", () => {
+  it("is offered while Claude Code runs in the session, which is when it has a context meter", () => {
+    expect(canCompact({ state: "idle", context_tokens: 40_000 })).toBe(true);
+    expect(canCompact({ state: "running", context_tokens: 40_000 })).toBe(true);
+    expect(canCompact({ state: "idle", context_tokens: null })).toBe(false);
+    expect(canCompact({ state: "exited", context_tokens: 40_000 })).toBe(false);
+  });
+
+  it("is enabled only while Claude Code waits at its prompt", () => {
+    for (const state of ["idle", "done", "error", "running"] as const) expect(compactBlocker({ state }), state).toBeUndefined();
+    expect(compactBlocker({ state: "working" })).toBe("Claude is working; compact when it finishes");
+    expect(compactBlocker({ state: "needs_you" })).toBe("Claude is waiting for your answer");
+    expect(compactBlocker({ state: "starting" })).toBe("Claude is still starting");
   });
 });

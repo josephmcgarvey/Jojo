@@ -51,6 +51,39 @@ export function closeTabNeedsConfirmation(summary: CloseTabSummary): boolean {
 }
 
 /**
+ * Compact conversation (the context meter's menu) types Claude Code's
+ * `/compact` command into the session. It is offered while Claude Code is
+ * running in the session, which is when the session has a context meter:
+ * the daemon sets context_tokens from Claude Code's transcript and clears
+ * it when Claude Code exits. That includes a shell in which `claude` was
+ * started by hand.
+ */
+export function canCompact(session: Pick<SessionInfo, "state" | "context_tokens">): boolean {
+  return session.context_tokens !== null && session.state !== "exited";
+}
+
+/**
+ * Why Compact conversation is disabled, or undefined when it is enabled.
+ * The command is typed into the terminal, so it is enabled only while
+ * Claude Code waits at its prompt (idle, done, or after a failed turn).
+ * While Claude Code works, the text would land in the middle of its turn;
+ * while it needs you, the keystrokes would answer the permission prompt or
+ * question on screen.
+ */
+export function compactBlocker(session: Pick<SessionInfo, "state">): string | undefined {
+  switch (session.state) {
+    case "working":
+      return "Claude is working; compact when it finishes";
+    case "needs_you":
+      return "Claude is waiting for your answer";
+    case "starting":
+      return "Claude is still starting";
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Spec 5.4: Resume is offered for an exited session with a recorded
  * claude_session_id. That includes a shell session in which `claude` was
  * started by hand; Resume then starts claude directly in its pane.

@@ -34,6 +34,7 @@ import { allTerminals, terminalControls } from "../terminal/registry";
 import { applyControl, clearConnectionErrors, emptyModel, type Model } from "./reducer";
 import {
   busyStateText,
+  canCompact,
   canRestart,
   canResume,
   restorePlan,
@@ -41,6 +42,7 @@ import {
   closeTabNeedsConfirmation,
   closeTabSummary,
   closesOnExit,
+  compactBlocker,
   isBusy,
   restartShell,
 } from "./sessionRules";
@@ -616,6 +618,28 @@ export function renameSession(sessionId: string, label: string): void {
 }
 
 /** Kill ends the process; jojod keeps the row as exited so the final output stays readable. */
+/** Delay between typing `/compact` and Enter (see compactSession). */
+const COMPACT_ENTER_DELAY_MS = 80;
+
+/**
+ * Types `/compact` and Enter into a Claude Code session, as if the user had
+ * typed them. Enter is sent separately, after COMPACT_ENTER_DELAY_MS.
+ * Terminal programs that recognize a paste by several characters arriving
+ * in one read can take a carriage return in that read as a new line in the
+ * prompt instead of a submit; a separate write avoids depending on how
+ * Claude Code's input box handles that case.
+ */
+export function compactSession(sessionId: string): void {
+  const session = app.model.sessions[sessionId];
+  if (!session || !canCompact(session) || compactBlocker(session)) return;
+  const machine = machineOfSession(sessionId);
+  const encode = (text: string) => new TextEncoder().encode(text);
+  void sendInput(sessionId, encode("/compact"), machine)
+    .then(() => new Promise((resolve) => setTimeout(resolve, COMPACT_ENTER_DELAY_MS)))
+    .then(() => sendInput(sessionId, encode("\r"), machine))
+    .catch(() => {});
+}
+
 export function killSession(sessionId: string): void {
   void sendControl({ type: "Kill", session_id: sessionId }, machineOfSession(sessionId)).catch(() => {});
 }

@@ -10,6 +10,7 @@ import {
   applyTabPreset,
   closePane,
   closeTab,
+  compactSession,
   currentProjectLayout,
   currentTab,
   equalizeTabSizes,
@@ -95,6 +96,7 @@ export function sessionMenu(sessionId: string): MenuEntry[] {
       restart: () => restartSession(sessionId),
       resume: () => resumeSession(sessionId),
       kill: () => killSession(sessionId),
+      compact: () => compactSession(sessionId),
     },
   );
 }

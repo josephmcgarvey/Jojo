@@ -43,7 +43,7 @@ function paneActions(over: Partial<PaneMenuActions> = {}): PaneMenuActions {
 }
 
 function sessionActions(over: Partial<SessionMenuActions> = {}): SessionMenuActions {
-  return { openInSplit: noop, moveToNewTab: noop, rename: noop, restart: noop, resume: noop, kill: noop, ...over };
+  return { openInSplit: noop, moveToNewTab: noop, rename: noop, restart: noop, resume: noop, kill: noop, compact: noop, ...over };
 }
 
 function tab(id: string, ids: string[], extra: Partial<TabLayout> = {}): TabLayout {
@@ -212,6 +212,21 @@ describe("buildSessionMenu", () => {
     expect(entry(exited, "Kill")).toMatchObject({ disabledReason: "Session has already exited" });
     expect(isEnabled(entry(exited, "Move to new tab"))).toBe(true);
     expect(labels(exited)).not.toContain("Resume");
+  });
+
+  it("puts Compact conversation first for a session running Claude Code, disabled while it works", () => {
+    const compact = vi.fn();
+    const ctx = { currentTab: current, currentProjectId: "P1", sessionTab: tab("T2", ["S"]) };
+    const idle = buildSessionMenu({ ...ctx, session: session({ kind: "claude", state: "idle", context_tokens: 90_000 }) }, sessionActions({ compact }));
+    expect(labels(idle)[0]).toBe("Compact conversation");
+    expect(idle[1]).toMatchObject({ kind: "separator" });
+    const item = entry(idle, "Compact conversation");
+    expect(isEnabled(item)).toBe(true);
+    if (item.kind === "action") item.run();
+    expect(compact).toHaveBeenCalledTimes(1);
+    const working = buildSessionMenu({ ...ctx, session: session({ kind: "claude", state: "working", context_tokens: 90_000 }) }, sessionActions());
+    expect(entry(working, "Compact conversation")).toMatchObject({ disabledReason: "Claude is working; compact when it finishes" });
+    expect(labels(buildSessionMenu({ ...ctx, session: session() }, sessionActions()))).not.toContain("Compact conversation");
   });
 
   it("offers Resume before Restart for an exited session with a claude_session_id", () => {
