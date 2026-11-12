@@ -139,7 +139,7 @@ Jojo has seven themes:
 | Theme | Mode | Description |
 |---|---|---|
 | Neon Glass | Dark | Translucent glass panels with blur and glow, and a violet accent. The default. |
-| Prism | Dark | Neon Glass with an animated rainbow: the focused pane's border and glow, the selected tab, the selected session, the logo and the background glow cycle through the color wheel every 12 seconds. |
+| Prism | Dark | Neon Glass with an animated rainbow: working sessions (their panes, badges and state words), the focused pane, the selected tab, the selected session, the logo and the background glow cycle through the color wheel every 12 seconds. |
 | Daylight | Light | The Neon Glass layout in light colors. |
 | Graphite | Dark | Flat and matte, gray throughout, color only for session states. |
 | Phosphor | Dark | Green-screen terminal: square corners, text glow, monospace interface font. |
