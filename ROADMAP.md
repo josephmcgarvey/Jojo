@@ -141,3 +141,35 @@ barely visible until used:
 selects and folds it, as in the mock-up, or only the chevron folds it. The
 chevron alone keeps selecting and folding separate, but its click target is
 much smaller.
+
+## 7. Choosing an agent per session
+
+**Status:** requested by the user on 2026-11-12; postponed. Compact
+conversation was built for Claude Code only (the session menu and the
+context meter's right-click menu type `/compact`).
+
+A session is either `Claude` or `Shell` today (`SessionKind` in
+`crates/jojo-proto/src/msg.rs`). Supporting other coding agents means a
+session records which agent it runs, and each agent has a profile that
+says:
+
+1. **Launch command:** for example `claude`, `codex` or `gemini`, with the
+   arguments for resuming a conversation where the agent has them.
+2. **State reporting:** how the agent tells jojod it is working, waiting
+   for the user or done. Claude Code reports through hooks registered in
+   `~/.claude/settings.json` (`jojod install-hooks`). Each other agent's
+   mechanism, if it has one, has to be checked agent by agent; an agent
+   without one shows only Running and Exited, as a shell does.
+3. **Context source:** where the context meter's token count and window
+   size come from. For Claude Code, jojod reads the transcript named by the
+   hooks (`crates/jojo-agent/src/context.rs`). An agent without a source
+   has no meter.
+4. **Compact command:** the text Compact conversation types, if the agent
+   has one. Claude Code and OpenAI Codex CLI use `/compact`; Google Gemini
+   CLI uses `/compress` (both unverified against current versions). An
+   agent without one has no Compact item.
+
+The change replaces `SessionKind::Claude` with an agent id in the protocol
+(a protocol version change, with old daemons answered as for other
+version mismatches), adds the agent choice to the New session menu, and
+moves Compact conversation's command and enabled states into the profile.
