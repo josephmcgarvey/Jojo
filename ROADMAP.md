@@ -74,3 +74,33 @@ Both need ffmpeg (`winget install Gyan.FFmpeg`).
    ElevenLabs account.
 3. The audience and length, for example a 60–90 second overview for a
    website or a 3–5 minute walkthrough for people trying Jojo.
+
+## 5. Clear error for servers that run each SSH connection in a container
+
+**Status:** found on 2026-11-12 on client-shared-host; the server was fixed by
+changing the system user's shell, and the app change is postponed.
+
+RunCloud's jailed shell (`/bin/rc-shell`) runs every SSH connection in its
+own temporary Docker container: a separate process namespace (process 1 is
+`bash`), the hostname `localhost` and a `/.dockerenv` file. The home folder
+is shared between connections; processes are not. Jojo starts the remote
+daemon (`jojod serve --daemonize`) over one connection and attaches over
+another (`jojod attach --stdio`). The daemon dies with the first connection's
+container, the attach finds `~/.jojo/jojod.sock` with no listener, and the
+window retries about every 33 seconds while showing "Reconnecting"
+indefinitely, with no explanation. The server's log showed a new
+`jojod starting` line every 33 seconds and no client connections.
+
+The fix is to detect this case and report it instead of retrying:
+
+1. During **Add remote location** and on each reconnect, check for
+   `/.dockerenv` or a process 1 that is not an init system, and check whether
+   a daemon started in one connection is still running in the next.
+2. When it is not, stop retrying and show a message such as "This server
+   runs each SSH connection in a temporary container, so the Jojo daemon and
+   its sessions cannot keep running. Change the user's shell to /bin/bash
+   (RunCloud: System Users)."
+
+Running the daemon inside the attach connection would make such servers
+usable, but sessions would end whenever the window disconnects, so it is not
+part of this fix.
