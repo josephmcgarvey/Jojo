@@ -16,6 +16,33 @@ body {
 * {
   box-sizing: border-box;
 }
+/* The rainbow effect (a theme with "effects": ["rainbow"], such as Prism).
+   --jojo-hue is a registered angle so it can be animated; the theme's
+   tokens use it in hsl() colors (focus border and glow, logo, background
+   glow, selected session). The tokens are set on the root element, where
+   var(--jojo-hue) is substituted, so every element that uses them follows
+   the one animation on the root. The hue moves in 1.5 degree steps, 20 per
+   second, instead of every frame, which halves the style recalculation the
+   animation costs without a visible difference at this speed. */
+@property --jojo-hue {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+@keyframes jojo-hue {
+  to {
+    --jojo-hue: 360deg;
+  }
+}
+html[data-effects~="rainbow"] {
+  animation: jojo-hue 12s steps(240) infinite;
+}
+/* Reduced motion: the rainbow colors stay, fixed at hue 0. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-effects~="rainbow"] {
+    animation: none;
+  }
+}
 button {
   font: inherit;
   color: inherit;

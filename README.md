@@ -134,11 +134,12 @@ window reattaches when the connection returns.
 color, terminal and interface fonts, scrollback length, copy on select,
 notifications and sounds, the default shell, and session restore.
 
-Jojo has six themes:
+Jojo has seven themes:
 
 | Theme | Mode | Description |
 |---|---|---|
 | Neon Glass | Dark | Translucent glass panels with blur and glow, and a violet accent. The default. |
+| Prism | Dark | Neon Glass with an animated rainbow: the focused pane's border and glow, the selected tab, the selected session, the logo and the background glow cycle through the color wheel every 12 seconds. |
 | Daylight | Light | The Neon Glass layout in light colors. |
 | Graphite | Dark | Flat and matte, gray throughout, color only for session states. |
 | Phosphor | Dark | Green-screen terminal: square corners, text glow, monospace interface font. |
@@ -148,7 +149,9 @@ Jojo has six themes:
 The **base color** setting recolors the accent of any theme. The resulting
 colors are adjusted to keep text readable (at least 4.5:1 contrast for
 accent-colored text). The **Interface font** option **Theme default** uses
-each theme's own font; any other choice applies to every theme.
+each theme's own font; any other choice applies to every theme. Prism's
+rainbow colors do not follow the base color, and they stop moving when
+Windows' **Show animations** setting is off (`prefers-reduced-motion`).
 
 ## Claude Code hooks
 

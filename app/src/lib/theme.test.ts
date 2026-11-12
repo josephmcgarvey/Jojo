@@ -31,10 +31,30 @@ function expectReadable(theme: Theme, label: string): void {
 describe("theme", () => {
   it("writes every token as a --jojo- custom property, and color-scheme", () => {
     const setProperty = vi.fn();
-    applyTheme(neonGlass as Theme, { style: { setProperty } });
+    const setAttribute = vi.fn();
+    applyTheme(neonGlass as Theme, { style: { setProperty }, setAttribute });
     expect(setProperty).toHaveBeenCalledWith("--jojo-bg", "#060816");
     expect(setProperty).toHaveBeenCalledWith("color-scheme", "dark");
     expect(setProperty).toHaveBeenCalledTimes(Object.keys(neonGlass.tokens).length + 1);
+    expect(setAttribute).toHaveBeenCalledWith("data-effects", "");
+  });
+
+  it("writes Prism's rainbow effect to data-effects", () => {
+    const setAttribute = vi.fn();
+    applyTheme(THEMES.prism, { style: { setProperty: vi.fn() }, setAttribute });
+    expect(setAttribute).toHaveBeenCalledWith("data-effects", "rainbow");
+  });
+
+  it("keeps Prism's rainbow colors under a base color", () => {
+    const blue = resolveTheme({ theme: "prism", accentColor: "#5aa2ff" });
+    for (const name of ["focus-ring", "focus-border", "brand-gradient", "sel-gradient", "tab-glow"]) {
+      expect(blue.tokens[name], name).toBe(THEMES.prism.tokens[name]);
+      expect(blue.tokens[name], name).toContain("var(--jojo-hue)");
+    }
+    // The background glow keeps its hue-driven glows; its final hex layer is the background, which the base color tints.
+    expect(blue.tokens["bg-glow"]).toBe(THEMES.prism.tokens["bg-glow"].replace(THEMES.prism.tokens.bg, blue.tokens.bg));
+    expect(blue.tokens.accent).toBe("#5aa2ff");
+    expect(blue.effects).toEqual(["rainbow"]);
   });
 
   it.each(Object.entries(THEMES))("%s defines the tokens and terminal colors the UI uses", (_id, theme) => {

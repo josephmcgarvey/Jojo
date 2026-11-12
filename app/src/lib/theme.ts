@@ -8,6 +8,7 @@ import graphite from "../themes/graphite.json";
 import neonGlass from "../themes/neon-glass.json";
 import phosphor from "../themes/phosphor.json";
 import porcelain from "../themes/porcelain.json";
+import prism from "../themes/prism.json";
 import { uiFontStack } from "./fonts";
 import { recolorTheme } from "./palette";
 
@@ -17,11 +18,18 @@ export interface Theme {
   accent: string;
   tokens: Record<string, string>;
   terminal: ITheme;
+  /**
+   * Animated effects the theme switches on, written to the root element's
+   * data-effects attribute for app.css. "rainbow" animates --jojo-hue, which
+   * the theme's tokens use in hsl() colors.
+   */
+  effects?: string[];
 }
 
 /** The themes in Settings ▸ Theme, by the id stored in settings.json. */
 export const THEMES: Record<string, Theme> = {
   "neon-glass": neonGlass as Theme,
+  prism: prism as Theme,
   daylight: daylight as Theme,
   graphite: graphite as Theme,
   phosphor: phosphor as Theme,
@@ -52,12 +60,18 @@ export function resolveTheme(appearance: Partial<Appearance> | null | undefined)
 
 interface StyleTarget {
   style: { setProperty(name: string, value: string): void };
+  setAttribute(name: string, value: string): void;
 }
 
-/** Writes the tokens as --jojo-* properties and sets color-scheme, which colors scrollbars and native controls. */
+/**
+ * Writes the tokens as --jojo-* properties, sets color-scheme (which colors
+ * scrollbars and native controls), and writes the theme's effects to
+ * data-effects (empty for a theme without any).
+ */
 export function applyTheme(theme: Theme, root: StyleTarget = document.documentElement): void {
   for (const [name, value] of Object.entries(theme.tokens)) {
     root.style.setProperty(`--jojo-${name}`, value);
   }
   root.style.setProperty("color-scheme", theme.mode);
+  root.setAttribute("data-effects", (theme.effects ?? []).join(" "));
 }
