@@ -104,3 +104,40 @@ The fix is to detect this case and report it instead of retrying:
 Running the daemon inside the attach connection would make such servers
 usable, but sessions would end whenever the window disconnects, so it is not
 part of this fix.
+
+## 6. Folding locations and projects in the sidebar
+
+**Status:** mock-up made on 2026-11-12
+(https://claude.ai/artifact/5JdLfPsp4LdEntkeGPoMgk); postponed by the user
+before building.
+
+Each location (This PC and each remote location) and each project in the
+sidebar can be folded to hide the rows beneath it. The design is meant to be
+barely visible until used:
+
+1. A 9-pixel chevron appears in the row's left margin while the pointer is
+   over a location or project row. It sits in the row's existing padding, so
+   no text moves.
+2. Clicking the location name or the project name folds or unfolds it.
+   Clicking a project name also still selects the project.
+3. A folded row keeps its chevron at low opacity, pointing right, which is
+   what separates a folded group from an empty one.
+4. In place of the hidden rows, a folded row shows one 5-pixel dot per
+   session that is not idle, in its state color. A session that needs the
+   user keeps its amber pulse, so folding never hides a waiting session. A
+   folded location also shows its project count ("2 projects"), and its
+   dots cover all of its projects' sessions.
+5. The fold animates over 160 milliseconds, with no animation under
+   `prefers-reduced-motion`.
+6. With a row focused, Left folds and Right unfolds it. Alt+click folds or
+   unfolds every project under the same location.
+7. The Needs you queue still lists waiting sessions from folded groups.
+   Choosing one unfolds its location and project and focuses its pane.
+8. Folded groups are saved in `layout.json` (a list of folded location and
+   project ids, with a serde default so older files still load), so they
+   stay folded after a restart.
+
+**Open question for the user:** whether a click on a project name both
+selects and folds it, as in the mock-up, or only the chevron folds it. The
+chevron alone keeps selecting and folding separate, but its click target is
+much smaller.
