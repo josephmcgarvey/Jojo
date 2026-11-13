@@ -38,6 +38,7 @@
     "glass-side": "rgba(20, 26, 54, 0.42)",
     "glass-pane": "rgba(8, 11, 24, 0.72)",
     "focus-ring": "0 0 0 1px hsl(var(--jojo-hue) 95% 72% / 0.4), -8px 0 24px hsl(var(--jojo-hue) 95% 66% / 0.16), 8px 0 24px hsl(calc(var(--jojo-hue) + 120deg) 95% 66% / 0.16), 0 6px 24px hsl(calc(var(--jojo-hue) + 240deg) 95% 66% / 0.12)",
+    "modal-glow": "0 0 0 1px hsl(var(--jojo-hue) 95% 72% / 0.35), -14px 0 44px hsl(var(--jojo-hue) 95% 66% / 0.2), 14px 0 44px hsl(calc(var(--jojo-hue) + 120deg) 95% 66% / 0.2), 0 14px 44px hsl(calc(var(--jojo-hue) + 240deg) 95% 66% / 0.16)",
     "focus-border": "hsl(var(--jojo-hue) 95% 74% / 0.85)",
     "tab-glow": "0 0 12px hsl(var(--jojo-hue) 95% 70% / 0.35)",
     "sel-gradient": "linear-gradient(90deg, hsl(var(--jojo-hue) 90% 70% / 0.26), hsl(calc(var(--jojo-hue) + 90deg) 90% 70% / 0.06))",

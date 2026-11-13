@@ -146,11 +146,20 @@
     <button class="new" title="New terminal" aria-label="New terminal" onclick={() => newSession(app.selectedProjectId!, "shell")}><PlusCircle /></button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
-  <!-- The snippets library (SnippetsDialog.svelte). -->
-  <button class="snippets" title="Saved commands to insert or run in the focused terminal" onclick={() => openDialog({ kind: "snippets" })}>Snippets</button>
-  <!-- "Agents first" C: the switcher, reached by click as well as by its shortcut. -->
-  <button class="search" onclick={() => openDialog({ kind: "switcher" })}>
-    <span>Search sessions and commands</span><kbd>{SHORTCUT_LABELS.switcher}</kbd>
+  <!-- Icon buttons for the snippets library (SnippetsDialog.svelte, a
+       command-prompt icon) and the switcher ("Agents first" C, a magnifier;
+       also Ctrl+Shift+P). The names are in the tooltips and aria-labels. -->
+  <button class="tool" title="Snippets: saved commands to insert or run in the focused terminal" aria-label="Snippets" onclick={() => openDialog({ kind: "snippets" })}>
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" />
+      <path d="M4.5 6.2 6.8 8l-2.3 1.8M8.3 10.2h3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  </button>
+  <button class="tool" title={`Search sessions, commands and output (${SHORTCUT_LABELS.switcher})`} aria-label="Search" onclick={() => openDialog({ kind: "switcher" })}>
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4" />
+      <path d="m10.4 10.4 3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+    </svg>
   </button>
   {#if !isMac}<div class="chrome"><WindowControls /></div>{/if}
 </div>
@@ -277,40 +286,31 @@
     flex: 1;
     align-self: stretch;
   }
-  .search {
+  /* The Snippets and Search icon buttons: 32 px squares in the pane color,
+     with the theme's focus border and glow on hover and keyboard focus. */
+  .tool {
     flex: none;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    display: grid;
+    place-items: center;
+    width: 32px;
     height: 32px;
-    padding: 0 10px;
     border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius);
     background: var(--jojo-pane);
     color: var(--jojo-muted);
-    font-size: 12.5px;
   }
-  .snippets {
-    flex: none;
-    height: 32px;
-    padding: 0 10px;
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    background: var(--jojo-pane);
-    color: var(--jojo-muted);
-    font-size: 12.5px;
+  .tool + .tool {
+    margin-left: -2px;
   }
-  .snippets:hover,
-  .snippets:focus-visible,
-  .search:hover,
-  .search:focus-visible {
-    color: var(--jojo-fg2);
+  .tool:hover,
+  .tool:focus-visible {
+    color: var(--jojo-fg);
     border-color: var(--jojo-focus-border);
+    box-shadow: var(--jojo-focus-ring);
+    outline: none;
   }
-  .search kbd {
-    font-family: var(--jojo-font-mono);
-    font-size: 11px;
-    color: var(--jojo-fg2);
+  .tool:active {
+    color: var(--jojo-accent);
   }
   /* Windows: the HTML window controls keep their 36 px row at the top. */
   .chrome {

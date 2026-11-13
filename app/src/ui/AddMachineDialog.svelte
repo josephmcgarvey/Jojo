@@ -86,8 +86,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" onkeydown={onKeydown}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-machine-title">
+<div class="scrim jojo-scrim" onkeydown={onKeydown}>
+  <div class="dialog jojo-modal" role="dialog" aria-modal="true" aria-labelledby="add-machine-title">
     <h2 id="add-machine-title">Add remote location</h2>
     <p class="hint">
       A Linux server (x86_64 or aarch64) you can reach with <code>ssh -o BatchMode=yes</code>: its key must be loaded in the
@@ -150,15 +150,10 @@
     z-index: 200;
     display: grid;
     place-items: center;
-    background: var(--jojo-scrim);
   }
   .dialog {
     width: min(520px, calc(100% - 32px));
     padding: 18px 20px 16px;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
   }
   h2 {
     margin: 0 0 8px;

@@ -63,8 +63,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" onkeydown={onKeydown}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-project-title">
+<div class="scrim jojo-scrim" onkeydown={onKeydown}>
+  <div class="dialog jojo-modal" role="dialog" aria-modal="true" aria-labelledby="add-project-title">
     <h2 id="add-project-title">Add project on {machine?.label ?? "server"}</h2>
     <p class="hint">Open the project's folder on the server, then click Add. Sessions in this project start in that folder.</p>
     <!-- svelte-ignore a11y_autofocus -->
@@ -97,15 +97,10 @@
     z-index: 200;
     display: grid;
     place-items: center;
-    background: var(--jojo-scrim);
   }
   .dialog {
     width: min(460px, calc(100% - 32px));
     padding: 18px 20px 16px;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
   }
   h2 {
     margin: 0 0 8px;

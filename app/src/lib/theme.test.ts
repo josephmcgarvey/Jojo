@@ -3,7 +3,7 @@ import neonGlass from "../themes/neon-glass.json";
 import { BASE_COLOR_PRESETS, contrast, effectiveAccent, parseHex, recolorTheme } from "./palette";
 import { THEMES, applyTheme, resolveTheme, themeById, type Theme } from "./theme";
 
-const REQUIRED_TOKENS = ["bg", "bg-glow", "side", "bar", "pane", "line", "sel", "fg", "fg2", "muted", "accent", "working", "needs-you", "done", "error", "idle", "font-ui", "font-mono", "brand-gradient", "radius", "radius-sm", "danger", "scrim", "menu", "shadow", "glass-side", "glass-pane", "focus-ring", "focus-border", "tab-glow", "sel-gradient", "pill", "radius-lg", "side-blur", "pane-blur", "side-margin", "side-radius", "bw", "dot-radius", "text-glow", "panel-shadow"];
+const REQUIRED_TOKENS = ["bg", "bg-glow", "side", "bar", "pane", "line", "sel", "fg", "fg2", "muted", "accent", "working", "needs-you", "done", "error", "idle", "font-ui", "font-mono", "brand-gradient", "radius", "radius-sm", "danger", "scrim", "menu", "shadow", "glass-side", "glass-pane", "focus-ring", "modal-glow","focus-border", "tab-glow", "sel-gradient", "pill", "radius-lg", "side-blur", "pane-blur", "side-margin", "side-radius", "bw", "dot-radius", "text-glow", "panel-shadow"];
 
 /** Text contrast floors: fg and fg2 are body text, muted is secondary text (WCAG AA 4.5:1). */
 function textContrast(theme: Theme): Record<string, number> {

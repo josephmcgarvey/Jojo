@@ -106,8 +106,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" onkeydown={onKeydown}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" bind:this={dialogElement}>
+<div class="scrim jojo-scrim" onkeydown={onKeydown}>
+  <div class="dialog jojo-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" bind:this={dialogElement}>
     <h2 id="settings-title">Settings</h2>
 
     <section>
@@ -226,7 +226,6 @@
     z-index: 200;
     display: grid;
     place-items: center;
-    background: var(--jojo-scrim);
   }
   .dialog {
     outline: none;
@@ -234,10 +233,6 @@
     max-height: calc(100% - 32px);
     overflow-y: auto;
     padding: 18px 20px 16px;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
   }
   h2 {
     margin: 0 0 8px;

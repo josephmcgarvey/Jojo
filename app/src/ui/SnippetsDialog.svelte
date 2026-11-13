@@ -81,9 +81,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="scrim" onclick={close} onkeydown={onKeydown}>
+<div class="scrim jojo-scrim" onclick={close} onkeydown={onKeydown}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="panel" role="dialog" aria-modal="true" aria-label="Snippets" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="panel jojo-modal" role="dialog" aria-modal="true" aria-label="Snippets" tabindex="-1" onclick={(e) => e.stopPropagation()}>
     <div class="top">
       <input bind:this={input} bind:value={query} placeholder="Find a snippet" spellcheck="false" aria-label="Find a snippet" />
       <button class="new" onclick={() => edit(null)}>New snippet</button>
@@ -139,17 +139,12 @@
     display: flex;
     justify-content: center;
     padding-top: 12vh;
-    background: var(--jojo-scrim);
   }
   .panel {
     width: min(620px, calc(100% - 32px));
     max-height: 66vh;
     display: flex;
     flex-direction: column;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
     overflow: hidden;
     outline: none;
   }

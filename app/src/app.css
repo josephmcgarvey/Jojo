@@ -16,6 +16,24 @@ body {
 * {
   box-sizing: border-box;
 }
+/* Modal dialogs (Settings, the switcher, Snippets and the others): a
+   container of the menu color with a faint accent tint at the top, a border
+   mixed from the theme's focus color, the theme's drop shadow and its
+   modal-glow, over a scrim that blurs the window behind it. Each dialog
+   adds .jojo-modal to its container and .jojo-scrim to its backdrop and
+   keeps only its own size and layout. */
+.jojo-scrim {
+  background: var(--jojo-scrim);
+  backdrop-filter: blur(3px);
+}
+.jojo-modal {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--jojo-accent) 8%, transparent), transparent 160px),
+    var(--jojo-menu);
+  border: var(--jojo-bw) solid color-mix(in srgb, var(--jojo-focus-border) 45%, var(--jojo-line));
+  border-radius: var(--jojo-radius-lg);
+  box-shadow: var(--jojo-shadow), var(--jojo-modal-glow);
+}
 /* The rainbow effect (a theme with "effects": ["rainbow"], such as Prism).
    --jojo-hue is a registered angle so it can be animated; the theme's
    tokens use it in hsl() colors (focus border and glow, logo, background

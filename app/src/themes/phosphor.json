@@ -36,6 +36,7 @@
     "glass-side": "#08100b",
     "glass-pane": "#040705",
     "focus-ring": "0 0 12px rgba(125, 255, 168, 0.35)",
+    "modal-glow": "0 0 0 1px rgba(125, 255, 168, 0.3), 0 0 40px rgba(125, 255, 168, 0.18)",
     "focus-border": "#7dffa8",
     "tab-glow": "0 0 8px rgba(125, 255, 168, 0.6)",
     "sel-gradient": "linear-gradient(90deg, rgba(125, 255, 168, 0.18), rgba(125, 255, 168, 0.04))",

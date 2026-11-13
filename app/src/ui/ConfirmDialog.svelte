@@ -20,8 +20,8 @@
 {#if dialog.confirm}
   <!-- Clicking the scrim outside the dialog cancels; the dialog itself is keyboard operable. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="scrim" onpointerdown={(e) => e.target === e.currentTarget && answerConfirm(false)}>
-    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1" {onkeydown}>
+  <div class="scrim jojo-scrim" onpointerdown={(e) => e.target === e.currentTarget && answerConfirm(false)}>
+    <div class="dialog jojo-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1" {onkeydown}>
       <h2 id="confirm-title">{dialog.confirm.title}</h2>
       <p>{dialog.confirm.message}</p>
       {#if dialog.confirm.details.length > 0}
@@ -46,15 +46,10 @@
     z-index: 200;
     display: grid;
     place-items: center;
-    background: var(--jojo-scrim);
   }
   .dialog {
     width: min(420px, calc(100% - 32px));
     padding: 18px 20px 16px;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
     outline: none;
   }
   h2 {

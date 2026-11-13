@@ -155,9 +155,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="scrim" onclick={close}>
+<div class="scrim jojo-scrim" onclick={close}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="switcher" role="dialog" aria-modal="true" aria-label="Switcher" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+  <div class="switcher jojo-modal" role="dialog" aria-modal="true" aria-label="Switcher" tabindex="-1" onclick={(e) => e.stopPropagation()}>
     <input bind:this={input} bind:value={query} onkeydown={onKeydown} placeholder="Jump to a session, project or action, or search every session's output" spellcheck="false" />
     <ul role="listbox">
       {#each matches as item, i (item.key)}
@@ -199,17 +199,12 @@
     display: flex;
     justify-content: center;
     padding-top: 12vh;
-    background: var(--jojo-scrim);
   }
   .switcher {
     width: min(600px, calc(100% - 32px));
     max-height: 60vh;
     display: flex;
     flex-direction: column;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
     overflow: hidden;
     outline: none;
   }

@@ -89,8 +89,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" onkeydown={onKeydown}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="snippet-edit-title">
+<div class="scrim jojo-scrim" onkeydown={onKeydown}>
+  <div class="dialog jojo-modal" role="dialog" aria-modal="true" aria-labelledby="snippet-edit-title">
     <h2 id="snippet-edit-title">{existing ? "Edit snippet" : "New snippet"}</h2>
     <label class="field">
       <span>Name</span>
@@ -133,17 +133,12 @@
     z-index: 200;
     display: grid;
     place-items: center;
-    background: var(--jojo-scrim);
   }
   .dialog {
     width: min(520px, calc(100% - 32px));
     display: grid;
     gap: 12px;
     padding: 18px 20px 16px;
-    background: var(--jojo-menu);
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    box-shadow: var(--jojo-shadow);
   }
   h2 {
     margin: 0;
