@@ -46,6 +46,8 @@ export interface PaneMenuContext {
 export interface PaneMenuActions {
   copy(): void;
   paste(): void;
+  /** Opens New snippet with the selected text as its command. */
+  saveSnippet(): void;
   /** `shell` is the program for a shell session; omitted, the defaultShell setting applies. */
   split(direction: SplitDirection, kind: SessionKind, shell?: string): void;
   toggleZoom(): void;
@@ -82,6 +84,7 @@ export function buildPaneMenu(ctx: PaneMenuContext, actions: PaneMenuActions): M
       run: actions.copy,
     },
     { kind: "action", label: "Paste", shortcut: SHORTCUT_LABELS.paste, run: actions.paste },
+    { kind: "action", label: "Save as snippet…", disabledReason: ctx.hasSelection ? undefined : "No text selected", run: actions.saveSnippet },
     SEPARATOR,
     { kind: "submenu", label: "Split right", disabledReason: full ? TAB_FULL : undefined, items: splitItems("row", SHORTCUT_LABELS["split-right"]) },
     { kind: "submenu", label: "Split down", disabledReason: full ? TAB_FULL : undefined, items: splitItems("column", SHORTCUT_LABELS["split-down"]) },

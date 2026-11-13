@@ -146,6 +146,8 @@
     <button class="new" title="New terminal" aria-label="New terminal" onclick={() => newSession(app.selectedProjectId!, "shell")}><PlusCircle /></button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
+  <!-- The snippets library (SnippetsDialog.svelte). -->
+  <button class="snippets" title="Saved commands to insert or run in the focused terminal" onclick={() => openDialog({ kind: "snippets" })}>Snippets</button>
   <!-- "Agents first" C: the switcher, reached by click as well as by its shortcut. -->
   <button class="search" onclick={() => openDialog({ kind: "switcher" })}>
     <span>Search sessions and commands</span><kbd>{SHORTCUT_LABELS.switcher}</kbd>
@@ -288,6 +290,18 @@
     color: var(--jojo-muted);
     font-size: 12.5px;
   }
+  .snippets {
+    flex: none;
+    height: 32px;
+    padding: 0 10px;
+    border: var(--jojo-bw) solid var(--jojo-line);
+    border-radius: var(--jojo-radius);
+    background: var(--jojo-pane);
+    color: var(--jojo-muted);
+    font-size: 12.5px;
+  }
+  .snippets:hover,
+  .snippets:focus-visible,
   .search:hover,
   .search:focus-visible {
     color: var(--jojo-fg2);

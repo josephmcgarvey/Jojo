@@ -3,8 +3,18 @@ import type { MenuEntry } from "../menu/types";
 
 export type RenameTarget = { kind: "tab"; tabId: string } | { kind: "session"; sessionId: string; where: "pane" | "sidebar" } | { kind: "project"; projectId: string };
 
-/** The open modal dialog: Add machine, or Add project on a remote machine. */
-export type DialogTarget = { kind: "add-machine" } | { kind: "add-project"; machineId: string } | { kind: "settings" } | { kind: "switcher" };
+/**
+ * The open modal dialog. "snippet-edit" edits the snippet with
+ * `snippetId`, or creates one when it is null, starting from `command`
+ * (text saved from a terminal selection).
+ */
+export type DialogTarget =
+  | { kind: "add-machine" }
+  | { kind: "add-project"; machineId: string }
+  | { kind: "settings" }
+  | { kind: "switcher" }
+  | { kind: "snippets" }
+  | { kind: "snippet-edit"; snippetId: string | null; command?: string };
 
 export const ui = $state({
   menu: null as { x: number; y: number; entries: MenuEntry[] } | null,

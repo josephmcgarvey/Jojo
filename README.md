@@ -102,6 +102,32 @@ case-insensitive, needs at least 2 characters, and returns up to 20 matches
 per session and 200 in total, newest first. Choosing a match focuses the
 session's pane and scrolls to the line.
 
+### Snippets
+
+The snippets library holds commands you use often. **Snippets** in the tab
+row opens it; the switcher (Ctrl+Shift+P) also lists the snippets for the
+focused terminal.
+
+1. Clicking a snippet types it into the focused terminal without pressing
+   Enter, so it can be checked or edited first. **Run** types it and presses
+   Enter. **Copy** puts it on the clipboard. In the list, Up and Down move
+   the highlight, Enter inserts and Ctrl+Enter (⌘Enter on macOS) runs.
+2. A snippet can span several lines. It is typed as one paste, so a shell
+   with bracketed paste (PowerShell 7, zsh, bash 5.1 and later) receives the
+   whole block before running anything.
+3. **New snippet** in the list creates one. Selecting text in a terminal,
+   right-clicking it and choosing **Save as snippet…** creates one from the
+   selection.
+4. Each snippet has a name, a command, an optional folder (shown as a heading
+   in the list) and a **Show for** setting: every location and project, only
+   terminals on one location, or only terminals in one project. The list
+   shows the snippets for the focused terminal; a checkbox at its foot shows
+   the rest.
+
+Snippets are saved in `snippets.json` (see [Files](#files)). The window
+reads and writes the file and the daemon never does, so snippets belong to
+one computer and are not shared between a PC and a Mac.
+
 ### Remote locations
 
 **Remote location** at the bottom of the sidebar adds a Linux server
@@ -177,6 +203,7 @@ To remove the hooks, run `jojod uninstall-hooks`.
 | Settings | `%APPDATA%\Jojo\settings.json` | `~/Library/Application Support/Jojo/` | The values on the Settings screen. |
 | Locations | `%APPDATA%\Jojo\machines.toml` | same folder | Remote locations. |
 | Layout | `%APPDATA%\Jojo\layout.json` | same folder | Projects' order, tabs and split layouts. |
+| Snippets | `%APPDATA%\Jojo\snippets.json` | same folder | The snippets library. |
 | Daemon state | `%LOCALAPPDATA%\Jojo\state.json` | `~/.jojo/state.json` | Projects and session records. |
 | Daemon endpoint | `\\.\pipe\jojo-<username>` | `~/.jojo/jojod.sock` | The connection between window and daemon. |
 

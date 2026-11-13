@@ -24,13 +24,15 @@
   import { highlightParts } from "../lib/switcher/highlight";
   import { stateTooltip } from "../lib/state/toasts";
   import { LOCAL_MACHINE } from "../lib/wire/bridge";
+  import { insertSnippet, snippets, snippetTarget } from "../lib/state/snippets.svelte";
+  import { appliesTo } from "../lib/snippets/library";
 
   let { onclose }: { onclose: () => void } = $props();
 
   interface Item {
-    /** Unique among the items: `session:<id>`, `project:<machine>:<id>`, `action:<label>` or `output:<n>`. */
+    /** Unique among the items: `session:<id>`, `project:<machine>:<id>`, `action:<label>`, `snippet:<id>` or `output:<n>`. */
     key: string;
-    kind: "Session" | "Project" | "Action" | "Output";
+    kind: "Session" | "Project" | "Action" | "Snippet" | "Output";
     label: string;
     detail: string;
     run: () => void;
@@ -57,6 +59,13 @@
     for (const machine of app.machines) {
       for (const project of Object.values(app.models[machine.id]?.projects ?? {})) {
         list.push({ key: `project:${machine.id}:${project.id}`, kind: "Project", label: project.name, detail: `${machine.label} · ${project.path}`, run: () => selectProject(project.id) });
+      }
+    }
+    // Snippets for the focused terminal; choosing one inserts it without pressing Enter.
+    const target = snippetTarget();
+    if (target && terminalControls(focusedSessionId())) {
+      for (const snippet of snippets.list.filter((s) => appliesTo(s.scope, target))) {
+        list.push({ key: `snippet:${snippet.id}`, kind: "Snippet", label: snippet.name, detail: snippet.command.replace(/\s*\n\s*/g, " ⏎ "), run: () => insertSnippet(snippet.id, false) });
       }
     }
     const project = app.selectedProjectId;
@@ -115,7 +124,7 @@
     item.run();
     // A session or output item focuses its own pane; otherwise keys return
     // to the focused pane's terminal instead of staying on the page.
-    if (item.kind !== "Session" && item.kind !== "Output") void tick().then(refocusTerminal);
+    if (item.kind !== "Session" && item.kind !== "Output" && item.kind !== "Snippet") void tick().then(refocusTerminal);
   }
 
   function close(): void {

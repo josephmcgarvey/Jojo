@@ -12,6 +12,7 @@ pub mod machines;
 pub mod platform;
 pub mod settings;
 pub mod shells;
+pub mod snippets;
 #[cfg(windows)]
 pub mod snap;
 pub mod ssh;

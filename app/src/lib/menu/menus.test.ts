@@ -29,6 +29,7 @@ function paneActions(over: Partial<PaneMenuActions> = {}): PaneMenuActions {
   return {
     copy: noop,
     paste: noop,
+    saveSnippet: noop,
     split: noop,
     toggleZoom: noop,
     swapWith: noop,
@@ -98,6 +99,7 @@ describe("buildPaneMenu", () => {
     expect(labels(buildPaneMenu(context(), paneActions()))).toEqual([
       "Copy",
       "Paste",
+      "Save as snippet…",
       "Split right",
       "Split down",
       "Zoom pane",

@@ -16,6 +16,9 @@
   import AddProjectDialog from "./ui/AddProjectDialog.svelte";
   import SettingsDialog from "./ui/SettingsDialog.svelte";
   import SwitcherDialog from "./ui/SwitcherDialog.svelte";
+  import SnippetsDialog from "./ui/SnippetsDialog.svelte";
+  import SnippetEditDialog from "./ui/SnippetEditDialog.svelte";
+  import { loadSnippets } from "./lib/state/snippets.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
   import StateStrip from "./ui/StateStrip.svelte";
@@ -28,6 +31,7 @@
   onMount(() => {
     window.addEventListener("keydown", onKeydown, true);
     const stopApp = startApp();
+    loadSnippets();
     return () => {
       window.removeEventListener("keydown", onKeydown, true);
       stopApp();
@@ -144,6 +148,10 @@
   <SettingsDialog onclose={closeDialog} />
 {:else if ui.dialog?.kind === "switcher"}
   <SwitcherDialog onclose={closeDialog} />
+{:else if ui.dialog?.kind === "snippets"}
+  <SnippetsDialog onclose={closeDialog} />
+{:else if ui.dialog?.kind === "snippet-edit"}
+  <SnippetEditDialog snippetId={ui.dialog.snippetId} command={ui.dialog.command ?? ""} onclose={closeDialog} />
 {/if}
 <!-- After the dialogs, so a confirmation asked from one (Settings ▸ Restart
      daemon) paints above it: both scrims share z-index 200. -->

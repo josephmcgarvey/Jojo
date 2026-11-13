@@ -170,6 +170,20 @@ async fn save_layout(layout: LayoutFile) -> Result<(), String> {
         .map_err(|e| format!("could not write layout.json: {e}"))
 }
 
+#[tauri::command]
+fn get_snippets() -> Vec<jojo_app::snippets::Snippet> {
+    jojo_app::snippets::load(&jojo_app::snippets::default_path())
+}
+
+/// Async so the file write runs on a blocking worker thread, as save_layout.
+#[tauri::command]
+async fn save_snippets(snippets: Vec<jojo_app::snippets::Snippet>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || jojo_app::snippets::save(&jojo_app::snippets::default_path(), &snippets))
+        .await
+        .map_err(|e| format!("the snippets writer thread failed: {e}"))?
+        .map_err(|e| format!("could not write snippets.json: {e}"))
+}
+
 /// Opens a link clicked in a terminal in the default browser. Only
 /// `http://` and `https://` URLs are accepted (see `jojo_app::links`).
 /// ShellExecuteW can block, for example while Windows asks which app should
@@ -288,6 +302,8 @@ fn main() {
             available_shells,
             get_layout,
             save_layout,
+            get_snippets,
+            save_snippets,
             open_url,
             set_maximize_button_rect,
             notify

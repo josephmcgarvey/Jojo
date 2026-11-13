@@ -27,7 +27,7 @@ import {
 } from "./app.svelte";
 import { copyFromPane, pasteIntoPane } from "./clipboard";
 import { shellChoices } from "./shells";
-import { beginRename } from "./ui.svelte";
+import { beginRename, openDialog } from "./ui.svelte";
 import { LOCAL_MACHINE } from "../wire/bridge";
 
 const labelOf = (sessionId: string): string | undefined => {
@@ -56,6 +56,7 @@ export function paneMenu(sessionId: string): MenuEntry[] {
     {
       copy: () => void copyFromPane(sessionId),
       paste: () => void pasteIntoPane(sessionId),
+      saveSnippet: () => openDialog({ kind: "snippet-edit", snippetId: null, command: terminalControls(sessionId)?.getSelection() ?? "" }),
       split: (direction, kind, shell) => splitSession(sessionId, direction, kind, shell),
       toggleZoom: () => zoomSession(sessionId),
       swapWith: (other) => swapSessions(sessionId, other),
