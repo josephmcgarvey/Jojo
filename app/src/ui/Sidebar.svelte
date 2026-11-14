@@ -325,9 +325,18 @@
     flex: none;
     padding: 2px 6px 10px;
   }
-  /* macOS: room for the traffic-light buttons left of the logo. */
+  /* macOS: the traffic-light buttons take the left of the logo row
+     (trafficLightPosition in tauri.macos.conf.json), so the logo sits at
+     the row's right end, raised 9 px to center on the buttons. It is
+     moved with `top`, so the row keeps its height and the list below does
+     not move. */
   :global(html[data-platform="mac"]) .brand {
-    padding-left: 72px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  :global(html[data-platform="mac"]) .logo {
+    position: relative;
+    top: -9px;
   }
   .logo {
     display: inline-block;
