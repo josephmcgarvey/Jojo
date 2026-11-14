@@ -184,3 +184,38 @@ another project") appears only as a tooltip on hover
 2. Hide items that can never apply in the current tab (Zoom, Swap with,
    Layout and Equalize sizes in a tab with one pane), and keep graying out
    items that can apply after a change, such as Open in split.
+
+## 10. Export and import configuration
+
+**Status:** requested by the user on 2026-11-14 (moving from the Windows
+PC to the Mac); postponed.
+
+**Export configuration…** and **Import configuration…** in Settings would
+move a setup between computers through one `jojo-config.json` file.
+
+1. Export writes the settings (without `defaultShell`, which names a
+   program on the exporting computer), the remote locations from
+   `machines.toml`, the snippets from `snippets.json`, and the tab layouts of
+   remote projects from `layout.json`.
+2. Import shows what the file holds and what it would change, then merges:
+   remote locations matched by SSH alias, so a second import adds no
+   duplicates; snippets matched by id, imported ones replacing older copies;
+   settings other than `defaultShell`.
+3. Import lists the SSH aliases the computer's `~/.ssh/config` lacks. SSH
+   keys are never written to the file.
+
+Two things are not part of the file:
+
+1. Remote projects and sessions. They live in each server's jojod
+   (`~/.jojo/state.json` there), so a computer that adds the same remote
+   location sees the same projects and running sessions without importing
+   them.
+2. This PC's projects and sessions. They are processes and folders on the
+   exporting computer, which the other computer cannot attach to.
+
+Until this is built, the same move can be made by hand, with Jojo closed on
+the receiving computer: copy the `Host` entries and key files the remote
+locations use into `~/.ssh/`, and copy `machines.toml` and `snippets.json`
+into the app's settings folder (`~/Library/Application Support/Jojo/` on
+macOS). `settings.json` can be copied too once its `defaultShell` is changed
+to a shell on that computer.
