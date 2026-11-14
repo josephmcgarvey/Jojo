@@ -28,17 +28,23 @@ Under Daylight, a program that adapts to the background (`gh`, editors) is
 told the background is dark. Fixing it needs the window to send its terminal
 colors to the daemon, a new control message.
 
-## 3. macOS version
+## 3. macOS version checks on a real Mac
 
-**Status:** built once, then paused at the user's request (2026-11-10).
+**Status:** Mac installers ship with every release since 0.2.0; three
+behaviors have not been confirmed on a real Mac.
 
 The app and jojod run on macOS (commit `eb69807`), and
 `.github/workflows/macos.yml` builds unsigned `.dmg` installers for Apple
 Silicon and Intel. The workflow runs only when started by hand
-(`gh workflow run macos.yml -R josephmcgarvey/Jojo`). No Mac build is made
-until the user asks for one. Never verified on a real Mac: the traffic-light
-position against the sidebar, starting the daemon through `zsh -l -i`, and
-notifications for an unsigned app.
+(`gh workflow run macos.yml -R josephmcgarvey/Jojo --ref <tag>`), and Mac
+builds are made only when the user asks for one. These behaviors are
+unconfirmed:
+
+1. The position of the traffic-light buttons against the sidebar's JOJO
+   logo (`trafficLightPosition` in `app/src-tauri/tauri.macos.conf.json`).
+2. Starting the daemon through the login shell (`zsh -l -i`), which is how
+   jojod finds Claude Code installed through Homebrew, nvm or an alias.
+3. Notifications from an unsigned app.
 
 ## 4. Video demo with voiceover
 
@@ -105,44 +111,7 @@ Running the daemon inside the attach connection would make such servers
 usable, but sessions would end whenever the window disconnects, so it is not
 part of this fix.
 
-## 6. Folding locations and projects in the sidebar
-
-**Status:** mock-up made on 2026-11-12
-(https://claude.ai/artifact/5JdLfPsp4LdEntkeGPoMgk); postponed by the user
-before building.
-
-Each location (This PC and each remote location) and each project in the
-sidebar can be folded to hide the rows beneath it. The design is meant to be
-barely visible until used:
-
-1. A 9-pixel chevron appears in the row's left margin while the pointer is
-   over a location or project row. It sits in the row's existing padding, so
-   no text moves.
-2. Clicking the location name or the project name folds or unfolds it.
-   Clicking a project name also still selects the project.
-3. A folded row keeps its chevron at low opacity, pointing right, which is
-   what separates a folded group from an empty one.
-4. In place of the hidden rows, a folded row shows one 5-pixel dot per
-   session that is not idle, in its state color. A session that needs the
-   user keeps its amber pulse, so folding never hides a waiting session. A
-   folded location also shows its project count ("2 projects"), and its
-   dots cover all of its projects' sessions.
-5. The fold animates over 160 milliseconds, with no animation under
-   `prefers-reduced-motion`.
-6. With a row focused, Left folds and Right unfolds it. Alt+click folds or
-   unfolds every project under the same location.
-7. The Needs you queue still lists waiting sessions from folded groups.
-   Choosing one unfolds its location and project and focuses its pane.
-8. Folded groups are saved in `layout.json` (a list of folded location and
-   project ids, with a serde default so older files still load), so they
-   stay folded after a restart.
-
-**Open question for the user:** whether a click on a project name both
-selects and folds it, as in the mock-up, or only the chevron folds it. The
-chevron alone keeps selecting and folding separate, but its click target is
-much smaller.
-
-## 7. Choosing an agent per session
+## 6. Choosing an agent per session
 
 **Status:** requested by the user on 2026-11-12; postponed. Compact
 conversation was built for Claude Code only (the session menu and the
@@ -173,3 +142,47 @@ The change replaces `SessionKind::Claude` with an agent id in the protocol
 (a protocol version change, with old daemons answered as for other
 version mismatches), adds the agent choice to the New session menu, and
 moves Compact conversation's command and enabled states into the profile.
+
+## 7. Natural-language search of session output
+
+**Status:** postponed by the user, who chose plain-text search first
+(built in the switcher's In output section).
+
+Plain-text search finds lines containing the typed words in every
+session's grid and scrollback (`jojo_grid::Grid::search`, at most 20 matches
+per session and 200 in total). Natural-language search would answer
+questions such as "which session was working on the migration?". It needs
+the session text sent to a model, which raises what is sent and where: the
+output can contain secrets and client data, so the design has to say which
+model runs it, whether it runs locally, and how a session is excluded.
+
+## 8. Snippet placeholders and shared snippets
+
+**Status:** postponed when the snippets library was built (commit
+`4c47cfb`).
+
+1. Placeholders: a snippet such as `git checkout {{branch}}` asks for each
+   `{{name}}` value in a small form before inserting, and remembers the last
+   value used.
+2. Shared snippets: snippets kept in a project's repository, for example
+   `.jojo/snippets.json`, listed for terminals in that project and shared
+   with other developers through git. The window would read the file over
+   the project's location (jojod's file access on a remote server), and
+   edits would be written back to it.
+
+Today snippets live only in `snippets.json` in the app's settings folder,
+one library per computer.
+
+## 9. Showing why menu items are disabled
+
+**Status:** raised by the user on 2026-11-14; postponed.
+
+Pane, tab and session menu items that cannot apply are grayed out, and the
+reason (for example "Only pane in this tab" or "The current tab belongs to
+another project") appears only as a tooltip on hover
+(`disabledReason` in `app/src/lib/menu/menus.ts`). Two options:
+
+1. Show the reason as muted text on the item's row.
+2. Hide items that can never apply in the current tab (Zoom, Swap with,
+   Layout and Equalize sizes in a tab with one pane), and keep graying out
+   items that can apply after a change, such as Open in split.
