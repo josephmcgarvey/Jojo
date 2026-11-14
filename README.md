@@ -67,10 +67,11 @@ a folder on its location; new sessions in a project start in that folder.
 The sidebar's right edge can be dragged to resize it (200 to 480 pixels);
 double-clicking the edge returns it to the default width of 268 pixels.
 
-Locations and projects fold. Clicking a location's name folds or unfolds
-its projects; the chevron that appears left of a project's name when the
-pointer is over it folds or unfolds its sessions (Alt+click folds or
-unfolds every project of that location). With a location or project name
+Locations and projects fold. A chevron appears at the left of a location
+or project row when the pointer is over it; clicking it folds or unfolds
+the rows beneath (Alt+click on a project's chevron folds or unfolds every
+project of that location). Clicking a location's name also folds or
+unfolds it; clicking a project's name selects the project. With a location or project name
 focused, Left folds and Right unfolds it. A folded row shows one small dot
 per session that is working, needs you, done or in error, in that state's
 color, and a session that needs you keeps pulsing; a folded location also

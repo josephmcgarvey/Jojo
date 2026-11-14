@@ -172,7 +172,13 @@
   <div class="machine-group" class:offline={status?.state !== "connected"} class:folded={machineFolded}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="machine fold-row" title={statusText ?? machine.label} oncontextmenu={(e) => onMachineMenu(e, machine)}>
-    {@render chevron(machineFolded)}
+    <button
+      class="chev-button"
+      aria-label={`${machineFolded ? "Unfold" : "Fold"} ${machine.label}`}
+      aria-expanded={!machineFolded}
+      title={machineFolded ? "Unfold" : "Fold"}
+      onclick={() => setGroupsFolded([machine.id], !machineFolded)}
+    >{@render chevron(machineFolded)}</button>
     <span class="dot" class:ok={status?.state === "connected"}></span>
     <button
       class="grow fold-label"
@@ -343,7 +349,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 8px 4px;
+    padding: 8px 8px 4px 22px;
     font-size: 13px;
     font-weight: 600;
     color: var(--jojo-fg);
@@ -427,7 +433,7 @@
   .project {
     display: flex;
     align-items: center;
-    padding: 6px 8px 2px;
+    padding: 6px 8px 2px 22px;
   }
   .project.dragging {
     opacity: 0.55;
@@ -484,7 +490,7 @@
     width: 100%;
     align-items: center;
     gap: 8px;
-    padding: 5px 8px 5px 14px;
+    padding: 5px 8px 5px 28px;
     border-radius: var(--jojo-radius);
     color: var(--jojo-fg2);
     text-align: left;
@@ -504,8 +510,9 @@
     font-size: 10.5px;
   }
   /* Folding (lib/state/folding.ts, layout.json's collapsed). A 9 px chevron
-     sits in the row's left padding, so it takes no width and no text
-     moves. It is hidden until the row is hovered or focused, and stays
+     button sits in the 22 px left padding of each location and project
+     row, inside the row (the folding containers clip anything outside
+     it). It is hidden until the row is hovered or focused, and stays
      faintly visible, pointing right, while the group is folded. */
   .fold-row {
     position: relative;
@@ -519,21 +526,14 @@
       opacity 120ms,
       transform 140ms ease;
   }
-  .machine > .chev {
-    position: absolute;
-    left: -3px;
-    top: 50%;
-    margin-top: -2.5px;
-    pointer-events: none;
-  }
   .chev-button {
     position: absolute;
-    left: -7px;
+    left: 4px;
     top: 0;
     bottom: 0;
-    width: 14px;
-    /* The row has 6 px padding above its text and 2 px below; 4 px here
-       centers the chevron on the text. */
+    width: 16px;
+    /* Both rows have 4 px more padding above their text than below (8/4
+       and 6/2); 4 px here centers the chevron on the text. */
     padding-top: 4px;
     display: grid;
     place-items: center;
