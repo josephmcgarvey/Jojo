@@ -9,6 +9,7 @@
 //! the old file can still be recovered by hand.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use ts_rs::TS;
 
@@ -36,6 +37,10 @@ pub struct Snippet {
     pub folder: String,
     #[serde(default)]
     pub scope: SnippetScope,
+    /// The values last typed for the command's `{{name}}` placeholders, by
+    /// placeholder name, offered the next time the snippet is used.
+    #[serde(default)]
+    pub last_values: BTreeMap<String, String>,
 }
 
 /// The file's top level: `{ "snippets": [...] }`, leaving room for other keys.
@@ -83,7 +88,14 @@ mod tests {
     use super::*;
 
     fn snippet(id: &str, scope: SnippetScope) -> Snippet {
-        Snippet { id: id.into(), name: format!("name {id}"), command: "git status\ngit log -1".into(), folder: "Git".into(), scope }
+        Snippet {
+            id: id.into(),
+            name: format!("name {id}"),
+            command: "git checkout {{branch}}\ngit log -1".into(),
+            folder: "Git".into(),
+            scope,
+            last_values: BTreeMap::from([("branch".to_owned(), "main".to_owned())]),
+        }
     }
 
     #[test]
@@ -116,6 +128,7 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded[0].folder, "");
         assert_eq!(loaded[0].scope, SnippetScope::All);
+        assert!(loaded[0].last_values.is_empty());
     }
 
     #[test]

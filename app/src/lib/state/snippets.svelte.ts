@@ -5,13 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Snippet } from "../backend/Snippet";
 import type { SnippetScope } from "../backend/SnippetScope";
 import { errorText } from "../errors";
-import { insertionText, type SnippetTarget } from "../snippets/library";
+import { fillPlaceholders, insertionText, placeholders, type SnippetTarget } from "../snippets/library";
 import { terminalControls } from "../terminal/registry";
 import { sendInput } from "../wire/bridge";
 import { newUlid } from "../wire/ulid";
 import { app, displayLabel, focusedSessionId, machineOfSession } from "./app.svelte";
 import { askConfirm } from "./dialog.svelte";
 import { showNotice } from "./notices.svelte";
+import { openDialog } from "./ui.svelte";
 
 export const snippets = $state({
   list: [] as Snippet[],
@@ -47,7 +48,7 @@ export interface SnippetFields {
 }
 
 export function addSnippet(fields: SnippetFields): void {
-  snippets.list = [...snippets.list, { id: newUlid(), ...fields }];
+  snippets.list = [...snippets.list, { id: newUlid(), last_values: {}, ...fields }];
   save();
 }
 
@@ -83,23 +84,47 @@ export function snippetTargetLabel(): string | null {
 const RUN_ENTER_DELAY_MS = 80;
 
 /**
- * Types the snippet into the focused terminal and focuses it. The text goes
+ * Types `command` into the focused terminal and focuses it. The text goes
  * through xterm.js's paste, so a shell that enabled bracketed paste
- * receives a multi-line snippet as one block instead of running each line
+ * receives a multi-line command as one block instead of running each line
  * as it arrives. With `run`, Enter follows in a separate write after
  * RUN_ENTER_DELAY_MS; Enter inside the paste would be read as part of the
  * pasted text.
  */
-export function insertSnippet(id: string, run: boolean): void {
-  const snippet = snippets.list.find((s) => s.id === id);
+function typeIntoFocused(command: string, run: boolean): void {
   const sessionId = focusedSessionId();
   const controls = terminalControls(sessionId);
-  if (!snippet || !sessionId || !controls) return;
-  controls.paste(insertionText(snippet.command));
+  if (!sessionId || !controls) return;
+  controls.paste(insertionText(command));
   controls.focus();
   if (!run) return;
   const machine = machineOfSession(sessionId);
   setTimeout(() => void sendInput(sessionId, new TextEncoder().encode("\r"), machine).catch(() => {}), RUN_ENTER_DELAY_MS);
+}
+
+/**
+ * Inserts (or with `run`, runs) a snippet in the focused terminal. A
+ * snippet whose command has `{{name}}` placeholders first opens the form
+ * that asks for their values (SnippetFillDialog.svelte), which then calls
+ * fillAndInsertSnippet.
+ */
+export function insertSnippet(id: string, run: boolean): void {
+  const snippet = snippets.list.find((s) => s.id === id);
+  if (!snippet || !terminalControls(focusedSessionId())) return;
+  if (placeholders(snippet.command).length > 0) openDialog({ kind: "snippet-fill", snippetId: id, run });
+  else typeIntoFocused(snippet.command, run);
+}
+
+/**
+ * Fills a snippet's placeholders with `values`, remembers the values as the
+ * snippet's last_values (saved in snippets.json) and types the result.
+ */
+export function fillAndInsertSnippet(id: string, values: Record<string, string>, run: boolean): void {
+  const snippet = snippets.list.find((s) => s.id === id);
+  if (!snippet) return;
+  snippets.list = snippets.list.map((s) => (s.id === id ? { ...s, last_values: { ...s.last_values, ...values } } : s));
+  save();
+  typeIntoFocused(fillPlaceholders(snippet.command, values), run);
 }
 
 /** Copies the snippet's command to the clipboard, with a notice on the focused pane when there is one. */

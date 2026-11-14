@@ -136,6 +136,15 @@ focused terminal.
    shows the snippets for the focused terminal; a checkbox at its foot shows
    the rest.
 
+A snippet's command can contain placeholders: `{{name}}`, or
+`{{name:default}}` with a default value. Inserting or running such a snippet
+first opens a form with one field per placeholder name, a preview of the
+command as it will be typed, and **Insert** and **Run** buttons. Each field
+starts with the value last used for that snippet, else the default. A name
+used several times is asked for once and fills every use. Text in double
+braces that is not a single name (for example `{{ two words }}`) is typed as
+written. Copy copies the command with its placeholders unfilled.
+
 Snippets are saved in `snippets.json` (see [Files](#files)). The window
 reads and writes the file and the daemon never does, so snippets belong to
 one computer and are not shared between a PC and a Mac.

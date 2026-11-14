@@ -13,4 +13,9 @@ command: string,
 /**
  * A group name shown as a heading in the Snippets list; empty for none.
  */
-folder: string, scope: SnippetScope, };
+folder: string, scope: SnippetScope, 
+/**
+ * The values last typed for the command's `{{name}}` placeholders, by
+ * placeholder name, offered the next time the snippet is used.
+ */
+last_values: { [key in string]: string }, };

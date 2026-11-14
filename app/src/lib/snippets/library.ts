@@ -84,3 +84,43 @@ export function nameFromText(text: string): string {
   const line = text.split(/\r?\n/).find((l) => l.trim() !== "")?.trim() ?? "";
   return line.length > 48 ? `${line.slice(0, 47)}…` : line;
 }
+
+/**
+ * A placeholder: `{{name}}`, or `{{name:default}}` with a default value.
+ * The name starts with a letter or underscore and continues with letters,
+ * digits, `_` or `-`; spaces inside the braces are ignored. Any other text
+ * in double braces is not a placeholder and is typed as written.
+ */
+const PLACEHOLDER = /\{\{\s*([A-Za-z_][\w-]*)\s*(?::([^{}]*))?\}\}/g;
+
+export interface Placeholder {
+  name: string;
+  /** The default written in the command (`{{name:default}}`), or "" when there is none. */
+  fallback: string;
+}
+
+/**
+ * The command's placeholders in order of first appearance, one per name:
+ * a name used several times is asked for once and fills every use. The
+ * default is the first one written for the name.
+ */
+export function placeholders(command: string): Placeholder[] {
+  const found = new Map<string, Placeholder>();
+  for (const match of command.matchAll(PLACEHOLDER)) {
+    if (!found.has(match[1])) found.set(match[1], { name: match[1], fallback: (match[2] ?? "").trim() });
+  }
+  return [...found.values()];
+}
+
+/** The command with every placeholder replaced by its value, or by its default when no value is given. */
+export function fillPlaceholders(command: string, values: Record<string, string>): string {
+  return command.replace(PLACEHOLDER, (_whole, name: string, fallback?: string) => values[name] ?? (fallback ?? "").trim());
+}
+
+/**
+ * The value a placeholder's field starts with: the value last typed for it
+ * (the snippet's last_values), else the default written in the command.
+ */
+export function startingValue(placeholder: Placeholder, lastValues: Partial<Record<string, string>>): string {
+  return lastValues[placeholder.name] ?? placeholder.fallback;
+}

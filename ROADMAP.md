@@ -156,19 +156,17 @@ the session text sent to a model, which raises what is sent and where: the
 output can contain secrets and client data, so the design has to say which
 model runs it, whether it runs locally, and how a session is excluded.
 
-## 8. Snippet placeholders and shared snippets
+## 8. Shared snippets
 
 **Status:** postponed when the snippets library was built (commit
-`4c47cfb`).
+`4c47cfb`). Placeholders, the other half of this entry, were built after
+0.2.4.
 
-1. Placeholders: a snippet such as `git checkout {{branch}}` asks for each
-   `{{name}}` value in a small form before inserting, and remembers the last
-   value used.
-2. Shared snippets: snippets kept in a project's repository, for example
-   `.jojo/snippets.json`, listed for terminals in that project and shared
-   with other developers through git. The window would read the file over
-   the project's location (jojod's file access on a remote server), and
-   edits would be written back to it.
+Snippets would be kept in a project's repository, for example
+`.jojo/snippets.json`, listed for terminals in that project and shared with
+other developers through git. The window would read the file over the
+project's location (jojod's file access on a remote server), and edits
+would be written back to it.
 
 Today snippets live only in `snippets.json` in the app's settings folder,
 one library per computer.

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Snippet } from "../backend/Snippet";
-import { appliesTo, folderNames, groupSnippets, insertionText, matchesQuery, nameFromText } from "./library";
+import { appliesTo, fillPlaceholders, folderNames, groupSnippets, insertionText, matchesQuery, nameFromText, placeholders, startingValue } from "./library";
 
 function snippet(over: Partial<Snippet> = {}): Snippet {
-  return { id: "S", name: "Status", command: "git status", folder: "", scope: { kind: "all" }, ...over };
+  return { id: "S", name: "Status", command: "git status", folder: "", scope: { kind: "all" }, last_values: {}, ...over };
 }
 
 describe("snippets library", () => {
@@ -45,5 +45,26 @@ describe("snippets library", () => {
   it("names a snippet saved from a selection after its first non-empty line", () => {
     expect(nameFromText("\n  docker compose up -d\nmore")).toBe("docker compose up -d");
     expect(nameFromText("x".repeat(60))).toBe(`${"x".repeat(47)}…`);
+  });
+
+  it("finds placeholders once each, in order, with their defaults", () => {
+    expect(placeholders("git checkout {{branch}} && git push {{ remote : origin }} {{branch}}")).toEqual([
+      { name: "branch", fallback: "" },
+      { name: "remote", fallback: "origin" },
+    ]);
+    expect(placeholders("echo {{1x}} {{}} {{ two words }} {not} ${{HOME}}")).toEqual([{ name: "HOME", fallback: "" }]);
+    expect(placeholders("ls -la")).toEqual([]);
+  });
+
+  it("fills every use of a placeholder with its value, else its default", () => {
+    const command = "git checkout {{branch}} && git push {{remote:origin}} {{branch}}";
+    expect(fillPlaceholders(command, { branch: "main" })).toBe("git checkout main && git push origin main");
+    expect(fillPlaceholders(command, { branch: "dev", remote: "upstream" })).toBe("git checkout dev && git push upstream dev");
+    expect(fillPlaceholders("echo {{ two words }}", {})).toBe("echo {{ two words }}");
+  });
+
+  it("starts a field with the last value used, else the default", () => {
+    expect(startingValue({ name: "remote", fallback: "origin" }, { remote: "upstream" })).toBe("upstream");
+    expect(startingValue({ name: "remote", fallback: "origin" }, {})).toBe("origin");
   });
 });

@@ -100,7 +100,7 @@
     <label class="field">
       <span>Command</span>
       <textarea bind:value={text} rows="5" spellcheck="false" placeholder="git pull && php artisan migrate"></textarea>
-      <small>Several lines are inserted as one paste. Inserting never presses Enter; Run does.</small>
+      <small>Several lines are inserted as one paste. Inserting never presses Enter; Run does. Write <code>{"{{name}}"}</code> or <code>{"{{name:default}}"}</code> to be asked for a value each time.</small>
     </label>
     <div class="pair">
       <label class="field">
@@ -159,6 +159,10 @@
   .field small {
     color: var(--jojo-muted);
     font-size: 11.5px;
+  }
+  .field small code {
+    font-family: var(--jojo-font-mono);
+    color: var(--jojo-fg2);
   }
   .pair {
     display: grid;

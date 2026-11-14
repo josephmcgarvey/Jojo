@@ -6,7 +6,9 @@ export type RenameTarget = { kind: "tab"; tabId: string } | { kind: "session"; s
 /**
  * The open modal dialog. "snippet-edit" edits the snippet with
  * `snippetId`, or creates one when it is null, starting from `command`
- * (text saved from a terminal selection).
+ * (text saved from a terminal selection). "snippet-fill" asks for the
+ * values of a snippet's placeholders before inserting it, or running it
+ * when `run` is true.
  */
 export type DialogTarget =
   | { kind: "add-machine" }
@@ -14,7 +16,8 @@ export type DialogTarget =
   | { kind: "settings" }
   | { kind: "switcher" }
   | { kind: "snippets" }
-  | { kind: "snippet-edit"; snippetId: string | null; command?: string };
+  | { kind: "snippet-edit"; snippetId: string | null; command?: string }
+  | { kind: "snippet-fill"; snippetId: string; run: boolean };
 
 export const ui = $state({
   menu: null as { x: number; y: number; entries: MenuEntry[] } | null,
