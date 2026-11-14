@@ -4,7 +4,7 @@
   // row shows what the session is asking (its state detail, for example the
   // permission prompt) and a click jumps to its pane. Hidden while nothing
   // is waiting.
-  import { app, displayLabel, focusPane } from "../lib/state/app.svelte";
+  import { app, displayLabel, revealSession } from "../lib/state/app.svelte";
   import { needsYouQueue } from "../lib/state/attention";
   import { formatElapsed } from "../lib/state/elapsed";
 
@@ -15,7 +15,7 @@
   <section class="queue" aria-label="Sessions that need you">
     <h2><span>Needs you</span><span class="n">{queue.length}</span></h2>
     {#each queue as session (session.id)}
-      <button class="ask" onclick={() => focusPane(session.id)} title={session.state_detail ?? "Waiting for your reply"}>
+      <button class="ask" onclick={() => revealSession(session.id)} title={session.state_detail ?? "Waiting for your reply"}>
         <span class="dot" aria-hidden="true"></span>
         <span class="label">{displayLabel(session)}</span>
         <span class="time">{formatElapsed(app.now - session.state_changed_at)}</span>

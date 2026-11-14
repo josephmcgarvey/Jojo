@@ -8,4 +8,10 @@ export type LayoutFile = { version: number, projects: { [key in string]: Project
  * is not listed goes after the listed ones of its machine, sorted by
  * name. Absent in files written before this field existed.
  */
-project_order: Array<string>, };
+project_order: Array<string>, 
+/**
+ * The sidebar groups the user folded: location ids (machines.toml) and
+ * project ids, whose rows are hidden under their heading. Absent in
+ * files written before this field existed.
+ */
+collapsed: Array<string>, };

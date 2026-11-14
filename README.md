@@ -67,6 +67,17 @@ a folder on its location; new sessions in a project start in that folder.
 The sidebar's right edge can be dragged to resize it (200 to 480 pixels);
 double-clicking the edge returns it to the default width of 268 pixels.
 
+Locations and projects fold. Clicking a location's name folds or unfolds
+its projects; the chevron that appears left of a project's name when the
+pointer is over it folds or unfolds its sessions (Alt+click folds or
+unfolds every project of that location). With a location or project name
+focused, Left folds and Right unfolds it. A folded row shows one small dot
+per session that is working, needs you, done or in error, in that state's
+color, and a session that needs you keeps pulsing; a folded location also
+shows its project count. Choosing a session from the Needs you queue, the
+switcher or Jump unfolds its location and project. Folded groups are saved
+in `layout.json`.
+
 ### Common actions
 
 | Action | Windows | macOS |

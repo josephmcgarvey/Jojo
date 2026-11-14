@@ -106,6 +106,7 @@ describe("reconcileAll", () => {
     const remote: ProjectLayout = { tabs: [newTab("R1", "X")], active_tab: "R1" };
     const file: LayoutFile = {
       version: 1,
+      collapsed: [],
       projects: {
         [layoutKey(LOCAL_MACHINE_ID, "OLD")]: { tabs: [newTab("T1", "Z")], active_tab: "T1" },
         "server1:P9": remote,
@@ -125,6 +126,7 @@ describe("reconcileAll", () => {
     const local: ProjectLayout = { tabs: [newTab("L1", "S1")], active_tab: "L1" };
     const file: LayoutFile = {
       version: 1,
+      collapsed: [],
       projects: { "local:P1": local, "server1:GONE": { tabs: [newTab("G1", "Q")], active_tab: "G1" } },
       project_order: ["local:P1", "server1:GONE", "server1:P9"],
     };

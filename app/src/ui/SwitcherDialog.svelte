@@ -11,7 +11,7 @@
     confirmRestartLocalDaemon,
     displayLabel,
     focusedSessionId,
-    focusPane,
+    revealSession,
     jumpToMatch,
     newSession,
     searchOutput,
@@ -53,7 +53,7 @@
         kind: "Session",
         label: displayLabel(session),
         detail: `${project?.name ?? ""} · ${machineLabel(machineId)} · ${stateTooltip(session)}`,
-        run: () => focusPane(session.id),
+        run: () => revealSession(session.id),
       });
     }
     for (const machine of app.machines) {

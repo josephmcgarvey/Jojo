@@ -104,5 +104,5 @@ export function reconcileMachine(file: LayoutFile, machineId: string, model: Mod
   // The sidebar order keeps other machines' keys and this machine's keys
   // whose project still exists.
   const project_order = (file.project_order ?? []).filter((key) => !key.startsWith(prefix) || key in projects);
-  return { version: file.version, projects, project_order };
+  return { version: file.version, projects, project_order, collapsed: file.collapsed ?? [] };
 }

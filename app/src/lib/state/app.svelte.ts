@@ -49,6 +49,7 @@ import {
 import { toastFor } from "./toasts";
 import { chimeFor, playChime } from "./chime";
 import { shellProgram } from "./shells";
+import { setFolded } from "./folding";
 import { orderedProjects, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
 import {
   createFailed,
@@ -502,6 +503,19 @@ export function focusPane(sessionId: string): void {
   void tick().then(() => terminalControls(sessionId)?.focus());
 }
 
+/**
+ * Focuses a session chosen from somewhere other than its own pane or row
+ * (the Needs you queue, the switcher, Jump to the next session that needs
+ * you, an output search match) and unfolds its location and project, so
+ * its sidebar row is visible. A click inside a pane uses focusPane, which
+ * leaves folded groups folded.
+ */
+export function revealSession(sessionId: string): void {
+  const projectId = projectIdOf(sessionId);
+  if (projectId) setGroupsFolded([machineOfProject(projectId), projectId], false);
+  focusPane(sessionId);
+}
+
 export function focusDirection(direction: FocusDirection): void {
   const tab = currentTab();
   if (!tab) return;
@@ -697,6 +711,19 @@ export function setTabRoot(tabId: string, root: LayoutNode): void {
   updateCurrentProject((p) => tabs.setTabRoot(p, tabId, root));
 }
 
+/** Whether a location (machine id) or project is folded in the sidebar (layout.json's collapsed). */
+export function isFolded(id: string): boolean {
+  return (app.workspace.layout.collapsed ?? []).includes(id);
+}
+
+/** Folds or unfolds sidebar groups (location or project ids); saved in layout.json. */
+export function setGroupsFolded(ids: string[], fold: boolean): void {
+  const before = app.workspace.layout.collapsed ?? [];
+  const collapsed = setFolded(before, ids, fold);
+  if (collapsed.length === before.length && collapsed.every((id, i) => id === before[i])) return;
+  commit({ ...app.workspace, layout: { ...app.workspace.layout, collapsed } });
+}
+
 /** A machine's projects in sidebar order (layout.json's project_order). */
 export function projectsInOrder(machineId: string): ProjectInfo[] {
   return orderedProjects(app.models[machineId] ?? emptyModel(), machineId, app.workspace.layout.project_order ?? []);
@@ -763,7 +790,7 @@ const JUMP_WAIT_MS = 3_000;
  * text or JUMP_WAIT_MS passes.
  */
 export function jumpToMatch(sessionId: string, query: string): void {
-  focusPane(sessionId);
+  revealSession(sessionId);
   const deadline = Date.now() + JUMP_WAIT_MS;
   const attempt = () => {
     if (terminalControls(sessionId)?.find(query)) return;

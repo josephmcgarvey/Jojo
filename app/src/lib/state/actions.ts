@@ -1,6 +1,6 @@
 // Runs an application shortcut (spec 9.6) against the current state.
 import type { AppAction } from "../input/shortcuts";
-import { app, closePane, cycleTab, focusDirection, focusedSessionId, focusPane, newSession, splitFocused, zoomSession } from "./app.svelte";
+import { app, closePane, cycleTab, focusDirection, focusedSessionId, newSession, revealSession, splitFocused, zoomSession } from "./app.svelte";
 import { nextAttentionSession } from "./jump";
 import { openDialog } from "./ui.svelte";
 import { orderedSessions } from "./views";
@@ -29,7 +29,7 @@ export function runAction(action: AppAction): void {
     case "jump": {
       const ordered = orderedSessions(app.machines, app.models).map((o) => o.session);
       const next = nextAttentionSession(ordered, focused);
-      if (next) focusPane(next);
+      if (next) revealSession(next);
       return;
     }
     case "zoom":

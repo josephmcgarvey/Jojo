@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addProject, app, displayLabel, focusPane, focusedSessionId, newSession, projectsInOrder, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, displayLabel, focusPane, focusedSessionId, isFolded, newSession, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
@@ -10,6 +10,9 @@
   import { contextMeter, contextTooltip } from "../lib/state/context";
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
+  import { stateToken } from "../lib/state/attention";
+  import { foldedStates } from "../lib/state/folding";
+  import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import Badge from "./Badge.svelte";
   import Cog from "./Cog.svelte";
   import NeedsYouQueue from "./NeedsYouQueue.svelte";
@@ -71,7 +74,7 @@
   }
 
   function onProjectPointerDown(event: PointerEvent, machineId: string, projectId: string): void {
-    if (event.button !== 0 || (event.target as HTMLElement).closest(".add")) return;
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".add, .chev-button")) return;
     press = { machineId, projectId, startY: event.clientY, pointerId: event.pointerId, element: event.currentTarget as HTMLElement };
   }
 
@@ -101,6 +104,13 @@
     press = null;
     dragging = null;
   }
+  /** Left folds and Right unfolds the location or project whose row has keyboard focus. */
+  function onFoldKey(event: KeyboardEvent, ids: string[]): void {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    setGroupsFolded(ids, event.key === "ArrowLeft");
+  }
+
   const shells = $derived(shellChoices(app.shells, app.settings?.defaultShell));
 
   function isRenaming(sessionId: string): boolean {
@@ -134,6 +144,21 @@
   }
 </script>
 
+<!-- The fold chevron: points down when unfolded, right when folded. -->
+{#snippet chevron(folded: boolean)}
+  <svg class="chev" class:closed={folded} viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+    <path d="M3.2 1.8 6.6 5 3.2 8.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+{/snippet}
+
+<!-- A folded row's summary of its hidden sessions: one dot per session
+     with a state color (folding.ts foldedStates); needs you pulses. -->
+{#snippet pips(sessions: SessionInfo[])}
+  {#each foldedStates(sessions) as state, i (i)}
+    <span class="pip" class:needs={state === "needs_you"} style:--pip={`var(${stateToken(state)})`}></span>
+  {/each}
+{/snippet}
+
 <aside class="side">
   <!-- The JOJO logo (Alexandria SemiBold in the brand gradient). Dragging the
        row moves the window; on macOS the traffic-light buttons sit at its
@@ -143,23 +168,38 @@
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}
   {@const statusText = machineStatusText(machine, status)}
-  <div class="machine-group" class:offline={status?.state !== "connected"}>
+  {@const machineFolded = isFolded(machine.id)}
+  <div class="machine-group" class:offline={status?.state !== "connected"} class:folded={machineFolded}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="machine" title={statusText ?? machine.label} oncontextmenu={(e) => onMachineMenu(e, machine)}>
+  <div class="machine fold-row" title={statusText ?? machine.label} oncontextmenu={(e) => onMachineMenu(e, machine)}>
+    {@render chevron(machineFolded)}
     <span class="dot" class:ok={status?.state === "connected"}></span>
-    <span class="grow">{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</span>
+    <button
+      class="grow fold-label"
+      aria-expanded={!machineFolded}
+      onclick={() => setGroupsFolded([machine.id], !machineFolded)}
+      onkeydown={(e) => onFoldKey(e, [machine.id])}
+    >{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</button>
+    {#if machineFolded}
+      {@const projects = projectsOf(machine.id)}
+      <span class="summary">{@render pips(projects.flatMap((p) => sessionsForProject(app.model, p.id)))}<span class="n">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></span>
+    {/if}
     {#if machine.kind === "local"}
       <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}><PlusCircle /></button>
     {:else}
       <button class="icon" title="Add project" aria-label={`Add project on ${machine.label}`} onclick={() => openDialog({ kind: "add-project", machineId: machine.id })}><PlusCircle /></button>
     {/if}
   </div>
+  <div class="kids" class:folded={machineFolded} inert={machineFolded}><div>
   {#each projectsOf(machine.id) as project, index (project.id)}
-    {@const count = sessionsForProject(app.model, project.id).length}
+    {@const projectSessions = sessionsForProject(app.model, project.id)}
+    {@const count = projectSessions.length}
+    {@const projectFolded = isFolded(project.id)}
     {@const dropHere = dragging !== null && dragging.machineId === machine.id}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="project"
+      class="project fold-row"
+      class:folded={projectFolded}
       class:selected={app.selectedProjectId === project.id}
       class:dragging={dragging?.projectId === project.id}
       class:drop-before={dropHere && dragging?.dropIndex === index}
@@ -171,6 +211,14 @@
       onpointerup={onProjectPointerUp}
       onpointercancel={onProjectPointerCancel}
     >
+      <!-- Alt+click folds or unfolds every project of this location. -->
+      <button
+        class="chev-button"
+        aria-label={`${projectFolded ? "Unfold" : "Fold"} ${project.name}`}
+        aria-expanded={!projectFolded}
+        title={`${projectFolded ? "Unfold" : "Fold"} (Alt+click: every project on ${machine.label})`}
+        onclick={(e) => setGroupsFolded(e.altKey ? projectsOf(machine.id).map((p) => p.id) : [project.id], !projectFolded)}
+      >{@render chevron(projectFolded)}</button>
       {#if ui.renaming?.kind === "project" && ui.renaming.projectId === project.id}
         <RenameField
           value={project.name}
@@ -182,8 +230,15 @@
           onCancel={endRename}
         />
       {:else}
-        <button class="name" title={project.path} onclick={() => selectProject(project.id)} ondblclick={() => beginRename({ kind: "project", projectId: project.id })}>
-          {project.name}{#if count > 0}<small class="count">{count}</small>{/if}
+        <button
+          class="name"
+          title={project.path}
+          aria-expanded={!projectFolded}
+          onclick={() => selectProject(project.id)}
+          ondblclick={() => beginRename({ kind: "project", projectId: project.id })}
+          onkeydown={(e) => onFoldKey(e, [project.id])}
+        >
+          {project.name}{#if projectFolded}<span class="summary">{@render pips(projectSessions)}</span>{:else if count > 0}<small class="count">{count}</small>{/if}
         </button>
       {/if}
       <!-- A click opens a terminal in the project (type `claude` in it);
@@ -196,7 +251,8 @@
         oncontextmenu={(e) => onNewSessionMenu(e, project.id, machine.kind === "local")}
       ><PlusCircle /></button>
     </div>
-    {#each sessionsForProject(app.model, project.id) as session (session.id)}
+    <div class="kids" class:folded={projectFolded} inert={projectFolded}><div>
+    {#each projectSessions as session (session.id)}
       {#if isRenaming(session.id)}
         <div class="session renaming">
           <Badge agentState={session.state} title={stateTooltip(session)} />
@@ -232,7 +288,9 @@
         </button>
       {/if}
     {/each}
+    </div></div>
   {/each}
+  </div></div>
   </div>
   {/each}
   <div class="footer">
@@ -444,5 +502,113 @@
   .time {
     color: var(--jojo-muted);
     font-size: 10.5px;
+  }
+  /* Folding (lib/state/folding.ts, layout.json's collapsed). A 9 px chevron
+     sits in the row's left padding, so it takes no width and no text
+     moves. It is hidden until the row is hovered or focused, and stays
+     faintly visible, pointing right, while the group is folded. */
+  .fold-row {
+    position: relative;
+  }
+  .chev {
+    flex: none;
+    color: var(--jojo-muted);
+    opacity: 0;
+    transform: rotate(90deg);
+    transition:
+      opacity 120ms,
+      transform 140ms ease;
+  }
+  .machine > .chev {
+    position: absolute;
+    left: -3px;
+    top: 50%;
+    margin-top: -2.5px;
+    pointer-events: none;
+  }
+  .chev-button {
+    position: absolute;
+    left: -7px;
+    top: 0;
+    bottom: 0;
+    width: 14px;
+    /* The row has 6 px padding above its text and 2 px below; 4 px here
+       centers the chevron on the text. */
+    padding-top: 4px;
+    display: grid;
+    place-items: center;
+  }
+  .fold-row:hover .chev,
+  .fold-row:focus-within .chev {
+    opacity: 0.75;
+  }
+  .chev.closed {
+    opacity: 0.45;
+    transform: none;
+  }
+  .fold-row:hover .chev.closed {
+    opacity: 0.85;
+  }
+  .fold-label {
+    min-width: 0;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* A group's rows fold with a 160 ms height transition (grid 1fr to 0fr). */
+  .kids {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 160ms ease;
+  }
+  .kids > div {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .kids.folded {
+    grid-template-rows: 0fr;
+  }
+  /* A folded row's summary: a 5 px dot per session with a state color, and
+     on a location its project count. */
+  .summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .pip {
+    width: 5px;
+    height: 5px;
+    border-radius: var(--jojo-dot-radius);
+    background: var(--pip);
+  }
+  .pip.needs {
+    box-shadow: 0 0 6px var(--jojo-needs-you-glow);
+    animation: pip-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pip-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .summary .n {
+    margin-left: 3px;
+    color: var(--jojo-muted);
+    font-size: 10.5px;
+    font-weight: 400;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kids,
+    .chev {
+      transition: none;
+    }
+    .pip.needs {
+      animation: none;
+    }
   }
 </style>

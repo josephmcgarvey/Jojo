@@ -28,7 +28,7 @@ export interface Workspace {
 }
 
 export function emptyWorkspace(): Workspace {
-  return { layout: { version: LAYOUT_VERSION, projects: {}, project_order: [] }, pending: {} };
+  return { layout: { version: LAYOUT_VERSION, projects: {}, project_order: [], collapsed: [] }, pending: {} };
 }
 
 /** The stored layout of a project on `machineId` (This PC by default). */
