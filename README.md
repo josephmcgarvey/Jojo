@@ -43,6 +43,21 @@ Installers are attached to each release on the
 
 ### macOS
 
+The quickest way to install or upgrade is this command in Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/josephmcgarvey/Jojo/master/scripts/install-mac.sh | bash
+```
+
+The script (`scripts/install-mac.sh`) downloads the latest release's `.dmg`
+for your processor, quits Jojo if it is running (sessions keep running in the
+daemon), installs `Jojo.app` into Applications and opens it. Because the file
+is downloaded with `curl` rather than a browser, macOS does not block the
+first launch. Set `JOJO_VERSION=0.2.5` before `bash` to install a specific
+release.
+
+To install from the `.dmg` by hand instead:
+
 1. Open the `.dmg` for your Mac and drag **Jojo** into **Applications**.
 2. The app is not signed with an Apple developer certificate, so macOS blocks
    the first launch. Open **System Settings ▸ Privacy & Security** and choose
