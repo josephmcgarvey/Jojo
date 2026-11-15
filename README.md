@@ -37,6 +37,22 @@ Installers are attached to each release on the
 
 ### Windows
 
+The quickest way to install or upgrade is this command in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/josephmcgarvey/Jojo/master/scripts/install-windows.ps1 | iex
+```
+
+The script (`scripts/install-windows.ps1`) downloads the latest release's
+installer, closes Jojo's window if it is open (sessions keep running in the
+daemon), runs the installer silently for the current user into
+`%LOCALAPPDATA%\Jojo` without an administrator prompt, and opens Jojo.
+Because the installer is downloaded by PowerShell rather than a browser, it
+carries no "downloaded from the internet" mark, so SmartScreen does not stop
+it. Set `$env:JOJO_VERSION = "0.2.5"` first to install a specific release.
+
+To install by hand instead:
+
 1. Run `Jojo_<version>_x64-setup.exe`.
 2. The installer is not code-signed, so Windows SmartScreen shows "Windows
    protected your PC". Choose **More info**, then **Run anyway**.
