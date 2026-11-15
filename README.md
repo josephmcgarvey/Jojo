@@ -1,4 +1,9 @@
-# Jojo
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/jojo-logo.svg">
+    <img src="assets/jojo-logo-light.svg" alt="Jojo" height="64">
+  </picture>
+</h1>
 
 Jojo is a desktop terminal application for running and supervising many
 Claude Code sessions at once, on your own computer and on Linux servers over
