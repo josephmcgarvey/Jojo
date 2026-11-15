@@ -163,7 +163,7 @@
   <!-- The JOJO logo (Alexandria SemiBold in the brand gradient). Dragging the
        row moves the window; on macOS the traffic-light buttons sit at its
        left (trafficLightPosition in tauri.macos.conf.json). -->
-  <div class="brand" data-tauri-drag-region><span class="logo" data-tauri-drag-region>JOJO</span></div>
+  <div class="brand" data-tauri-drag-region><span class="logo" data-tauri-drag-region title={app.version ? `Jojo ${app.version}` : "Jojo"}>JOJO</span></div>
   <NeedsYouQueue />
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}

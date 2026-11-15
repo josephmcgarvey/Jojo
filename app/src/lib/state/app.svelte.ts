@@ -4,6 +4,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { tick } from "svelte";
 import type { ConnectionStatus } from "../backend/ConnectionStatus";
@@ -94,6 +95,8 @@ export const app = $state({
   /** True once the first Projects reply has been applied. */
   projectsLoaded: false,
   now: Date.now(),
+  /** The app's version (tauri.conf.json), shown in Settings and the logo's tooltip; "" until read. */
+  version: "",
   /** The latest DirEntries reply, for the Add project path suggestions (spec 9.2). */
   dirEntries: null as { machine: string; path: string; entries: string[] } | null,
   /** Whether the Jojo window is the foreground window (spec 7.3 rule 2, 7.4 rule 1). */
@@ -202,6 +205,13 @@ export function startApp(): () => void {
   // layout.json is read before subscribing, so no SessionCreated can be
   // placed into an empty layout that the file then overwrites.
   void loadLayout().then(connect);
+  void getVersion()
+    .then((version) => {
+      app.version = version;
+    })
+    .catch(() => {
+      // The version stays unshown.
+    });
   const tick = setInterval(() => (app.now = Date.now()), 30_000);
   const window = getCurrentWindow();
   const unlistenFocus = window.onFocusChanged(({ payload: focused }) => {

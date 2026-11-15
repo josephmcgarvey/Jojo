@@ -213,6 +213,10 @@
 
     {#if error}<p class="error">{error}</p>{/if}
     <div class="actions">
+      <!-- The app's version and This PC's daemon version, when connected. -->
+      <span class="version">
+        {#if app.version}Jojo {app.version}{/if}{#if app.status.state === "connected"} · jojod {app.status.jojod_version}{/if}
+      </span>
       <button onclick={onclose}>Cancel</button>
       <button class="primary" onclick={save} disabled={saving}>Save</button>
     </div>
@@ -342,8 +346,16 @@
   .actions {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     gap: 8px;
     margin-top: 14px;
+  }
+  .version {
+    margin-right: auto;
+    color: var(--jojo-muted);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    user-select: text;
   }
   .actions .primary {
     border-color: var(--jojo-accent);
