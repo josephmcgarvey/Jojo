@@ -317,4 +317,5 @@ the manual checks to run before tagging a build.
 ## Status
 
 The current release is 0.2.0. Postponed work is listed in
-[ROADMAP.md](ROADMAP.md). The project has no license; all rights reserved.
+[ROADMAP.md](ROADMAP.md). Jojo is released under the MIT License; see
+[LICENSE](LICENSE).

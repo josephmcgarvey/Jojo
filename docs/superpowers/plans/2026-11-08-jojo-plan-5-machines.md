@@ -6,7 +6,7 @@
 
 **Architecture:** The Linux daemon is the same `jojod`, cross-compiled to static musl binaries with `cargo-zigbuild`. On the server it runs as `jojod serve --daemonize` on `~/.jojo/jojod.sock`. The app reaches it through `ssh <host> ~/.local/bin/jojod attach --stdio`, which relays bytes between SSH's stdio and the socket, so the app speaks the same framed protocol over the SSH pipes that it speaks over the local named pipe. The app runs one connection loop per enabled machine (`connection::run_with` with a per-machine connect step), tags every frame and status in the bridge envelope with the machine id, and keeps one frontend model per machine.
 
-**Test server:** `onprem-server` from `~/.ssh/config` (Linux x86_64, user `jmcgarvey`, no Claude Code, `Linger=no`), chosen by the user. Daemon tests run in WSL Ubuntu from cross-compiled test binaries.
+**Test server:** `onprem-server` from `~/.ssh/config` (Linux x86_64, a non-root user, no Claude Code, `Linger=no`), chosen by the user. Daemon tests run in WSL Ubuntu from cross-compiled test binaries.
 
 ## Scope
 

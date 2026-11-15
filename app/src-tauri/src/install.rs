@@ -197,8 +197,8 @@ mod tests {
 
     #[test]
     fn lists_concrete_host_aliases_from_ssh_config() {
-        let config = "Host onprem-server 100.100.0.5\n  HostName 100.100.0.5\n  User j\n\nHost *\n  ServerAliveInterval 30\nhost dev !bad\nMatch host x\n";
-        assert_eq!(ssh_config_hosts(config), vec!["onprem-server", "100.100.0.5", "dev"]);
+        let config = "Host build-box 192.0.2.5\n  HostName 192.0.2.5\n  User deploy\n\nHost *\n  ServerAliveInterval 30\nhost dev !bad\nMatch host x\n";
+        assert_eq!(ssh_config_hosts(config), vec!["build-box", "192.0.2.5", "dev"]);
     }
 
     #[test]

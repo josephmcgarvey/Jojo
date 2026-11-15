@@ -83,8 +83,8 @@ Both need ffmpeg (`winget install Gyan.FFmpeg`).
 
 ## 5. Clear error for servers that run each SSH connection in a container
 
-**Status:** found on 2026-11-12 on client-shared-host; the server was fixed by
-changing the system user's shell, and the app change is postponed.
+**Status:** found on 2026-11-12 on a RunCloud server; the server was fixed
+by changing the system user's shell, and the app change is postponed.
 
 RunCloud's jailed shell (`/bin/rc-shell`) runs every SSH connection in its
 own temporary Docker container: a separate process namespace (process 1 is

@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn sorts_attach_failures_by_their_messages() {
         let eof = || io::Error::new(io::ErrorKind::UnexpectedEof, "eof");
-        assert_eq!(kind(classify("h", "jmcgarvey@100.100.0.5: Permission denied (publickey).", eof())), "auth");
+        assert_eq!(kind(classify("h", "deploy@192.0.2.5: Permission denied (publickey).", eof())), "auth");
         assert_eq!(kind(classify("h", "bash: line 1: /home/j/.local/bin/jojod: No such file or directory", eof())), "not installed");
         assert_eq!(kind(classify("h", "Error: No such file or directory (os error 2)", eof())), "no daemon");
         assert_eq!(kind(classify("h", "Error: Connection refused (os error 111)", eof())), "no daemon");
