@@ -28,6 +28,9 @@ tokio.workspace = true
 ts-rs.workspace = true
 # machines.toml (spec 4); the same version Tauri already uses.
 toml = "1"
+# Passwords of remote locations, in Windows Credential Manager or the macOS
+# Keychain (credentials.rs).
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
 
 [target.'cfg(windows)'.dependencies]
 # Windows toast notifications (spec 7.4 item 5).

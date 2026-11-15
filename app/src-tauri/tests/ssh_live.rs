@@ -3,7 +3,7 @@
 //! (an alias from ~/.ssh/config); every other test run skips it, so the
 //! suite never touches a server on its own.
 //!
-//! Run: JOJO_SSH_TEST_HOST=onprem-server cargo test -p jojo-app --test ssh_live -- --nocapture
+//! Run: JOJO_SSH_TEST_HOST=<alias> cargo test -p jojo-app --test ssh_live -- --nocapture
 //! (after scripts/stage-daemon.ps1 has staged the Linux binaries).
 
 use jojo_proto::{ControlMsg, Frame};
@@ -16,12 +16,13 @@ async fn installs_and_connects_to_a_real_server() {
         eprintln!("JOJO_SSH_TEST_HOST is not set; skipping");
         return;
     };
+    let target = jojo_app::ssh::SshTarget::host(host.clone());
     let daemon_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("daemon");
-    jojo_app::install::install(&host, &daemon_dir, false, |step| eprintln!("[{}] {}: {}", step.status, step.step, step.message))
+    jojo_app::install::install(&target, &daemon_dir, false, |step| eprintln!("[{}] {}: {}", step.status, step.step, step.message))
         .await
         .expect("install");
 
-    let mut client = jojo_app::ssh::connect(&host).await.expect("connect over ssh");
+    let mut client = jojo_app::ssh::connect(&target).await.expect("connect over ssh");
     eprintln!("connected to jojod {}", client.daemon_version());
     client.send(Frame::Control(ControlMsg::ListProjects)).await.unwrap();
     let reply = client

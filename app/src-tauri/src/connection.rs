@@ -63,9 +63,9 @@ pub async fn run(paths: DaemonPaths, bridge: Arc<Bridge>) {
 /// A remote machine's connection loop (spec 8.3): `ssh <host> jojod attach
 /// --stdio`, reconnecting with the same backoff as This PC. A restart request
 /// (the user's Reconnect) only cuts the wait short; nothing is killed.
-pub async fn run_ssh(host: String, bridge: Arc<Bridge>) {
-    let host = &host;
-    run_with(|| async {}, move || crate::ssh::connect(host), bridge).await
+pub async fn run_ssh(target: crate::ssh::SshTarget, bridge: Arc<Bridge>) {
+    let target = &target;
+    run_with(|| async {}, move || crate::ssh::connect(target), bridge).await
 }
 
 /// The connection loop, with the connect step passed in so tests can drive

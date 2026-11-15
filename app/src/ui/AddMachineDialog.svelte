@@ -9,11 +9,13 @@
   import type { Machine } from "../lib/backend/Machine";
   import { errorText } from "../lib/errors";
   import { app, machineAdded } from "../lib/state/app.svelte";
+  import { isMac } from "../lib/platform";
 
   let { onclose }: { onclose: () => void } = $props();
 
   const STEP_NAMES: Record<string, string> = {
     connect: "Connect",
+    key: "SSH key",
     platform: "Platform",
     install: "Install jojod",
     start: "Start jojod",
@@ -33,6 +35,20 @@
     otherHost = value === OTHER_HOST;
     host = otherHost ? "" : value;
   }
+  /**
+   * How Jojo signs in: "key", a host from ~/.ssh/config whose key is
+   * loaded in the SSH agent; or "password", a username and password, with
+   * which Jojo installs its own key (setupKey) or, when the server refuses
+   * a key or setupKey is off, keeps the password in the system credential
+   * store.
+   */
+  let signInWith = $state<"key" | "password">("key");
+  let address = $state("");
+  let port = $state(22);
+  let user = $state("");
+  let password = $state("");
+  let setupKey = $state(true);
+  const ready = $derived(signInWith === "key" ? host.trim() !== "" : address.trim() !== "" && user.trim() !== "" && password !== "");
   let label = $state("");
   let running = $state(false);
   let done = $state(false);
@@ -68,7 +84,9 @@
       else steps.push(step);
     };
     try {
-      const machine = await invoke<Machine>("add_machine", { host, label, allowRestart, progress });
+      const signIn = signInWith === "password" ? { address, port: Number(port) || 22, user, password, setupKey } : null;
+      const machine = await invoke<Machine>("add_machine", { host: signInWith === "key" ? host : "", label, allowRestart, signIn, progress });
+      password = "";
       machineAdded(machine);
       done = true;
     } catch (err) {
@@ -89,30 +107,55 @@
 <div class="scrim jojo-scrim" onkeydown={onKeydown}>
   <div class="dialog jojo-modal" role="dialog" aria-modal="true" aria-labelledby="add-machine-title">
     <h2 id="add-machine-title">Add remote location</h2>
-    <p class="hint">
-      A Linux server (x86_64 or aarch64) you can reach with <code>ssh -o BatchMode=yes</code>: its key must be loaded in the
-      OpenSSH Authentication Agent, and its host key accepted once. Jojo installs <code>~/.local/bin/jojod</code> there.
-    </p>
-    <label>
-      <span>Host</span>
-      <select value={hostChoice} onchange={(e) => chooseHost(e.currentTarget.value)} disabled={running || done}>
-        {#if !otherHost && !host}<option value="" disabled>Choose a host from ~/.ssh/config</option>{/if}
-        {#each hosts as alias (alias)}
-          <option value={alias}>{alias}{added.has(alias) ? " (added: upgrades and reconnects)" : ""}</option>
-        {/each}
-        <option value={OTHER_HOST}>Other host (user@host)…</option>
-      </select>
-    </label>
-    {#if otherHost}
+    <p class="hint">A Linux server (x86_64 or aarch64) reached over SSH. Jojo installs <code>~/.local/bin/jojod</code> there.</p>
+    <div class="signin" role="radiogroup" aria-label="Sign in with">
+      <span>Sign in with</span>
+      <label class="choice"><input type="radio" bind:group={signInWith} value="key" disabled={running || done} /> SSH key</label>
+      <label class="choice"><input type="radio" bind:group={signInWith} value="password" disabled={running || done} /> Username and password</label>
+    </div>
+    {#if signInWith === "key"}
+      <p class="hint">A host from <code>~/.ssh/config</code> whose key is loaded in the SSH agent, with its host key accepted once.</p>
       <label>
-        <span>Address</span>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={host} placeholder="user@host or host" autofocus disabled={running || done} spellcheck="false" />
+        <span>Host</span>
+        <select value={hostChoice} onchange={(e) => chooseHost(e.currentTarget.value)} disabled={running || done}>
+          {#if !otherHost && !host}<option value="" disabled>Choose a host from ~/.ssh/config</option>{/if}
+          {#each hosts as alias (alias)}
+            <option value={alias}>{alias}{added.has(alias) ? " (added: upgrades and reconnects)" : ""}</option>
+          {/each}
+          <option value={OTHER_HOST}>Other host (user@host)…</option>
+        </select>
+      </label>
+      {#if otherHost}
+        <label>
+          <span>Address</span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input bind:value={host} placeholder="user@host or host" autofocus disabled={running || done} spellcheck="false" />
+        </label>
+      {/if}
+    {:else}
+      <label>
+        <span>Host</span>
+        <div class="pair">
+          <input bind:value={address} placeholder="server.example.com or 192.0.2.5" disabled={running || done} spellcheck="false" aria-label="Host name or IP address" />
+          <input class="port" type="number" min="1" max="65535" bind:value={port} disabled={running || done} aria-label="SSH port" />
+        </div>
+      </label>
+      <label>
+        <span>Username</span>
+        <input bind:value={user} autocomplete="off" disabled={running || done} spellcheck="false" />
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" bind:value={password} autocomplete="off" disabled={running || done} />
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={setupKey} disabled={running || done} />
+        <span>Set up an SSH key so the password is not needed again (recommended). If the server does not accept the key, the password is saved in {isMac ? "the Keychain" : "Windows Credential Manager"}.</span>
       </label>
     {/if}
     <label>
       <span>Label</span>
-      <input bind:value={label} placeholder={host || "shown in the sidebar"} disabled={running || done} />
+      <input bind:value={label} placeholder={(signInWith === "key" ? host : address) || "shown in the sidebar"} disabled={running || done} />
     </label>
 
     {#if steps.length > 0}
@@ -136,7 +179,7 @@
         {#if restartNeeded}
           <button class="primary" onclick={() => install(true)} disabled={running}>Install and end sessions</button>
         {:else}
-          <button class="primary" onclick={() => install()} disabled={running || !host.trim()}>{running ? "Installing…" : error ? "Try again" : "Install"}</button>
+          <button class="primary" onclick={() => install()} disabled={running || !ready}>{running ? "Installing…" : error ? "Try again" : "Install"}</button>
         {/if}
       {/if}
     </div>
@@ -176,6 +219,37 @@
     gap: 8px;
     margin-bottom: 8px;
     color: var(--jojo-fg2);
+  }
+  .signin {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 8px;
+    color: var(--jojo-fg2);
+  }
+  .signin > span {
+    width: 70px;
+  }
+  label.choice,
+  label.check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+  }
+  label.check {
+    align-items: flex-start;
+    margin: 4px 0 10px 78px;
+    color: var(--jojo-muted);
+    font-size: 12px;
+  }
+  label.check input {
+    margin-top: 2px;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr 70px;
+    gap: 6px;
   }
   input,
   select {

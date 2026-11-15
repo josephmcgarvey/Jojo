@@ -228,9 +228,24 @@ shared between a PC and a Mac.
 ### Remote locations
 
 **Remote location** at the bottom of the sidebar adds a Linux server
-(x86_64 or aarch64). The dialog offers the host aliases from
-`~/.ssh/config`. Authentication uses your existing SSH setup (keys or agent);
-Jojo runs the system `ssh` and stores no passwords. The server account needs
+(x86_64 or aarch64). Jojo runs the system `ssh`, and the dialog's
+**Sign in with** setting offers two ways in:
+
+1. **SSH key**: a host alias from `~/.ssh/config` (or `user@host`) whose key
+   is loaded in the SSH agent, with its host key accepted once.
+2. **Username and password**: the server's host name or address, port,
+   username and password. With **Set up an SSH key** checked (the default),
+   Jojo creates `~/.ssh/jojo_ed25519` if it does not exist, adds its public
+   key to the server's `~/.ssh/authorized_keys` over the password
+   connection, and checks that the key signs in. From then on the location
+   uses the key and the password is not saved. When the server does not
+   accept the key, or the box is unchecked, Jojo keeps signing in with the
+   password, which it saves in Windows Credential Manager or the macOS
+   Keychain (never in `machines.toml`) and gives to `ssh` through its own
+   password helper (`SSH_ASKPASS`, OpenSSH 8.4 or later). A new server's host
+   key is accepted and recorded in `known_hosts` on first connection.
+
+The server account needs
 a normal login shell such as `/bin/bash`: a shell that runs each SSH
 connection in its own temporary container, such as RunCloud's jailed shell
 (`/bin/rc-shell`), cannot keep the daemon running.
@@ -305,7 +320,7 @@ Jojo keeps its data in plain text files; it uses no database.
 | File | Location (Windows) | Location (macOS) | Contents |
 |---|---|---|---|
 | Settings | `%APPDATA%\Jojo\settings.json` | `~/Library/Application Support/Jojo/` | The values on the Settings screen. |
-| Locations | `%APPDATA%\Jojo\machines.toml` | same folder | Remote locations. |
+| Locations | `%APPDATA%\Jojo\machines.toml` | same folder | Remote locations, with the port, key file and sign-in method of those added with a username and password. Passwords are kept in Windows Credential Manager or the macOS Keychain. |
 | Layout | `%APPDATA%\Jojo\layout.json` | same folder | Project order, tabs, split layouts and folded groups. |
 | Snippets | `%APPDATA%\Jojo\snippets.json` | same folder | The snippets library, with each snippet's last placeholder values. |
 | Daemon state | `%LOCALAPPDATA%\Jojo\state.json` | `~/.jojo/state.json` | Projects and session records. |

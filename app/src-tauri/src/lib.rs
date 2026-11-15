@@ -3,6 +3,7 @@
 
 pub mod bridge;
 pub mod connection;
+pub mod credentials;
 pub mod daemon_manager;
 pub mod hub;
 pub mod install;

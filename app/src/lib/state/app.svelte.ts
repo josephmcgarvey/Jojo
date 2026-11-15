@@ -182,7 +182,7 @@ export function startApp(): () => void {
       app.machines = machines;
     })
     .catch(() => {
-      app.machines = [{ id: LOCAL_MACHINE, label: LOCAL_LABEL, kind: "local", ssh_host: null, enabled: true }];
+      app.machines = [{ id: LOCAL_MACHINE, label: LOCAL_LABEL, kind: "local", ssh_host: null, enabled: true, port: null, identity_file: null, password: false }];
     });
   void invoke<ShellOption[]>("available_shells")
     .then((shells) => {

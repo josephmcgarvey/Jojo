@@ -72,6 +72,11 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
+    // As ssh's password helper, jojod is run as `jojod "<prompt>"`, which is
+    // not a subcommand; the app marks those runs with JOJO_SSH_ASKPASS.
+    if std::env::var_os(jojod::askpass::ASKPASS_VAR).is_some() {
+        std::process::exit(jojod::askpass::run());
+    }
     let cli = Cli::parse();
     // The hook relay runs for every Claude Code hook event, also outside
     // Jojo. Spec 7.1: return at once when JOJO_SESSION_ID is unset, before

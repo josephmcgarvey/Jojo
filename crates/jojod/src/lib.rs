@@ -1,5 +1,6 @@
 //! jojod: the Jojo session daemon.
 
+pub mod askpass;
 pub mod attach;
 pub mod client;
 pub mod client_queue;

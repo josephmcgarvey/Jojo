@@ -12,7 +12,7 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
@@ -41,6 +41,54 @@ pub fn start_daemon_command() -> String {
     login_shell_command(&format!("{REMOTE_JOJOD} serve --daemonize"))
 }
 
+/// Where and how ssh signs in to a remote location.
+///
+/// A location added from `~/.ssh/config` has only `host` (the alias), and
+/// ssh takes everything else from the config. A location added with a
+/// username and password has `host` = `user@address`, its `port`, and
+/// either the key Jojo installed for it (`identity_file`) or the password.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SshTarget {
+    /// An alias from `~/.ssh/config`, `user@host` or a host name.
+    pub host: String,
+    /// `-p`; None uses ssh's default (22, or the config's Port).
+    pub port: Option<u16>,
+    /// `-i`, with `IdentitiesOnly=yes` so ssh offers only this key.
+    pub identity_file: Option<PathBuf>,
+    /// Signs in with this password, supplied by jojod as ssh's password
+    /// helper (see `jojod::askpass`), instead of with a key.
+    pub password: Option<String>,
+}
+
+impl SshTarget {
+    /// A target that is only a host: an alias, `user@host` or a host name.
+    pub fn host(host: impl Into<String>) -> Self {
+        SshTarget { host: host.into(), port: None, identity_file: None, password: None }
+    }
+}
+
+/// Debug output never includes the password.
+impl std::fmt::Debug for SshTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshTarget")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("identity_file", &self.identity_file)
+            .field("password", &self.password.as_ref().map(|_| "<hidden>"))
+            .finish()
+    }
+}
+
+/// The program ssh runs as its password helper: the app's bundled jojod
+/// (set at startup with `set_askpass_program`). The bundled copy, not the
+/// one the daemon runs from, because on Windows the running daemon's file
+/// cannot be replaced, so it can be an older version without the helper.
+static ASKPASS_PROGRAM: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn set_askpass_program(path: PathBuf) {
+    let _ = ASKPASS_PROGRAM.set(path);
+}
+
 /// How long a non-interactive command (`serve --daemonize`, a check) may run.
 pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -57,24 +105,77 @@ pub fn ssh_program() -> PathBuf {
     system.filter(|p| p.is_file()).unwrap_or_else(|| PathBuf::from("ssh"))
 }
 
-/// `ssh -o BatchMode=yes -o ConnectTimeout=10 [extra options] <host> <remote command>`.
-/// BatchMode makes ssh fail instead of prompting for a password, passphrase
-/// or host key confirmation, because no terminal is attached.
-pub fn ssh_command(host: &str, options: &[&str], remote: &str) -> tokio::process::Command {
+/// `ssh -T -o ConnectTimeout=10 [sign-in options] [extra options] <host> <remote command>`.
+///
+/// With a key (no password), `BatchMode=yes` makes ssh fail instead of
+/// prompting for a password, passphrase or host key confirmation, because no
+/// terminal is attached. With a password, ssh asks jojod for it instead (see
+/// `password_sign_in`).
+pub fn ssh_command(target: &SshTarget, options: &[&str], remote: &str) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(ssh_program());
     // -T and RequestTTY=no: a PTY would rewrite the binary protocol's bytes
     // (a `RequestTTY force` in ~/.ssh/config would otherwise apply).
     // RemoteCommand=none: ssh refuses a command line when ~/.ssh/config sets
     // a RemoteCommand for the host.
-    cmd.args(["-T", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]);
+    cmd.args(["-T", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", "-o", "ConnectTimeout=10"]);
+    for arg in sign_in_args(target) {
+        cmd.arg(arg);
+    }
+    if let Some(password) = &target.password {
+        password_sign_in(&mut cmd, password);
+    }
     for option in options {
         cmd.args(["-o", option]);
     }
-    cmd.arg("--").arg(host).arg(remote);
+    cmd.arg("--").arg(&target.host).arg(remote);
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
+}
+
+/// The arguments that select how ssh signs in to `target`: the port, the key
+/// file, and either `BatchMode=yes` (keys only) or the password settings.
+pub fn sign_in_args(target: &SshTarget) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(port) = target.port {
+        args.extend(["-p".to_owned(), port.to_string()]);
+    }
+    if let Some(file) = &target.identity_file {
+        args.extend(["-i".to_owned(), file.display().to_string(), "-o".to_owned(), "IdentitiesOnly=yes".to_owned()]);
+    }
+    if target.password.is_some() {
+        // One attempt, password methods only (offering agent keys first can
+        // use up the server's attempt limit), and a new host key accepted
+        // and recorded in known_hosts instead of asked about.
+        for option in [
+            "BatchMode=no",
+            "NumberOfPasswordPrompts=1",
+            "PreferredAuthentications=keyboard-interactive,password",
+            "PubkeyAuthentication=no",
+            "StrictHostKeyChecking=accept-new",
+        ] {
+            args.extend(["-o".to_owned(), option.to_owned()]);
+        }
+    } else {
+        args.extend(["-o".to_owned(), "BatchMode=yes".to_owned()]);
+    }
+    args
+}
+
+/// Makes ssh get the password from jojod: `SSH_ASKPASS` names the bundled
+/// jojod, `SSH_ASKPASS_REQUIRE=force` makes ssh use it although no terminal
+/// is attached (OpenSSH 8.4 and later; `DISPLAY` is set for older clients,
+/// which use the helper only when it is), and the password travels in
+/// jojod's environment, set on this ssh process only.
+fn password_sign_in(cmd: &mut tokio::process::Command, password: &str) {
+    if let Some(program) = ASKPASS_PROGRAM.get() {
+        cmd.env("SSH_ASKPASS", program);
+    }
+    cmd.env("SSH_ASKPASS_REQUIRE", "force")
+        .env("DISPLAY", std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_owned()))
+        .env(jojod::askpass::ASKPASS_VAR, "1")
+        .env(jojod::askpass::PASSWORD_VAR, password);
 }
 
 /// The output of a finished remote command.
@@ -85,15 +186,16 @@ pub struct CommandOutput {
     pub stderr: String,
 }
 
-/// Runs `remote` on `host` with `input` on its stdin and waits up to
+/// Runs `remote` on `target` with `input` on its stdin and waits up to
 /// `COMMAND_TIMEOUT` for it to finish.
-pub async fn run(host: &str, remote: &str, input: &[u8]) -> io::Result<CommandOutput> {
-    run_with_timeout(host, remote, input, COMMAND_TIMEOUT).await
+pub async fn run(target: &SshTarget, remote: &str, input: &[u8]) -> io::Result<CommandOutput> {
+    run_with_timeout(target, remote, input, COMMAND_TIMEOUT).await
 }
 
 /// `run` with its own time limit (the daemon upload scales it with size).
-pub async fn run_with_timeout(host: &str, remote: &str, input: &[u8], timeout: Duration) -> io::Result<CommandOutput> {
-    let mut child = ssh_command(host, &[], &with_exit_marker(remote)).spawn()?;
+pub async fn run_with_timeout(target: &SshTarget, remote: &str, input: &[u8], timeout: Duration) -> io::Result<CommandOutput> {
+    let host = &target.host;
+    let mut child = ssh_command(target, &[], &with_exit_marker(remote)).spawn()?;
     let mut stdin = child.stdin.take().expect("piped stdin");
     let input = input.to_vec();
     let writer = tokio::spawn(async move {
@@ -177,9 +279,10 @@ enum AttachFailure {
     NoDaemon(String),
 }
 
-async fn attach(host: &str) -> Result<Client, AttachFailure> {
+async fn attach(target: &SshTarget) -> Result<Client, AttachFailure> {
+    let host = &target.host;
     let options = ["ServerAliveInterval=15", "ServerAliveCountMax=3"];
-    let mut child = ssh_command(host, &options, &format!("{REMOTE_JOJOD} attach --stdio"))
+    let mut child = ssh_command(target, &options, &format!("{REMOTE_JOJOD} attach --stdio"))
         .spawn()
         .map_err(|e| AttachFailure::Connect(ConnectError::Io(io::Error::new(e.kind(), format!("could not run ssh: {e}")))))?;
     let stdin = child.stdin.take().expect("piped stdin");
@@ -245,20 +348,21 @@ fn classify(host: &str, stderr: &str, handshake: io::Error) -> AttachFailure {
 /// The connect step of a remote machine's connection loop: attaches, and
 /// when no daemon is running (the server rebooted, or it was shut down)
 /// starts one with `serve --daemonize` and attaches again.
-pub async fn connect(host: &str) -> Result<Client, ConnectError> {
-    match attach(host).await {
+pub async fn connect(target: &SshTarget) -> Result<Client, ConnectError> {
+    let host = &target.host;
+    match attach(target).await {
         Ok(client) => return Ok(client),
         Err(AttachFailure::Connect(e)) => return Err(e),
         Err(AttachFailure::NoDaemon(_)) => {}
     }
-    let started = run(host, &start_daemon_command(), b"").await.map_err(ConnectError::Io)?;
+    let started = run(target, &start_daemon_command(), b"").await.map_err(ConnectError::Io)?;
     if is_auth_failure(started.code, &started.stderr) {
         return Err(ConnectError::AuthFailed(started.stderr.trim().to_owned()));
     }
     if started.code != Some(0) {
         return Err(ConnectError::Io(io::Error::other(format!("could not start jojod on {host}: {}", started.stderr.trim()))));
     }
-    match attach(host).await {
+    match attach(target).await {
         Ok(client) => Ok(client),
         Err(AttachFailure::Connect(e)) => Err(e),
         Err(AttachFailure::NoDaemon(stderr)) => Err(ConnectError::Io(io::Error::other(format!("jojod on {host} is not accepting connections: {stderr}")))),
@@ -308,6 +412,20 @@ mod tests {
         assert_eq!(kind(classify("h", "Error: Permission denied (os error 13)", eof())), "other");
         assert_eq!(kind(classify("h", "zsh:1: no such file or directory: /home/u/.local/bin/jojod", eof())), "not installed");
         assert_eq!(kind(classify("h", "ssh: connect to host 10.0.0.1 port 22: Connection refused", eof())), "other");
+    }
+
+    #[test]
+    fn sign_in_arguments_follow_the_target() {
+        let alias = SshTarget::host("build-box");
+        assert_eq!(sign_in_args(&alias), ["-o", "BatchMode=yes"]);
+        let key = SshTarget { host: "deploy@192.0.2.5".into(), port: Some(2222), identity_file: Some(PathBuf::from("/k/jojo_ed25519")), password: None };
+        let args = sign_in_args(&key).join(" ");
+        assert!(args.contains("-p 2222") && args.contains("IdentitiesOnly=yes") && args.contains("BatchMode=yes"), "{args}");
+        let password = SshTarget { password: Some("s3cret".into()), identity_file: None, ..key };
+        let args = sign_in_args(&password).join(" ");
+        assert!(args.contains("BatchMode=no") && args.contains("PubkeyAuthentication=no") && args.contains("StrictHostKeyChecking=accept-new"), "{args}");
+        assert!(!args.contains("s3cret"), "the password is never an argument: {args}");
+        assert!(!format!("{password:?}").contains("s3cret"));
     }
 
     #[test]

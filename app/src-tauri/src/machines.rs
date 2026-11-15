@@ -31,6 +31,33 @@ pub struct Machine {
     /// A disabled machine is listed but not connected.
     #[serde(default = "enabled_default")]
     pub enabled: bool,
+    /// The SSH port, for a location added with a username and password;
+    /// None uses ssh's default (22, or the config's Port for an alias).
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// The key Jojo installed on the server when the location was added
+    /// with a username and password (`~/.ssh/jojo_ed25519`).
+    #[serde(default)]
+    pub identity_file: Option<String>,
+    /// The location signs in with a password, kept in the system credential
+    /// store (see `credentials`), because the server did not accept a key.
+    #[serde(default)]
+    pub password: bool,
+}
+
+impl Machine {
+    /// How ssh reaches this machine, or None for This PC. A password
+    /// location's password is read from the credential store here; when it
+    /// is missing, ssh's sign-in fails and the window reports it.
+    pub fn ssh_target(&self) -> Option<crate::ssh::SshTarget> {
+        let host = self.ssh_host.clone()?;
+        Some(crate::ssh::SshTarget {
+            host,
+            port: self.port,
+            identity_file: self.identity_file.as_ref().map(std::path::PathBuf::from),
+            password: if self.password { Some(crate::credentials::load(&self.id).unwrap_or_default()) } else { None },
+        })
+    }
 }
 
 fn enabled_default() -> bool {
@@ -45,7 +72,16 @@ struct MachinesFile {
 }
 
 pub fn this_pc() -> Machine {
-    Machine { id: LOCAL_MACHINE.into(), label: crate::platform::LOCAL_MACHINE_LABEL.into(), kind: MachineKind::Local, ssh_host: None, enabled: true }
+    Machine {
+        id: LOCAL_MACHINE.into(),
+        label: crate::platform::LOCAL_MACHINE_LABEL.into(),
+        kind: MachineKind::Local,
+        ssh_host: None,
+        enabled: true,
+        port: None,
+        identity_file: None,
+        password: false,
+    }
 }
 
 pub fn default_path() -> PathBuf {
@@ -54,7 +90,7 @@ pub fn default_path() -> PathBuf {
 
 /// This PC first, then the file's remote machines in file order.
 fn normalized(machines: Vec<Machine>) -> Vec<Machine> {
-    let local = machines.iter().find(|m| m.id == LOCAL_MACHINE).cloned().map(|m| Machine { kind: MachineKind::Local, ssh_host: None, enabled: true, ..m });
+    let local = machines.iter().find(|m| m.id == LOCAL_MACHINE).cloned().map(|m| Machine { kind: MachineKind::Local, ssh_host: None, enabled: true, port: None, identity_file: None, password: false, ..m });
     let mut out = vec![local.unwrap_or_else(this_pc)];
     // A usable remote entry has a host that ssh cannot read as an option and
     // an id that is unique, short enough for the bridge envelope and free of
@@ -106,7 +142,7 @@ mod tests {
     use super::*;
 
     fn remote(id: &str, host: &str) -> Machine {
-        Machine { id: id.into(), label: host.into(), kind: MachineKind::Ssh, ssh_host: Some(host.into()), enabled: true }
+        Machine { id: id.into(), label: host.into(), kind: MachineKind::Ssh, ssh_host: Some(host.into()), enabled: true, port: None, identity_file: None, password: false }
     }
 
     #[test]

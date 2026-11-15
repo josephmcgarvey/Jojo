@@ -35,9 +35,9 @@ impl Hub {
             return;
         }
         let bridge = Arc::new(Bridge::new(&machine.id, self.frontend.clone()));
-        let task = match (machine.kind, &machine.ssh_host) {
+        let task = match (machine.kind, machine.ssh_target()) {
             (MachineKind::Local, _) => tauri::async_runtime::spawn(crate::connection::run(local_paths(), bridge.clone())),
-            (MachineKind::Ssh, Some(host)) => tauri::async_runtime::spawn(crate::connection::run_ssh(host.clone(), bridge.clone())),
+            (MachineKind::Ssh, Some(target)) => tauri::async_runtime::spawn(crate::connection::run_ssh(target, bridge.clone())),
             (MachineKind::Ssh, None) => return,
         };
         running.insert(machine.id.clone(), (bridge, task));

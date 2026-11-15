@@ -56,8 +56,28 @@ fn ssh_hosts() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A remote location added with a username and password instead of a host
+/// from ~/.ssh/config (the Add remote location dialog's "Username and
+/// password").
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasswordSignIn {
+    address: String,
+    port: Option<u16>,
+    user: String,
+    password: String,
+    /// Install an SSH key with the password and sign in with the key from
+    /// then on; the password is kept only when the server refuses the key.
+    setup_key: bool,
+}
+
+/// Where the password of a location is kept, for messages.
+const CREDENTIAL_STORE: &str = if cfg!(windows) { "Windows Credential Manager" } else { "the Keychain" };
+
 /// Spec 8.2: installs jojod on `host`, reporting each step on `progress`,
-/// then adds the machine to machines.toml and connects to it.
+/// then adds the machine to machines.toml and connects to it. With
+/// `sign_in`, the location is reached with a username and password; with
+/// `setup_key`, Jojo first installs its key (see `install::setup_key`).
 #[tauri::command]
 async fn add_machine(
     app: tauri::AppHandle,
@@ -65,18 +85,64 @@ async fn add_machine(
     host: String,
     label: String,
     allow_restart: bool,
+    sign_in: Option<PasswordSignIn>,
     progress: Channel<InstallStep>,
 ) -> Result<Machine, String> {
-    let host = host.trim().to_owned();
-    if host.is_empty() || host.starts_with('-') || host.chars().any(char::is_whitespace) {
-        return Err("Enter a host from ~/.ssh/config or user@host".into());
-    }
-    let daemon_dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("daemon");
-    jojo_app::install::install(&host, &daemon_dir, allow_restart, |step| {
+    let report = |step: InstallStep| {
         let _ = progress.send(step);
-    })
-    .await?;
+    };
     let path = machines::default_path();
+    let id = jojo_proto::SessionId::new().to_string();
+    // The target the install runs against, and whether its password must be saved.
+    let (target, save_password) = match sign_in {
+        Some(sign_in) => {
+            let address = sign_in.address.trim().to_owned();
+            let user = sign_in.user.trim().to_owned();
+            if address.is_empty() || address.starts_with('-') || address.contains(['@', ' ']) {
+                return Err("Enter the server's host name or IP address".into());
+            }
+            if user.is_empty() || user.starts_with('-') || user.contains(['@', ' ']) {
+                return Err("Enter the username to sign in with".into());
+            }
+            if sign_in.password.is_empty() {
+                return Err("Enter the password".into());
+            }
+            let with_password = jojo_app::ssh::SshTarget {
+                host: format!("{user}@{address}"),
+                port: sign_in.port.filter(|&p| p != 22),
+                identity_file: None,
+                password: Some(sign_in.password),
+            };
+            if sign_in.setup_key {
+                let key = jojo_app::install::default_jojo_key().ok_or("cannot find your home folder for ~/.ssh")?;
+                match jojo_app::install::setup_key(&with_password, &key, report).await {
+                    Ok(with_key) => (with_key, false),
+                    Err(why) => {
+                        report(InstallStep {
+                            step: "key".into(),
+                            status: "warning".into(),
+                            message: format!("Signing in with the password, saved in {CREDENTIAL_STORE}, because {why}"),
+                        });
+                        (with_password, true)
+                    }
+                }
+            } else {
+                (with_password, true)
+            }
+        }
+        None => {
+            let host = host.trim().to_owned();
+            if host.is_empty() || host.starts_with('-') || host.chars().any(char::is_whitespace) {
+                return Err("Enter a host from ~/.ssh/config or user@host".into());
+            }
+            // Adding a listed host again (Upgrade jojod) uses its saved sign-in.
+            let listed = machines::load(&path).into_iter().find(|m| m.ssh_host.as_deref() == Some(host.as_str()));
+            (listed.and_then(|m| m.ssh_target()).unwrap_or_else(|| jojo_app::ssh::SshTarget::host(host)), false)
+        }
+    };
+    let host = target.host.clone();
+    let daemon_dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("daemon");
+    jojo_app::install::install(&target, &daemon_dir, allow_restart, report).await?;
     let mut list = machines::load(&path);
     if let Some(existing) = list.iter().find(|m| m.ssh_host.as_deref() == Some(host.as_str())) {
         // Adding a host that is already listed upgrades and restarts it; the
@@ -87,7 +153,19 @@ async fn add_machine(
         return Ok(existing);
     }
     let label = if label.trim().is_empty() { host.clone() } else { label.trim().to_owned() };
-    let machine = Machine { id: jojo_proto::SessionId::new().to_string(), label, kind: MachineKind::Ssh, ssh_host: Some(host), enabled: true };
+    if save_password {
+        jojo_app::credentials::store(&id, target.password.as_deref().unwrap_or_default())?;
+    }
+    let machine = Machine {
+        id,
+        label,
+        kind: MachineKind::Ssh,
+        ssh_host: Some(host),
+        enabled: true,
+        port: target.port,
+        identity_file: target.identity_file.as_ref().map(|p| p.display().to_string()),
+        password: save_password,
+    };
     list.push(machine.clone());
     machines::save(&path, &list).map_err(|e| format!("could not save machines.toml: {e}"))?;
     hub.start(&machine, || unreachable!("a remote machine has no local paths"));
@@ -108,18 +186,21 @@ async fn remove_machine(hub: State<'_, Arc<Hub>>, id: String, uninstall: bool) -
     // The uninstall runs first: when it fails (for example, the server is
     // unreachable), the machine stays listed with its connection loop.
     if uninstall {
-        if let Some(host) = &machine.ssh_host {
+        if let Some(target) = machine.ssh_target() {
             let script = format!(
                 "{0} shutdown; {0} uninstall-hooks; rm -f ~/.local/bin/jojod && rm -rf ~/.jojo",
                 jojo_app::ssh::REMOTE_JOJOD
             );
-            let out = jojo_app::ssh::run(host, &script, b"").await.map_err(|e| e.to_string())?;
+            let out = jojo_app::ssh::run(&target, &script, b"").await.map_err(|e| e.to_string())?;
             if out.code != Some(0) {
-                return Err(format!("uninstall on {host} failed: {}", out.stderr.trim()));
+                return Err(format!("uninstall on {} failed: {}", target.host, out.stderr.trim()));
             }
         }
     }
     hub.stop(&id);
+    if machine.password {
+        jojo_app::credentials::delete(&id);
+    }
     list.retain(|m| m.id != id);
     machines::save(&path, &list).map_err(|e| format!("could not save machines.toml: {e}"))
 }
@@ -333,6 +414,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_menu(mac_menu(app.handle())?)?;
             let source = app.path().resource_dir()?.join("daemon");
+            // ssh's password helper for locations that sign in with a password.
+            jojo_app::ssh::set_askpass_program(source.join(jojo_app::daemon_manager::JOJOD_FILE));
             for machine in machines::load(&machines::default_path()) {
                 hub.start(&machine, || DaemonPaths::for_app(source.clone()));
             }

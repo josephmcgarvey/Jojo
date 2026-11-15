@@ -13,4 +13,19 @@ ssh_host: string | null,
 /**
  * A disabled machine is listed but not connected.
  */
-enabled: boolean, };
+enabled: boolean, 
+/**
+ * The SSH port, for a location added with a username and password;
+ * None uses ssh's default (22, or the config's Port for an alias).
+ */
+port: number | null, 
+/**
+ * The key Jojo installed on the server when the location was added
+ * with a username and password (`~/.ssh/jojo_ed25519`).
+ */
+identity_file: string | null, 
+/**
+ * The location signs in with a password, kept in the system credential
+ * store (see `credentials`), because the server did not accept a key.
+ */
+password: boolean, };
