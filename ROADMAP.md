@@ -35,10 +35,7 @@ behaviors have not been confirmed on a real Mac.
 
 The app and jojod run on macOS (commit `eb69807`), and
 `.github/workflows/macos.yml` builds unsigned `.dmg` installers for Apple
-Silicon and Intel. The workflow runs only when started by hand
-(`gh workflow run macos.yml -R josephmcgarvey/Jojo --ref <tag>`), and Mac
-builds are made only when the user asks for one. These behaviors are
-unconfirmed:
+Silicon and Intel. These behaviors are unconfirmed:
 
 1. The position of the traffic-light buttons against the sidebar's JOJO
    logo (`trafficLightPosition` in `app/src-tauri/tauri.macos.conf.json`).
