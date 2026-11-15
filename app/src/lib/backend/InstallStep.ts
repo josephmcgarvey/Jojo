@@ -5,7 +5,7 @@
  */
 export type InstallStep = { 
 /**
- * "connect", "platform", "install", "start", "linger" or "hooks".
+ * "connect", "key", "platform", "install", "start", "linger" or "hooks".
  */
 step: string, 
 /**
