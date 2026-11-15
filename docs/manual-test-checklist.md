@@ -176,7 +176,7 @@ server without the window.
 
 1. The sidebar shows This PC first. **+ Machine** at the bottom opens Add
    machine; the Host field suggests the aliases from `~/.ssh/config`.
-2. Add `onprem-server` with a label: the dialog shows Connect, Platform
+2. Add a test server with a label: the dialog shows Connect, Platform
    (Linux x86_64), Install jojod (Uploading, then Installed jojod 0.1.0
    (protocol 3)), Start jojod, Logout survival (a warning while
    `Linger=no`) and Claude Code hooks (a warning while Claude Code is not

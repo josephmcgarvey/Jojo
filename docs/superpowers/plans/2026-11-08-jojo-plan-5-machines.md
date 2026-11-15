@@ -6,7 +6,7 @@
 
 **Architecture:** The Linux daemon is the same `jojod`, cross-compiled to static musl binaries with `cargo-zigbuild`. On the server it runs as `jojod serve --daemonize` on `~/.jojo/jojod.sock`. The app reaches it through `ssh <host> ~/.local/bin/jojod attach --stdio`, which relays bytes between SSH's stdio and the socket, so the app speaks the same framed protocol over the SSH pipes that it speaks over the local named pipe. The app runs one connection loop per enabled machine (`connection::run_with` with a per-machine connect step), tags every frame and status in the bridge envelope with the machine id, and keeps one frontend model per machine.
 
-**Test server:** `onprem-server` from `~/.ssh/config` (Linux x86_64, a non-root user, no Claude Code, `Linger=no`), chosen by the user. Daemon tests run in WSL Ubuntu from cross-compiled test binaries.
+**Test server:** a test server from `~/.ssh/config` (Linux x86_64, a non-root user, no Claude Code, `Linger=no`), chosen by the user. Daemon tests run in WSL Ubuntu from cross-compiled test binaries.
 
 ## Scope
 
@@ -33,7 +33,7 @@ Out of scope: the settings screen, the switcher and the "+ opens a terminal" flo
 5. **Frontend per-machine models.** One model per machine; layout keys use the real machine id; sends and input go to the session's machine; input to a disconnected machine is dropped; machine headers with status in the sidebar; pane overlay "Disconnected. Sessions keep running on <label>."
 6. **Add machine.** Backend commands for `~/.ssh/config` host aliases and for the install steps of spec 8.2 (connectivity, platform, install or upgrade by streaming the binary over stdin, start, linger check, hooks), reported step by step; the Add machine dialog; **+ Machine** at the bottom of the sidebar.
 7. **Remove machine and remote upgrade.** Machine header menu: Reconnect, Remove (with "Also uninstall from server"); a remote protocol mismatch offers Upgrade, naming the sessions that end.
-8. **Checklist, verification, installer, manual test against `onprem-server`.**
+8. **Checklist, verification, installer, manual test against the test server.**
 
 ## Progress
 
@@ -45,4 +45,4 @@ Out of scope: the settings screen, the switcher and the "+ opens a terminal" flo
 - Task 5: complete (9f6d1f1, per-machine models, sidebar groups, overlay).
 - Task 6: complete (e61f74d, Add machine, remote projects, Remove machine).
 - Task 7: complete (44709bd, remote Upgrade).
-- Task 8: live test against onprem-server passed twice (install, then idempotent repeat); checklist written.
+- Task 8: live test against the test server passed twice (install, then idempotent repeat); checklist written.
