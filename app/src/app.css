@@ -56,8 +56,8 @@ html[data-effects~="rainbow"] {
   animation: jojo-hue 12s steps(240) infinite;
 }
 /* The aurora effect (a theme with "effects": ["aurora"], such as Prism):
-   the theme's `aurora` token, elongated glows in hues offset from
-   --jojo-hue, drawn on two layers behind the window's contents (App.svelte
+   the theme's `aurora` token, six elongated glows spread over the whole
+   window in hues offset from --jojo-hue, drawn on two layers behind the window's contents (App.svelte
    .window::before and ::after). A mask of soft vertical stripes gives the
    glows the streaked look of aurora curtains. The layers drift with
    transform-only animations of 47 s and 61 s, which the compositor runs
