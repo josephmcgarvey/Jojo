@@ -363,7 +363,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 8px 4px 22px;
+    padding: 8px 8px 4px 14px;
     font-size: 13px;
     font-weight: 600;
     color: var(--jojo-fg);
@@ -447,7 +447,11 @@
   .project {
     display: flex;
     align-items: center;
-    padding: 6px 8px 2px 22px;
+    /* Indented 6 px under the location's name, chevron included. */
+    padding: 6px 8px 2px 20px;
+  }
+  .project .chev-button {
+    left: 6px;
   }
   .project.dragging {
     opacity: 0.55;
@@ -504,7 +508,7 @@
     width: 100%;
     align-items: center;
     gap: 8px;
-    padding: 5px 8px 5px 28px;
+    padding: 5px 8px 5px 26px;
     border-radius: var(--jojo-radius);
     color: var(--jojo-fg2);
     text-align: left;
@@ -524,8 +528,8 @@
     font-size: 10.5px;
   }
   /* Folding (lib/state/folding.ts, layout.json's collapsed). A 9 px chevron
-     button sits in the 22 px left padding of each location and project
-     row, inside the row (the folding containers clip anything outside
+     button sits in the left padding of each location row (14 px) and
+     project row (20 px, the button 6 px in), inside the row (the folding containers clip anything outside
      it). It is hidden until the row is hovered or focused, and stays
      faintly visible, pointing right, while the group is folded. */
   .fold-row {
@@ -542,10 +546,10 @@
   }
   .chev-button {
     position: absolute;
-    left: 4px;
+    left: 0;
     top: 0;
     bottom: 0;
-    width: 16px;
+    width: 9px;
     /* Both rows have 4 px more padding above their text than below (8/4
        and 6/2); 4 px here centers the chevron on the text. */
     padding-top: 4px;
