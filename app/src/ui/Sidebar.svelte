@@ -169,6 +169,8 @@
        row moves the window; on macOS the traffic-light buttons sit at its
        left (trafficLightPosition in tauri.macos.conf.json). -->
   <div class="brand" data-tauri-drag-region><span class="logo" data-tauri-drag-region title={app.version ? `Jojo ${app.version}` : "Jojo"}>JOJO</span></div>
+  <!-- The logo above and the footer below stay in place; only this list scrolls. -->
+  <div class="list">
   <NeedsYouQueue />
   {#each app.machines as machine (machine.id)}
   {@const status = app.statuses[machine.id]}
@@ -304,6 +306,7 @@
   </div></div>
   </div>
   {/each}
+  </div>
   <div class="footer">
     <button class="add-machine" onclick={() => openDialog({ kind: "add-machine" })}><PlusCircle /><span>Remote location</span></button>
     <button class="settings" title="Settings" aria-label="Settings" onclick={() => openDialog({ kind: "settings" })}><Cog size={22} /></button>
@@ -323,8 +326,21 @@
     border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-side-radius);
     box-shadow: var(--jojo-panel-shadow);
-    overflow-y: auto;
+    overflow: hidden;
     min-height: 0;
+  }
+  /* The scrolling part of the sidebar, between the fixed logo row and the
+     fixed footer. The negative margin and matching padding put the
+     scrollbar in the sidebar's 8 px right padding instead of over the rows. */
+  .list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-right: -8px;
+    padding-right: 8px;
+    overflow-y: auto;
   }
   .brand {
     flex: none;

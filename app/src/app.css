@@ -55,11 +55,74 @@ body {
 html[data-effects~="rainbow"] {
   animation: jojo-hue 12s steps(240) infinite;
 }
+/* The aurora effect (a theme with "effects": ["aurora"], such as Prism):
+   the theme's `aurora` token, elongated glows in hues offset from
+   --jojo-hue, drawn on two layers behind the window's contents (App.svelte
+   .window::before and ::after). A mask of soft vertical stripes gives the
+   glows the streaked look of aurora curtains. The layers drift with
+   transform-only animations of 47 s and 61 s, which the compositor runs
+   without repainting; the colors change with the rainbow's hue steps. */
+@keyframes jojo-aurora-a {
+  0% {
+    transform: translate3d(-6%, 0, 0) skewX(-8deg) scaleY(1);
+  }
+  50% {
+    transform: translate3d(4%, 3%, 0) skewX(6deg) scaleY(1.15);
+  }
+  100% {
+    transform: translate3d(8%, -2%, 0) skewX(-4deg) scaleY(0.95);
+  }
+}
+@keyframes jojo-aurora-b {
+  0% {
+    transform: translate3d(7%, 2%, 0) skewX(7deg) scaleY(1.1) scaleX(-1);
+  }
+  50% {
+    transform: translate3d(-3%, -2%, 0) skewX(-6deg) scaleY(0.9) scaleX(-1);
+  }
+  100% {
+    transform: translate3d(-8%, 3%, 0) skewX(4deg) scaleY(1.05) scaleX(-1);
+  }
+}
 /* Reduced motion: the rainbow colors stay, fixed at hue 0. */
 @media (prefers-reduced-motion: reduce) {
   html[data-effects~="rainbow"] {
     animation: none;
   }
+}
+/* Scrollbars (the sidebar, dialogs and menus): a 10 px track
+   with no background, and a pill-shaped thumb of the theme's muted text
+   color at 40% that turns fully muted while hovered and accent while
+   dragged. The thumb sits inside a 3 px transparent border
+   (background-clip: padding-box), so it is 4 px wide and has space around
+   it. The scroll arrows are hidden.
+   WebView2 (Windows) and WebKit (macOS) both read these ::-webkit-scrollbar
+   rules; scrollbar-color is not set because Chromium then ignores them.
+   Terminals draw their own scrollbar (xterm.js 6), which these rules do
+   not reach. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--jojo-muted) 40%, transparent) padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--jojo-muted) padding-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--jojo-accent) padding-box;
+}
+::-webkit-scrollbar-button {
+  display: none;
 }
 button {
   font: inherit;
