@@ -176,6 +176,36 @@
     height: 100%;
     background: var(--jojo-bg-glow);
   }
+  /* The aurora effect (app.css): two drifting layers of the theme's aurora
+     token behind the sidebar and panes. isolation keeps their negative
+     z-index above the window's own background; overflow clips the 20%
+     each layer extends past the window so its drift never shows an edge. */
+  :global(html[data-effects~="aurora"]) .window {
+    isolation: isolate;
+    overflow: hidden;
+  }
+  :global(html[data-effects~="aurora"]) .window::before,
+  :global(html[data-effects~="aurora"]) .window::after {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--jojo-aurora);
+    mask-image: repeating-linear-gradient(90deg, #000 0, rgba(0, 0, 0, 0.45) 3.5%, #000 7%, rgba(0, 0, 0, 0.7) 9.5%, #000 12%);
+    will-change: transform;
+    animation: jojo-aurora-a 47s ease-in-out infinite alternate;
+  }
+  :global(html[data-effects~="aurora"]) .window::after {
+    opacity: 0.7;
+    animation: jojo-aurora-b 61s ease-in-out infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(html[data-effects~="aurora"]) .window::before,
+    :global(html[data-effects~="aurora"]) .window::after {
+      animation: none;
+    }
+  }
   .main {
     display: flex;
     flex-direction: column;

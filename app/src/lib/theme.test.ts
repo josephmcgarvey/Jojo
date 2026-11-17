@@ -39,22 +39,22 @@ describe("theme", () => {
     expect(setAttribute).toHaveBeenCalledWith("data-effects", "");
   });
 
-  it("writes Prism's rainbow effect to data-effects", () => {
+  it("writes Prism's rainbow and aurora effects to data-effects", () => {
     const setAttribute = vi.fn();
     applyTheme(THEMES.prism, { style: { setProperty: vi.fn() }, setAttribute });
-    expect(setAttribute).toHaveBeenCalledWith("data-effects", "rainbow");
+    expect(setAttribute).toHaveBeenCalledWith("data-effects", "rainbow aurora");
   });
 
   it("keeps Prism's rainbow colors under a base color", () => {
     const blue = resolveTheme({ theme: "prism", accentColor: "#5aa2ff" });
-    for (const name of ["focus-ring", "focus-border", "brand-gradient", "sel-gradient", "tab-glow"]) {
+    for (const name of ["focus-ring", "focus-border", "brand-gradient", "sel-gradient", "tab-glow", "aurora"]) {
       expect(blue.tokens[name], name).toBe(THEMES.prism.tokens[name]);
       expect(blue.tokens[name], name).toContain("var(--jojo-hue)");
     }
     // The background glow keeps its hue-driven glows; its final hex layer is the background, which the base color tints.
     expect(blue.tokens["bg-glow"]).toBe(THEMES.prism.tokens["bg-glow"].replace(THEMES.prism.tokens.bg, blue.tokens.bg));
     expect(blue.tokens.accent).toBe("#5aa2ff");
-    expect(blue.effects).toEqual(["rainbow"]);
+    expect(blue.effects).toEqual(["rainbow", "aurora"]);
   });
 
   it.each(Object.entries(THEMES))("%s defines the tokens and terminal colors the UI uses", (_id, theme) => {

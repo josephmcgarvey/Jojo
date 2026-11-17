@@ -21,7 +21,8 @@ export interface Theme {
   /**
    * Animated effects the theme switches on, written to the root element's
    * data-effects attribute for app.css. "rainbow" animates --jojo-hue, which
-   * the theme's tokens use in hsl() colors.
+   * the theme's tokens use in hsl() colors. "aurora" draws the theme's
+   * `aurora` token as slowly drifting bands of color behind the window.
    */
   effects?: string[];
 }
