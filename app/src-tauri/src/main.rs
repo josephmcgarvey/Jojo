@@ -205,6 +205,110 @@ async fn remove_machine(hub: State<'_, Arc<Hub>>, id: String, uninstall: bool) -
     machines::save(&path, &list).map_err(|e| format!("could not save machines.toml: {e}"))
 }
 
+/// The state an import is planned against, read from this computer's files.
+struct ImportFiles {
+    settings: Settings,
+    machines: Vec<Machine>,
+    snippets: Vec<jojo_app::snippets::Snippet>,
+    layout: LayoutFile,
+    aliases: Vec<String>,
+    jojo_key: Option<std::path::PathBuf>,
+}
+
+impl ImportFiles {
+    fn read() -> Self {
+        ImportFiles {
+            settings: settings::load(&settings::default_path()),
+            machines: machines::load(&machines::default_path()),
+            snippets: jojo_app::snippets::load(&jojo_app::snippets::default_path()),
+            layout: layout::load(&layout::default_path()),
+            aliases: ssh_hosts(),
+            jojo_key: jojo_app::install::default_jojo_key(),
+        }
+    }
+
+    fn current(&self) -> jojo_app::config::Current<'_> {
+        jojo_app::config::Current {
+            settings: &self.settings,
+            machines: &self.machines,
+            snippets: &self.snippets,
+            layout: &self.layout,
+            ssh_aliases: &self.aliases,
+            jojo_key_exists: self.jojo_key.as_ref().is_some_and(|key| key.exists()),
+        }
+    }
+}
+
+fn read_config_file(path: &str) -> Result<jojo_app::config::ConfigFile, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("could not read {path}: {e}"))?;
+    jojo_app::config::parse(&bytes)
+}
+
+/// Settings ▸ Export configuration…: writes settings, remote locations,
+/// snippets and remote tab layouts to `path` (see `jojo_app::config`).
+#[tauri::command]
+fn export_config(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let files = ImportFiles::read();
+    let file = jojo_app::config::build_export(&files.settings, &files.machines, &files.snippets, &files.layout, &app.package_info().version.to_string(), jojod::store::now_ms());
+    let mut text = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+    text.push('\n');
+    std::fs::write(&path, text).map_err(|e| format!("could not write {path}: {e}"))
+}
+
+/// Settings ▸ Import configuration…: what importing `path` would change.
+#[tauri::command]
+fn preview_config_import(path: String) -> Result<jojo_app::config::ImportPreview, String> {
+    let file = read_config_file(&path)?;
+    let files = ImportFiles::read();
+    Ok(jojo_app::config::preview(&file, &files.current()))
+}
+
+/// Imports `path`: saves the passwords typed in the import dialog (keyed by
+/// the location ids in the file) in the credential store, adds the new
+/// locations to machines.toml and connects to them, and returns the merged
+/// settings, snippets and layouts, which the window applies and saves.
+#[tauri::command]
+fn import_config(hub: State<'_, Arc<Hub>>, path: String, passwords: std::collections::HashMap<String, String>) -> Result<jojo_app::config::ImportResult, String> {
+    let file = read_config_file(&path)?;
+    let files = ImportFiles::read();
+    let key = files.jojo_key.as_ref().map(|k| k.display().to_string());
+    let mut plan = jojo_app::config::plan(&file, &files.current(), &passwords, key.as_deref(), || jojo_proto::SessionId::new().to_string());
+    // A location whose password cannot be saved is left out, since it could not sign in.
+    let mut stored = Vec::new();
+    for (id, password) in &plan.passwords {
+        match jojo_app::credentials::store(id, password) {
+            Ok(()) => stored.push(id.clone()),
+            Err(why) => {
+                let label = plan.new_machines.iter().find(|m| &m.id == id).map(|m| m.label.clone()).unwrap_or_default();
+                plan.notes.push(format!("{label} was not added: {why}."));
+            }
+        }
+    }
+    plan.new_machines.retain(|m| !m.password || stored.contains(&m.id));
+    if !plan.new_machines.is_empty() {
+        let path = machines::default_path();
+        let mut list = machines::load(&path);
+        list.extend(plan.new_machines.iter().cloned());
+        if let Err(e) = machines::save(&path, &list) {
+            for id in &stored {
+                jojo_app::credentials::delete(id);
+            }
+            return Err(format!("could not save machines.toml: {e}"));
+        }
+        for machine in &plan.new_machines {
+            hub.start(machine, || unreachable!("a remote machine has no local paths"));
+        }
+    }
+    Ok(jojo_app::config::ImportResult {
+        machines: plan.new_machines,
+        settings: plan.settings,
+        snippets: plan.snippets,
+        layouts: plan.layouts,
+        project_order: plan.project_order,
+        notes: plan.notes,
+    })
+}
+
 #[tauri::command]
 fn get_settings() -> Settings {
     settings::load(&settings::default_path())
@@ -385,6 +489,9 @@ fn main() {
             save_layout,
             get_snippets,
             save_snippets,
+            export_config,
+            preview_config_import,
+            import_config,
             open_url,
             set_maximize_button_rect,
             notify

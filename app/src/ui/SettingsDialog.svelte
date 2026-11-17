@@ -12,6 +12,8 @@
   import { BASE_COLOR_PRESETS, effectiveAccent, parseHex } from "../lib/palette";
   import { app, confirmRestartLocalDaemon, focusedSessionId, rehydrateFocusedPane, runningSessions, saveSettings } from "../lib/state/app.svelte";
   import { shellChoices } from "../lib/state/shells";
+  import { chooseConfigImport, exportConfig } from "../lib/state/configTransfer";
+  import { openDialog } from "../lib/state/ui.svelte";
   import { THEMES, themeById } from "../lib/theme";
   import { LOCAL_MACHINE } from "../lib/wire/bridge";
 
@@ -97,6 +99,30 @@
       error = errorText(err);
     } finally {
       saving = false;
+    }
+  }
+
+  /** The result of the last Export configuration…, shown under the buttons. */
+  let transfer = $state<{ text: string; tone: "info" | "error" } | null>(null);
+
+  async function exportFile(): Promise<void> {
+    transfer = null;
+    try {
+      const path = await exportConfig();
+      if (path) transfer = { text: `Saved ${path}.`, tone: "info" };
+    } catch (err) {
+      transfer = { text: errorText(err), tone: "error" };
+    }
+  }
+
+  /** Reads the chosen file and replaces this screen with the import preview; unsaved changes here are discarded. */
+  async function importFile(): Promise<void> {
+    transfer = null;
+    try {
+      const chosen = await chooseConfigImport();
+      if (chosen) openDialog({ kind: "import-config", ...chosen });
+    } catch (err) {
+      transfer = { text: errorText(err), tone: "error" };
     }
   }
 
@@ -195,6 +221,19 @@
       <label class="check"><input type="checkbox" bind:checked={draft.sound} /><span>Play a chime when a session finishes or needs a response</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.restoreSessions} /><span>Restore sessions after {OS_NAME} or jojod restarts (Claude conversations resume)</span></label>
       <label class="check"><input type="checkbox" bind:checked={draft.promptLabels} /><span>Name sessions from Claude's first prompt (until you rename them)</span></label>
+    </section>
+
+    <section>
+      <h3>Configuration</h3>
+      <div class="row">
+        <button onclick={() => void exportFile()}>Export configuration…</button>
+        <span class="note">Saves settings, remote locations, snippets and remote tab layouts to a jojo-config.json file. Passwords and SSH keys are not included.</span>
+      </div>
+      <div class="row">
+        <button onclick={() => void importFile()}>Import configuration…</button>
+        <span class="note">Shows what a jojo-config.json file would change before anything is saved. Unsaved changes on this screen are discarded.</span>
+      </div>
+      {#if transfer}<p class="transfer" class:error={transfer.tone === "error"}>{transfer.text}</p>{/if}
     </section>
 
     <section>
@@ -338,6 +377,12 @@
     border: var(--jojo-bw) solid var(--jojo-line);
     border-radius: var(--jojo-radius-sm);
     background: none;
+  }
+  .transfer {
+    margin: 0 0 8px 200px;
+    color: var(--jojo-muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
   }
   .error {
     color: var(--jojo-error);

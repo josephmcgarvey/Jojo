@@ -222,8 +222,9 @@ its placeholders unfilled.
 
 Snippets are saved in `snippets.json` (see [Files](#files)). The window reads
 the file when it starts and rewrites it after every change, so edit it by
-hand only while Jojo is closed. Snippets belong to one computer and are not
-shared between a PC and a Mac.
+hand only while Jojo is closed. Snippets belong to one computer; to copy them
+to another, use **Export configuration…** and **Import configuration…** (see
+[Moving a setup to another computer](#moving-a-setup-to-another-computer)).
 
 ### Remote locations
 
@@ -295,6 +296,45 @@ accent-colored text). The interface font option **Theme default** uses each
 theme's own font; any other choice applies to every theme. Prism's rainbow
 does not follow the base color, and animations stop when reduced motion is
 on (Windows **Show animations** off, macOS **Reduce motion** on).
+
+### Moving a setup to another computer
+
+**Settings ▸ Export configuration…** saves one `jojo-config.json` file, and
+**Settings ▸ Import configuration…** on the other computer reads it. The file
+holds:
+
+1. The settings, except the default shell, which names a program on the
+   exporting computer.
+2. The remote locations, with each one's label, SSH host, port and sign-in
+   method.
+3. The snippets.
+4. The tab layouts and sidebar order of remote projects.
+
+The file never holds a password or an SSH key. Remote projects and their
+sessions are not in the file either: they live in each server's jojod, so the
+other computer sees them once it adds the same location. This PC's projects
+and sessions stay on the computer that runs them.
+
+Import first shows what the file would change, and writes nothing until
+**Import** is chosen. It merges instead of replacing:
+
+1. A location whose SSH host and port match one already listed is not added
+   again.
+2. A location that signs in with a saved password asks for the password in
+   the import dialog and saves it in Windows Credential Manager or the macOS
+   Keychain. A location whose password is left empty is not added.
+3. A location that signs in with the key Jojo set up uses
+   `~/.ssh/jojo_ed25519` on the receiving computer. When that file is
+   missing, the dialog says so: copy `jojo_ed25519` and `jojo_ed25519.pub`
+   from the other computer's `~/.ssh` folder, or remove the location and add
+   it again with its username and password.
+4. A location that uses an alias from `~/.ssh/config` is reported when the
+   receiving computer's `~/.ssh/config` lacks that alias. Copy the `Host`
+   entry and its key file.
+5. Snippets are matched by id, and an imported snippet replaces an older copy.
+   A snippet listed only for one location follows that location.
+6. Tab layouts are added only for remote projects that have no tabs on the
+   receiving computer yet.
 
 ## Claude Code hooks
 

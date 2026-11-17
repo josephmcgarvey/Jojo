@@ -890,6 +890,22 @@ export function listDir(machineId: string, path: string): void {
   void sendControl({ type: "ListDir", path }, machineId).catch(() => {});
 }
 
+/**
+ * Adds tab layouts from an imported configuration (keyed by this
+ * computer's location ids) for projects that have no tabs here yet, and
+ * appends their sidebar order. Reconciliation later drops panes whose
+ * sessions no longer exist on the server.
+ */
+export function mergeImportedLayouts(layouts: Record<string, ProjectLayout>, order: string[]): void {
+  const current = app.workspace.layout;
+  const projects = { ...current.projects };
+  for (const [key, layout] of Object.entries(layouts)) {
+    if (!(key in projects)) projects[key] = layout;
+  }
+  const projectOrder = [...current.project_order, ...order.filter((key) => !current.project_order.includes(key))];
+  commit({ ...app.workspace, layout: { ...current, projects, project_order: projectOrder } });
+}
+
 /** Lists a new machine in the sidebar (add_machine has saved it and started its connection). */
 export function machineAdded(machine: Machine): void {
   if (!app.machines.some((m) => m.id === machine.id)) app.machines = [...app.machines, machine];

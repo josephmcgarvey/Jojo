@@ -19,6 +19,7 @@
   import SnippetsDialog from "./ui/SnippetsDialog.svelte";
   import SnippetEditDialog from "./ui/SnippetEditDialog.svelte";
   import SnippetFillDialog from "./ui/SnippetFillDialog.svelte";
+  import ImportConfigDialog from "./ui/ImportConfigDialog.svelte";
   import { loadSnippets } from "./lib/state/snippets.svelte";
   import PaneGrid from "./ui/PaneGrid.svelte";
   import Sidebar from "./ui/Sidebar.svelte";
@@ -155,6 +156,8 @@
   <SnippetEditDialog snippetId={ui.dialog.snippetId} command={ui.dialog.command ?? ""} onclose={closeDialog} />
 {:else if ui.dialog?.kind === "snippet-fill"}
   <SnippetFillDialog snippetId={ui.dialog.snippetId} run={ui.dialog.run} onclose={closeDialog} />
+{:else if ui.dialog?.kind === "import-config"}
+  <ImportConfigDialog path={ui.dialog.path} preview={ui.dialog.preview} onclose={closeDialog} />
 {/if}
 <!-- After the dialogs, so a confirmation asked from one (Settings ▸ Restart
      daemon) paints above it: both scrims share z-index 200. -->

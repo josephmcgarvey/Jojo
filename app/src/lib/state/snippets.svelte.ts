@@ -40,6 +40,13 @@ function save(): void {
   saveChain = saveChain.then(() => invoke("save_snippets", { snippets: list })).catch(() => {});
 }
 
+/** Replaces the library with an imported, merged one and saves it. */
+export function replaceSnippets(list: Snippet[]): void {
+  snippets.list = list;
+  snippets.loaded = true;
+  save();
+}
+
 export interface SnippetFields {
   name: string;
   command: string;

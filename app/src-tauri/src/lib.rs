@@ -2,6 +2,7 @@
 //! bridge to the frontend.
 
 pub mod bridge;
+pub mod config;
 pub mod connection;
 pub mod credentials;
 pub mod daemon_manager;

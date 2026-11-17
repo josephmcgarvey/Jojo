@@ -3,6 +3,7 @@
 //! drift.
 
 use jojo_app::bridge::ConnectionStatus;
+use jojo_app::config::{ImportPreview, ImportResult};
 use jojo_app::layout::LayoutFile;
 use jojo_app::install::InstallStep;
 use jojo_app::machines::Machine;
@@ -23,6 +24,8 @@ fn export_backend_bindings() {
     Machine::export_all(&cfg).unwrap();
     InstallStep::export_all(&cfg).unwrap();
     Snippet::export_all(&cfg).unwrap();
+    ImportPreview::export_all(&cfg).unwrap();
+    ImportResult::export_all(&cfg).unwrap();
     let status = std::fs::read_to_string(dir.join("ConnectionStatus.ts")).unwrap();
     assert!(status.contains("\"state\": \"version_mismatch\""), "{status}");
     let settings = std::fs::read_to_string(dir.join("Settings.ts")).unwrap();
