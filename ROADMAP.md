@@ -200,6 +200,25 @@ move a setup between computers through one `jojo-config.json` file.
    settings other than `defaultShell`.
 3. Import lists the SSH aliases the computer's `~/.ssh/config` lacks. SSH
    keys are never written to the file.
+4. Remote locations added with a username and password (0.2.8) need
+   separate handling, because their secrets are not in `machines.toml`:
+   - A location that keeps its password records only `password = true` in
+     `machines.toml`. The password itself is in Windows Credential Manager
+     or the macOS Keychain (service "Jojo SSH", account the location's id)
+     on the computer that added it, and is never written to the export
+     file. Import has to ask for each such password and store it in the
+     receiving computer's credential store; until it does, connecting to
+     the location fails authentication.
+   - A location for which Jojo set up a key signs in with
+     `~/.ssh/jojo_ed25519` (its `identity_file`). Import has to either
+     report that the key file must be copied to the same path, or offer to
+     sign in once with the password and run the key setup again, which
+     appends the receiving computer's own key to the server's
+     `authorized_keys`.
+   - These locations have no `~/.ssh/config` alias: their `ssh_host` is
+     `user@address` and their port is a separate `port` field. Import
+     matches them on `ssh_host` and `port` together, and does not list them
+     among the aliases `~/.ssh/config` lacks.
 
 Two things are not part of the file:
 
@@ -214,5 +233,8 @@ Until this is built, the same move can be made by hand, with Jojo closed on
 the receiving computer: copy the `Host` entries and key files the remote
 locations use into `~/.ssh/`, and copy `machines.toml` and `snippets.json`
 into the app's settings folder (`~/Library/Application Support/Jojo/` on
-macOS). `settings.json` can be copied too once its `defaultShell` is changed
+macOS). Copy `~/.ssh/jojo_ed25519` and `~/.ssh/jojo_ed25519.pub` for
+locations whose key Jojo set up. Locations that keep a password have to be
+removed and added again on the receiving computer, because the password
+stays in the exporting computer's credential store. `settings.json` can be copied too once its `defaultShell` is changed
 to a shell on that computer.
