@@ -309,6 +309,32 @@ fn import_config(hub: State<'_, Arc<Hub>>, path: String, passwords: std::collect
     })
 }
 
+/// A remote location's Restart jojod… (and Update jojod…): installs this
+/// app's jojod when the server has another version, then ends the running
+/// daemon with `jojod shutdown`, which ends its sessions, and reconnects;
+/// the reconnect starts the installed binary. Adding a location again
+/// replaces the binary but keeps a running daemon of the same protocol,
+/// which goes on running its old code until it restarts.
+#[tauri::command]
+async fn restart_remote_daemon(app: tauri::AppHandle, hub: State<'_, Arc<Hub>>, id: String) -> Result<(), String> {
+    let machine = machines::load(&machines::default_path())
+        .into_iter()
+        .find(|m| m.id == id && m.kind == MachineKind::Ssh)
+        .ok_or("This location is not a remote location")?;
+    let target = machine.ssh_target().ok_or("This location has no SSH host")?;
+    let daemon_dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("daemon");
+    jojo_app::install::install(&target, &daemon_dir, true, |_| {}).await?;
+    let out = jojo_app::ssh::run(&target, &format!("{} shutdown", jojo_app::ssh::REMOTE_JOJOD), b"").await.map_err(|e| e.to_string())?;
+    // The reconnect runs either way: it starts a daemon when none is running.
+    if let Some(bridge) = hub.bridge(&id) {
+        bridge.request_restart();
+    }
+    if out.code != Some(0) {
+        return Err(format!("jojod shutdown on {} failed: {}", target.host, out.stderr.trim()));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn get_settings() -> Settings {
     settings::load(&settings::default_path())
@@ -481,6 +507,7 @@ fn main() {
             ssh_hosts,
             add_machine,
             remove_machine,
+            restart_remote_daemon,
             get_settings,
             save_settings,
             local_running_sessions,

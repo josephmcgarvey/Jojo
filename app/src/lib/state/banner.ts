@@ -66,7 +66,7 @@ export function connectionBanner(status: ConnectionStatus, everConnected: boolea
 export function errorBannerText(error: { request: string; message: string }): string {
   const unknown = error.request === "Frame" ? /unknown variant [`'"]?(\w+)/.exec(error.message) : null;
   if (unknown) {
-    return `This jojod is older than the app and does not support ${unknown[1]}. On This PC, use Settings ▸ Restart daemon; for a remote location, add it again with Remote location, which installs the new jojod.`;
+    return `This jojod is older than the app and does not support ${unknown[1]}. On This PC, use Settings ▸ Restart daemon; for a remote location, right-click it in the sidebar and choose Update jojod, which installs the new jojod and restarts it.`;
   }
   return `${error.request}: ${error.message}`;
 }

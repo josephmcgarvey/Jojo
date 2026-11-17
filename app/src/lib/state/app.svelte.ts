@@ -1001,6 +1001,43 @@ export async function confirmRestartLocalDaemon(): Promise<void> {
   if (confirmed) restartDaemon(LOCAL_MACHINE);
 }
 
+/**
+ * True when a connected location's jojod is another version than the app.
+ * Adding the location again replaces the binary on the server, but the
+ * running daemon keeps its old code until it restarts.
+ */
+export function daemonOutdated(machineId: string): boolean {
+  const status = app.statuses[machineId];
+  return status?.state === "connected" && app.version !== "" && status.jojod_version !== app.version;
+}
+
+/**
+ * A remote location's Restart jojod… (Update jojod… when its daemon is
+ * outdated), after confirmation naming the sessions that end. The backend
+ * installs this app's jojod when the server has another version, ends the
+ * running daemon and reconnects, which starts the new one.
+ */
+export async function confirmRestartRemoteDaemon(machineId: string): Promise<void> {
+  const machine = app.machines.find((m) => m.id === machineId);
+  if (!machine || machine.kind === "local") return;
+  const status = app.statuses[machineId];
+  const sessions = runningSessions(machineId);
+  const update = daemonOutdated(machineId) && status?.state === "connected" ? ` It runs jojod ${status.jojod_version}; Jojo ${app.version} is installed and started in its place.` : "";
+  const confirmed = await askConfirm({
+    title: `Restart jojod on ${machine.label}?`,
+    message: `Restarting ends ${sessions.length} running session${sessions.length === 1 ? "" : "s"} on ${machine.label}.${update} With Restore sessions on, sessions that were running are started again afterwards and Claude conversations resume.`,
+    details: sessions.map((s) => displayLabel(s)),
+    confirmLabel: "Restart jojod",
+  });
+  if (!confirmed) return;
+  try {
+    await invoke("restart_remote_daemon", { id: machineId });
+  } catch (err) {
+    app.models[LOCAL_MACHINE] = { ...(app.models[LOCAL_MACHINE] ?? emptyModel()), lastError: { request: "Restart jojod", message: errorText(err), session_id: null } };
+    mergeModels();
+  }
+}
+
 /** Spec 10, Debug ▸ Rehydrate pane: a new snapshot for the focused pane. */
 export function rehydrateFocusedPane(): void {
   terminalControls(focusedSessionId())?.rehydrate();

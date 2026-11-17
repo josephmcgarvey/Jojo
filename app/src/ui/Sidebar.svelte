@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addProject, app, displayLabel, focusPane, focusedSessionId, isFolded, newSession, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, confirmRestartRemoteDaemon, daemonOutdated, displayLabel, focusPane, focusedSessionId, isFolded, newSession, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
@@ -30,6 +30,11 @@
     }
     if (machine.kind === "ssh") {
       entries.push(
+        {
+          kind: "action",
+          label: daemonOutdated(machine.id) ? `Update jojod to ${app.version}…` : "Restart jojod…",
+          run: () => void confirmRestartRemoteDaemon(machine.id),
+        },
         { kind: "action", label: "Add project…", run: () => openDialog({ kind: "add-project", machineId: machine.id }) },
         { kind: "separator" },
         { kind: "action", label: "Remove remote location…", run: () => void removeMachine(machine.id, false) },

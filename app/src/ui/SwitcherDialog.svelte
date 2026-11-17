@@ -185,7 +185,7 @@
         <li class="note">No output contains “{search.query}”.</li>
       {/if}
       {#if outdatedNames.length > 0}
-        <li class="note">Not searched: {outdatedNames.join(", ")} (jojod is older than the app; restart it or add the remote location again to update it).</li>
+        <li class="note">Not searched: {outdatedNames.join(", ")} (jojod is older than the app; right-click the location in the sidebar and choose Update jojod).</li>
       {/if}
     </ul>
   </div>

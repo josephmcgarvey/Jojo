@@ -46,7 +46,7 @@ describe("connectionBanner", () => {
 describe("errorBannerText", () => {
   it("explains an error from a daemon older than the app", () => {
     expect(errorBannerText({ request: "Frame", message: "bad control JSON: unknown variant `RenameProject`, expected one of `Hello`" })).toBe(
-      "This jojod is older than the app and does not support RenameProject. On This PC, use Settings ▸ Restart daemon; for a remote location, add it again with Remote location, which installs the new jojod.",
+      "This jojod is older than the app and does not support RenameProject. On This PC, use Settings ▸ Restart daemon; for a remote location, right-click it in the sidebar and choose Update jojod, which installs the new jojod and restarts it.",
     );
   });
 
