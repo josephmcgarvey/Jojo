@@ -192,7 +192,7 @@
     z-index: -1;
     pointer-events: none;
     background: var(--jojo-aurora);
-    mask-image: repeating-linear-gradient(90deg, #000 0, rgba(0, 0, 0, 0.45) 3.5%, #000 7%, rgba(0, 0, 0, 0.7) 9.5%, #000 12%);
+    mask-image: var(--jojo-aurora-mask);
     will-change: transform;
     animation: jojo-aurora-a 47s ease-in-out infinite alternate;
   }
