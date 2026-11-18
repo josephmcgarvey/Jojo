@@ -30,6 +30,11 @@
   // screen's unsaved choices while it is open (live preview).
   const theme = $derived(resolveTheme(app.themePreview ?? app.settings));
   $effect(() => applyTheme(theme));
+  // Theme animations (Prism's rainbow and aurora) pause while the window is
+  // not the foreground window (app.css, data-window-inactive).
+  $effect(() => {
+    document.documentElement.toggleAttribute("data-window-inactive", !app.windowFocused);
+  });
   onMount(() => {
     window.addEventListener("keydown", onKeydown, true);
     const stopApp = startApp();
@@ -176,16 +181,16 @@
     height: 100%;
     background: var(--jojo-bg-glow);
   }
-  /* The aurora effect (app.css): two drifting layers of the theme's aurora
-     token behind the sidebar and panes. isolation keeps their negative
-     z-index above the window's own background; overflow clips the 20%
-     each layer extends past the window so its drift never shows an edge. */
+  /* The aurora effect (app.css): one slowly drifting layer of the theme's
+     aurora token behind the sidebar and panes. isolation keeps its
+     negative z-index above the window's own background; overflow clips the
+     20% the layer extends past the window so its drift never shows an
+     edge. */
   :global(html[data-effects~="aurora"]) .window {
     isolation: isolate;
     overflow: hidden;
   }
-  :global(html[data-effects~="aurora"]) .window::before,
-  :global(html[data-effects~="aurora"]) .window::after {
+  :global(html[data-effects~="aurora"]) .window::before {
     content: "";
     position: absolute;
     inset: -20%;
@@ -193,16 +198,13 @@
     pointer-events: none;
     background: var(--jojo-aurora);
     mask-image: var(--jojo-aurora-mask);
-    will-change: transform;
-    animation: jojo-aurora-a 47s ease-in-out infinite alternate;
+    animation: jojo-aurora 60s steps(60) infinite alternate;
   }
-  :global(html[data-effects~="aurora"]) .window::after {
-    opacity: 0.7;
-    animation: jojo-aurora-b 61s ease-in-out infinite alternate;
+  :global(html[data-window-inactive]) .window::before {
+    animation-play-state: paused;
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(html[data-effects~="aurora"]) .window::before,
-    :global(html[data-effects~="aurora"]) .window::after {
+    :global(html[data-effects~="aurora"]) .window::before {
       animation: none;
     }
   }

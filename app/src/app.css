@@ -39,9 +39,10 @@ body {
    tokens use it in hsl() colors (focus border and glow, logo, background
    glow, selected session). The tokens are set on the root element, where
    var(--jojo-hue) is substituted, so every element that uses them follows
-   the one animation on the root. The hue moves in 1.5 degree steps, 20 per
-   second, instead of every frame, which halves the style recalculation the
-   animation costs without a visible difference at this speed. */
+   the one animation on the root. Each hue change recalculates the styles
+   of the whole page and redraws everything behind a backdrop-filter blur
+   (Prism's glass sidebar and panes), so the hue moves in 3.75 degree
+   steps, 8 per second, instead of every frame. */
 @property --jojo-hue {
   syntax: "<angle>";
   inherits: true;
@@ -53,17 +54,24 @@ body {
   }
 }
 html[data-effects~="rainbow"] {
-  animation: jojo-hue 12s steps(240) infinite;
+  animation: jojo-hue 12s steps(96) infinite;
+}
+/* While the window is not the foreground window, the rainbow and the
+   aurora (App.svelte) pause where they are, so a window in the background
+   costs no style recalculation or blur redraws. */
+html[data-effects~="rainbow"][data-window-inactive] {
+  animation-play-state: paused;
 }
 /* The aurora effect (a theme with "effects": ["aurora"], such as Prism):
    the theme's `aurora` token, six elongated glows spread over the whole
-   window in hues offset from --jojo-hue, drawn on two layers behind the window's contents (App.svelte
-   .window::before and ::after). A mask of soft vertical stripes (the
-   theme's `aurora-mask` token) gives the
-   glows the streaked look of aurora curtains. The layers drift with
-   transform-only animations of 47 s and 61 s, which the compositor runs
-   without repainting; the colors change with the rainbow's hue steps. */
-@keyframes jojo-aurora-a {
+   window in hues offset from --jojo-hue, drawn on one layer behind the
+   window's contents (App.svelte .window::before). A mask of soft vertical
+   stripes (the theme's `aurora-mask` token) gives the glows the streaked
+   look of aurora curtains. The layer sits behind the glass sidebar and
+   panes, whose backdrop-filter blur is redrawn whenever the layer moves,
+   so it drifts in one step per second over 60 s (steps(60)) instead of
+   every frame; its colors change with the rainbow's hue steps. */
+@keyframes jojo-aurora {
   0% {
     transform: translate3d(-6%, 0, 0) skewX(-8deg) scaleY(1);
   }
@@ -72,17 +80,6 @@ html[data-effects~="rainbow"] {
   }
   100% {
     transform: translate3d(8%, -2%, 0) skewX(-4deg) scaleY(0.95);
-  }
-}
-@keyframes jojo-aurora-b {
-  0% {
-    transform: translate3d(7%, 2%, 0) skewX(7deg) scaleY(1.1) scaleX(-1);
-  }
-  50% {
-    transform: translate3d(-3%, -2%, 0) skewX(-6deg) scaleY(0.9) scaleX(-1);
-  }
-  100% {
-    transform: translate3d(-8%, 3%, 0) skewX(4deg) scaleY(1.05) scaleX(-1);
   }
 }
 /* Reduced motion: the rainbow colors stay, fixed at hue 0. */
