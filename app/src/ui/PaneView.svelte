@@ -44,9 +44,20 @@
   style:--state={token ? `var(${token})` : undefined}
   onpointerdowncapture={() => focusPane(session.id)}
 >
-  <!-- Spec 9.4: right-click on the header strip opens the pane menu, whatever the mouse mode. -->
+  <div class="body">
+    <TerminalPane {session} {terminalTheme} {focused} onmenu={showMenu} />
+    {#if overlay}
+      <!-- Spec 8.3 rules 2 and 4: keystrokes are discarded while the machine
+           is disconnected (the backend has no connection to send them on). -->
+      <div class="overlay" role="status">{overlay}</div>
+    {/if}
+  </div>
+  <!-- The pane's name bar, below the terminal, next to where typing happens
+       (a terminal's prompt and Claude Code's input are at the bottom), so the
+       session being typed into is named in view. Spec 9.4: right-click on
+       it opens the pane menu, whatever the mouse mode. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header class="strip" oncontextmenu={onHeaderMenu}>
+  <footer class="strip" oncontextmenu={onHeaderMenu}>
     <Badge agentState={session.state} title={stateTooltip(session)} size={10} />
     {#if renaming}
       <RenameField
@@ -69,15 +80,7 @@
     {#if token}
       <span class="state-word" title={stateTooltip(session)}>{STATE_WORDS[session.state]} · {formatElapsed(app.now - session.state_changed_at)}</span>
     {/if}
-  </header>
-  <div class="body">
-    <TerminalPane {session} {terminalTheme} {focused} onmenu={showMenu} />
-    {#if overlay}
-      <!-- Spec 8.3 rules 2 and 4: keystrokes are discarded while the machine
-           is disconnected (the backend has no connection to send them on). -->
-      <div class="overlay" role="status">{overlay}</div>
-    {/if}
-  </div>
+  </footer>
 </div>
 
 <style>
@@ -189,6 +192,6 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    padding: 2px 10px 10px;
+    padding: 10px 10px 2px;
   }
 </style>

@@ -126,7 +126,10 @@ start in that folder.
    new terminal), the Snippets button (a command-prompt icon) and the Search
    button (a magnifier).
 4. Each pane has a border in its session's state color. Panes that need the
-   user pulse.
+   user pulse. A bar along the bottom of each pane, under the terminal where
+   the prompt is, shows the session's state badge, name and project, and the
+   state word with its time while the session is working, needs you, done
+   or failed.
 5. The state strip at the bottom of the window counts sessions per state.
 
 The sidebar's right edge can be dragged to resize it (200 to 480 pixels);
@@ -160,7 +163,7 @@ in `layout.json`.
 | Switcher and output search | Ctrl+Shift+P | ⌘P |
 | Jump to the next session that needs you | Ctrl+Shift+J | ⌘J |
 
-Right-clicking a location, project, session, tab or pane header opens a menu
+Right-clicking a location, project, session, tab or pane name bar opens a menu
 with the actions for it, including split, zoom, swap, move, layout presets,
 rename, restart, resume and remove. An item that cannot apply is grayed out,
 and hovering it shows the reason. Other interactions:
@@ -202,7 +205,7 @@ focused terminal.
    with bracketed paste (PowerShell 7, zsh, bash 5.1 and later) receives the
    whole block before running anything.
 3. **New snippet** in the list creates one. Selecting text in a terminal,
-   right-clicking the pane's header and choosing **Save as snippet…** creates
+   right-clicking the pane's name bar and choosing **Save as snippet…** creates
    one from the selection.
 4. Each snippet has a name, a command, an optional folder (shown as a heading
    in the list) and a **Show for** setting: every location and project, only
