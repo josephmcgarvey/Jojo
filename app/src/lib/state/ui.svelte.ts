@@ -24,7 +24,11 @@ export type DialogTarget =
 
 export const ui = $state({
   menu: null as { x: number; y: number; entries: MenuEntry[] } | null,
-  renaming: null as RenameTarget | null,
+  /**
+   * The open rename field, and in `draft` the text typed in it so far
+   * (RenameField.svelte), which a rebuilt field restores.
+   */
+  renaming: null as (RenameTarget & { draft?: string }) | null,
   dialog: null as DialogTarget | null,
 });
 
