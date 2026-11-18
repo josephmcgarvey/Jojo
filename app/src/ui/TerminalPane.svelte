@@ -8,7 +8,7 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app, machineOfSession, markSeenOnInput } from "../lib/state/app.svelte";
-  import { noScreenMessage } from "../lib/terminal/pane";
+  import { noScreenMessage, typingOutsideTerminals } from "../lib/terminal/pane";
   import { contextMenuTarget } from "../lib/input/mouse";
   import { resolveShortcut } from "../lib/input/shortcuts";
   import { copyFromPane } from "../lib/state/clipboard";
@@ -235,9 +235,10 @@
   // Moves keyboard focus into this terminal whenever its pane becomes the
   // focused pane: a click on the pane, Alt+Arrow, a sidebar click, or a tab
   // switch. Declared after onMount, so on first mount it runs after `term`
-  // is set.
+  // is set. Focus stays in a rename field or dialog input that has it
+  // (typingOutsideTerminals).
   $effect(() => {
-    if (focused) term?.focus();
+    if (focused && !typingOutsideTerminals(document.activeElement)) term?.focus();
   });
 </script>
 

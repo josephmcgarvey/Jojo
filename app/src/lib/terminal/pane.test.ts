@@ -1,6 +1,22 @@
 import { expect, it } from "vitest";
 import type { SessionInfo } from "../protocol/SessionInfo";
-import { noScreenMessage, paneKey } from "./pane";
+import { noScreenMessage, paneKey, typingOutsideTerminals } from "./pane";
+
+/** A stand-in for document.activeElement: its tag and whether it is inside a terminal (`.xterm`). */
+function active(tagName: string, inTerminal = false) {
+  return { tagName, closest: (selector: string) => (selector === ".xterm" && inTerminal ? {} : null) };
+}
+
+it("keeps a terminal from taking focus from a rename field or a dialog's text field", () => {
+  expect(typingOutsideTerminals(active("INPUT"))).toBe(true);
+  expect(typingOutsideTerminals(active("TEXTAREA"))).toBe(true);
+  expect(typingOutsideTerminals(active("SELECT"))).toBe(false);
+  // xterm.js takes keys through its own textarea; another terminal may take focus from it.
+  expect(typingOutsideTerminals(active("TEXTAREA", true))).toBe(false);
+  expect(typingOutsideTerminals(active("BUTTON"))).toBe(false);
+  expect(typingOutsideTerminals(active("BODY"))).toBe(false);
+  expect(typingOutsideTerminals(null)).toBe(false);
+});
 
 it("changes the pane key when a session stops being attachable", () => {
   const before = paneKey({ id: "S1", attachable: true });

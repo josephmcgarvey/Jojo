@@ -3,6 +3,21 @@ import { OS_NAME } from "../platform";
 import type { SessionInfo } from "../protocol/SessionInfo";
 
 /**
+ * True when keyboard focus is in a text field outside the terminals: a
+ * rename field in the sidebar or tab bar, or a dialog's input. A terminal
+ * pane that mounts or becomes the focused pane then leaves focus where it
+ * is. Without this, a pane that remounts while the user types a new name
+ * (its session started, exited or was restored, which changes paneKey)
+ * took focus, and the rename field's blur committed or dropped the
+ * half-typed name. xterm.js's own textarea (inside `.xterm`) does not
+ * count, so focus still moves from one terminal to another.
+ */
+export function typingOutsideTerminals(active: { tagName: string; closest(selector: string): unknown } | null): boolean {
+  if (!active || (active.tagName !== "INPUT" && active.tagName !== "TEXTAREA")) return false;
+  return active.closest(".xterm") === null;
+}
+
+/**
  * The `{#key}` value App.svelte mounts the active pane under. It includes
  * `attachable` so that a session losing its screen (jojod was replaced and
  * the new daemon lists it as not attachable) remounts the pane: the new
