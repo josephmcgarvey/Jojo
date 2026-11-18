@@ -41,6 +41,8 @@ export interface PaneMenuContext {
    * setting.
    */
   shells: { label: string; program: string }[];
+  /** Whether the session is flagged to come back to (Flag for later). */
+  flagged: boolean;
 }
 
 export interface PaneMenuActions {
@@ -57,7 +59,14 @@ export interface PaneMenuActions {
   applyPreset(preset: LayoutPreset): void;
   equalize(): void;
   rename(): void;
+  /** Flags the session to come back to, or removes its flag (`on` false). */
+  setFlag(on: boolean): void;
   close(): void;
+}
+
+/** Flag for later or Remove flag, in the pane and session menus. */
+function flagItem(flagged: boolean, setFlag: (on: boolean) => void): MenuEntry {
+  return flagged ? { kind: "action", label: "Remove flag", run: () => setFlag(false) } : { kind: "action", label: "Flag for later", run: () => setFlag(true) };
 }
 
 export function buildPaneMenu(ctx: PaneMenuContext, actions: PaneMenuActions): MenuEntry[] {
@@ -120,6 +129,7 @@ export function buildPaneMenu(ctx: PaneMenuContext, actions: PaneMenuActions): M
     { kind: "action", label: "Equalize sizes", disabledReason: single ? ONLY_PANE : undefined, run: actions.equalize },
     SEPARATOR,
     { kind: "action", label: "Rename session…", run: actions.rename },
+    flagItem(ctx.flagged, actions.setFlag),
     { kind: "action", label: "Close pane", shortcut: SHORTCUT_LABELS["close-pane"], run: actions.close },
   ];
 }
@@ -148,6 +158,8 @@ export interface SessionMenuContext {
   currentProjectId: string | null;
   /** The tab that holds this session. */
   sessionTab: TabLayout | null;
+  /** Whether the session is flagged to come back to (Flag for later); false when omitted. */
+  flagged?: boolean;
 }
 
 export interface SessionMenuActions {
@@ -158,6 +170,8 @@ export interface SessionMenuActions {
   resume(): void;
   kill(): void;
   compact(): void;
+  /** Flags the session to come back to, or removes its flag (`on` false). */
+  setFlag(on: boolean): void;
 }
 
 /**
@@ -190,6 +204,7 @@ export function buildSessionMenu(ctx: SessionMenuContext, actions: SessionMenuAc
     { kind: "action", label: "Move to new tab", disabledReason: alone ? ALONE_IN_TAB : undefined, run: actions.moveToNewTab },
     SEPARATOR,
     { kind: "action", label: "Rename…", run: actions.rename },
+    flagItem(ctx.flagged ?? false, actions.setFlag),
   ];
   if (canResume(ctx.session)) entries.push({ kind: "action", label: "Resume", run: actions.resume });
   if (canRestart(ctx.session)) entries.push({ kind: "action", label: "Restart", run: actions.restart });

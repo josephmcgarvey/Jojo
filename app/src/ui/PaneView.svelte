@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ITheme } from "@xterm/xterm";
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
-  import { app, displayLabel, focusPane, machineOfSession, renameSession } from "../lib/state/app.svelte";
+  import { app, displayLabel, focusPane, isFlagged, machineOfSession, renameSession } from "../lib/state/app.svelte";
   import { disconnectedOverlay } from "../lib/state/machines";
   import { paneMenu } from "../lib/state/contextMenus";
   import { notices } from "../lib/state/notices.svelte";
@@ -10,6 +10,7 @@
   import { STATE_WORDS, stateToken } from "../lib/state/attention";
   import { formatElapsed } from "../lib/state/elapsed";
   import Badge from "./Badge.svelte";
+  import Flag from "./Flag.svelte";
   import RenameField from "./RenameField.svelte";
   import TerminalPane from "./TerminalPane.svelte";
 
@@ -72,6 +73,7 @@
     {:else}
       <span class="label">{displayLabel(session)}</span>
     {/if}
+    {#if isFlagged(session.id)}<Flag size={10} />{/if}
     {#if notice}
       <span class="notice" class:error={notice.tone === "error"} role="status">{notice.text}</span>
     {:else if project}

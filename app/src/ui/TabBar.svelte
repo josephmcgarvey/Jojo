@@ -1,7 +1,7 @@
 <script lang="ts">
   import { activeTab, tabLabel } from "../lib/layout/tabs";
-  import { countPanes } from "../lib/layout/tree";
-  import { displayLabel, app, closeTab, currentProjectLayout, newSession, renameTab, reorderTab, selectTab } from "../lib/state/app.svelte";
+  import { countPanes, paneIds } from "../lib/layout/tree";
+  import { displayLabel, app, closeTab, currentProjectLayout, isFlagged, newSession, renameTab, reorderTab, selectTab } from "../lib/state/app.svelte";
   import { tabMenu } from "../lib/state/contextMenus";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
   import { stateTooltip } from "../lib/state/toasts";
@@ -9,6 +9,7 @@
   import { formatElapsed } from "../lib/state/elapsed";
   import { SHORTCUT_LABELS } from "../lib/input/shortcuts";
   import Badge from "./Badge.svelte";
+  import Flag from "./Flag.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
   import { isMac } from "../lib/platform";
@@ -128,6 +129,8 @@
           <span class="top">
             {#if focusedSession}<Badge agentState={focusedSession.state} title={stateTooltip(focusedSession)} size={11} />{/if}
             <span class="name">{tabLabel(tab, labelOf)}</span>
+            <!-- A tab shows the flag when any of its panes' sessions is flagged. -->
+            {#if paneIds(tab.root).some((id) => isFlagged(id))}<Flag size={10} />{/if}
             {#if panes > 1}<span class="count" title="{panes} panes">{panes}</span>{/if}
             {#if focusedSession}<span class="time">{formatElapsed(app.now - focusedSession.state_changed_at)}</span>{/if}
           </span>

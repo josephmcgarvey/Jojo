@@ -190,6 +190,19 @@ needs at least 2 characters, and returns up to 20 matches per session and 200
 in total, newest first. Choosing a match focuses the session's pane and
 scrolls to the line.
 
+### Flagging a session for later
+
+**Flag for later** in a session's right-click menu (in the sidebar or on its
+pane's name bar) marks the session to come back to. The Needs you and Done
+states clear when the session is clicked; a flag stays until **Remove flag**
+in the same menu, or until the session is removed.
+
+A flagged session shows a pennant in the theme's accent color on its sidebar
+row, its pane's name bar and its tab card. A folded location or project shows
+the pennant when any session it hides is flagged. Flags are saved in
+`layout.json` on each computer, so they are not shared between a PC and a
+Mac.
+
 ### Snippets
 
 The snippets library holds commands you use often. The command-prompt icon

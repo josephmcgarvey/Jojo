@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addProject, app, confirmRestartRemoteDaemon, daemonOutdated, displayLabel, focusPane, focusedSessionId, isFolded, newSession, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, confirmRestartRemoteDaemon, daemonOutdated, displayLabel, isFlagged, focusPane, focusedSessionId, isFolded, newSession, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
@@ -15,6 +15,7 @@
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import Badge from "./Badge.svelte";
   import Cog from "./Cog.svelte";
+  import Flag from "./Flag.svelte";
   import NeedsYouQueue from "./NeedsYouQueue.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
@@ -195,7 +196,9 @@
     >{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</button>
     {#if machineFolded}
       {@const projects = projectsOf(machine.id)}
-      <span class="summary">{@render pips(projects.flatMap((p) => sessionsForProject(app.model, p.id)))}<span class="n">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></span>
+      {@const hidden = projects.flatMap((p) => sessionsForProject(app.model, p.id))}
+      <!-- A folded row shows the flag when any session it hides is flagged. -->
+      <span class="summary">{@render pips(hidden)}{#if hidden.some((x) => isFlagged(x.id))}<Flag size={10} />{/if}<span class="n">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></span>
     {/if}
     {#if machine.kind === "local"}
       <button class="icon" title="Add project" aria-label="Add project" onclick={addProject}><PlusCircle /></button>
@@ -251,7 +254,7 @@
           ondblclick={() => beginRename({ kind: "project", projectId: project.id })}
           onkeydown={(e) => onFoldKey(e, [project.id])}
         >
-          {project.name}{#if projectFolded}<span class="summary">{@render pips(projectSessions)}</span>{:else if count > 0}<small class="count">{count}</small>{/if}
+          {project.name}{#if projectFolded}<span class="summary">{@render pips(projectSessions)}{#if projectSessions.some((x) => isFlagged(x.id))}<Flag size={10} />{/if}</span>{:else if count > 0}<small class="count">{count}</small>{/if}
         </button>
       {/if}
       <!-- A click opens a terminal in the project (type `claude` in it);
@@ -289,6 +292,7 @@
         >
           <Badge agentState={session.state} title={stateTooltip(session)} />
           <span class="label">{displayLabel(session)}</span>
+          {#if isFlagged(session.id)}<Flag />{/if}
           {#if session.context_tokens !== null}
             {@const meter = contextMeter(session.context_tokens, session.context_window)}
             {#if meter}

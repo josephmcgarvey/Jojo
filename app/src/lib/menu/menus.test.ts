@@ -38,13 +38,14 @@ function paneActions(over: Partial<PaneMenuActions> = {}): PaneMenuActions {
     applyPreset: noop,
     equalize: noop,
     rename: noop,
+    setFlag: noop,
     close: noop,
     ...over,
   };
 }
 
 function sessionActions(over: Partial<SessionMenuActions> = {}): SessionMenuActions {
-  return { openInSplit: noop, moveToNewTab: noop, rename: noop, restart: noop, resume: noop, kill: noop, compact: noop, ...over };
+  return { openInSplit: noop, moveToNewTab: noop, rename: noop, restart: noop, resume: noop, kill: noop, compact: noop, setFlag: noop, ...over };
 }
 
 function tab(id: string, ids: string[], extra: Partial<TabLayout> = {}): TabLayout {
@@ -61,6 +62,7 @@ function context(over: Partial<PaneMenuContext> = {}): PaneMenuContext {
     labelOf: (id) => `label-${id}`,
     tabLabelOf: (t) => `tab-${t.id}`,
     shells: [],
+    flagged: false,
     ...over,
   };
 }
@@ -108,8 +110,18 @@ describe("buildPaneMenu", () => {
       "Layout",
       "Equalize sizes",
       "Rename session…",
+      "Flag for later",
       "Close pane",
     ]);
+  });
+
+  it("offers Remove flag for a flagged session and runs setFlag with the new value", () => {
+    const setFlag = vi.fn();
+    const flag = entry(buildPaneMenu(context(), paneActions({ setFlag })), "Flag for later");
+    if (flag.kind === "action") flag.run();
+    const remove = entry(buildPaneMenu(context({ flagged: true }), paneActions({ setFlag })), "Remove flag");
+    if (remove.kind === "action") remove.run();
+    expect(setFlag.mock.calls).toEqual([[true], [false]]);
   });
 
   it("disables splits and full Move-to targets in a full tab with the tab-full tooltip", () => {
@@ -204,7 +216,9 @@ describe("buildSessionMenu", () => {
 
   it("offers Restart only for exited sessions and disables Kill for them", () => {
     const running = buildSessionMenu({ session: session(), currentTab: current, currentProjectId: "P1", sessionTab: tab("T2", ["S"]) }, sessionActions());
-    expect(labels(running)).toEqual(["Open in split right", "Open in split down", "Move to new tab", "Rename…", "Kill"]);
+    expect(labels(running)).toEqual(["Open in split right", "Open in split down", "Move to new tab", "Rename…", "Flag for later", "Kill"]);
+    const flagged = buildSessionMenu({ session: session(), currentTab: current, currentProjectId: "P1", sessionTab: tab("T2", ["S"]), flagged: true }, sessionActions());
+    expect(labels(flagged)).toContain("Remove flag");
     expect(entry(running, "Move to new tab")).toMatchObject({ disabledReason: ALONE_IN_TAB });
     const exited = buildSessionMenu(
       { session: session({ state: "exited" }), currentTab: current, currentProjectId: "P1", sessionTab: tab("T2", ["S", "Q"]) },

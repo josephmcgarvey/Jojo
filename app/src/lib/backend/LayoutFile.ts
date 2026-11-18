@@ -14,4 +14,11 @@ project_order: Array<string>,
  * project ids, whose rows are hidden under their heading. Absent in
  * files written before this field existed.
  */
-collapsed: Array<string>, };
+collapsed: Array<string>, 
+/**
+ * The sessions the user flagged to come back to (Flag for later), as
+ * `<machine id>:<session id>` keys. A flag stays until the user removes
+ * it or the session is removed. Absent in files written before this
+ * field existed.
+ */
+flagged: Array<string>, };

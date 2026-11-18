@@ -14,6 +14,7 @@ import {
   currentProjectLayout,
   currentTab,
   equalizeTabSizes,
+  isFlagged,
   killSession,
   moveSessionToNewTab,
   moveSessionToTab,
@@ -21,6 +22,7 @@ import {
   projectLayout,
   restartSession,
   resumeSession,
+  setSessionFlag,
   splitSession,
   swapSessions,
   zoomSession,
@@ -52,6 +54,7 @@ export function paneMenu(sessionId: string): MenuEntry[] {
       // The detected shells are Windows programs; a remote project's New
       // shell starts the server's login shell.
       shells: machineOfProject(projectId) === LOCAL_MACHINE ? shellChoices(app.shells, app.settings?.defaultShell) : [],
+      flagged: isFlagged(sessionId),
     },
     {
       copy: () => void copyFromPane(sessionId),
@@ -65,6 +68,7 @@ export function paneMenu(sessionId: string): MenuEntry[] {
       applyPreset: (preset) => applyTabPreset(tab.id, preset),
       equalize: () => equalizeTabSizes(tab.id),
       rename: () => beginRename({ kind: "session", sessionId, where: "pane" }),
+      setFlag: (on) => setSessionFlag(sessionId, on),
       close: () => void closePane(sessionId),
     },
   );
@@ -89,6 +93,7 @@ export function sessionMenu(sessionId: string): MenuEntry[] {
       currentTab: currentTab(),
       currentProjectId: app.selectedProjectId,
       sessionTab: tabOf(projectLayout(session.project_id), sessionId),
+      flagged: isFlagged(sessionId),
     },
     {
       openInSplit: (direction) => openSessionInSplit(sessionId, direction),
@@ -98,6 +103,7 @@ export function sessionMenu(sessionId: string): MenuEntry[] {
       resume: () => resumeSession(sessionId),
       kill: () => killSession(sessionId),
       compact: () => compactSession(sessionId),
+      setFlag: (on) => setSessionFlag(sessionId, on),
     },
   );
 }

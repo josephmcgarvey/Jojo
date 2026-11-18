@@ -75,11 +75,17 @@ pub struct LayoutFile {
     /// files written before this field existed.
     #[serde(default)]
     pub collapsed: Vec<String>,
+    /// The sessions the user flagged to come back to (Flag for later), as
+    /// `<machine id>:<session id>` keys. A flag stays until the user removes
+    /// it or the session is removed. Absent in files written before this
+    /// field existed.
+    #[serde(default)]
+    pub flagged: Vec<String>,
 }
 
 impl Default for LayoutFile {
     fn default() -> Self {
-        LayoutFile { version: LAYOUT_VERSION, projects: BTreeMap::new(), project_order: Vec::new(), collapsed: Vec::new() }
+        LayoutFile { version: LAYOUT_VERSION, projects: BTreeMap::new(), project_order: Vec::new(), collapsed: Vec::new(), flagged: Vec::new() }
     }
 }
 
@@ -158,7 +164,7 @@ mod tests {
         };
         let mut projects = BTreeMap::new();
         projects.insert("local:P1".to_string(), ProjectLayout { tabs: vec![tab], active_tab: Some("T1".into()) });
-        LayoutFile { version: LAYOUT_VERSION, projects, project_order: vec!["local:P1".into()], collapsed: vec!["local".into(), "P1".into()] }
+        LayoutFile { version: LAYOUT_VERSION, projects, project_order: vec!["local:P1".into()], collapsed: vec!["local".into(), "P1".into()], flagged: vec!["local:S2".into()] }
     }
 
     #[test]

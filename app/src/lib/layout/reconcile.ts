@@ -6,6 +6,7 @@ import type { LayoutFile } from "../backend/LayoutFile";
 import type { ProjectLayout } from "../backend/ProjectLayout";
 import type { TabLayout } from "../backend/TabLayout";
 import type { Model } from "../state/reducer";
+import { pruneFlags } from "../state/flags";
 import { sessionsForProject } from "../state/views";
 import { newTab } from "./tabs";
 import { filterPanes, MAX_PANES, paneIds, removePane } from "./tree";
@@ -104,5 +105,7 @@ export function reconcileMachine(file: LayoutFile, machineId: string, model: Mod
   // The sidebar order keeps other machines' keys and this machine's keys
   // whose project still exists.
   const project_order = (file.project_order ?? []).filter((key) => !key.startsWith(prefix) || key in projects);
-  return { version: file.version, projects, project_order, collapsed: file.collapsed ?? [] };
+  // Flags of this machine's sessions that are gone are dropped.
+  const flagged = pruneFlags(file.flagged ?? [], machineId, Object.keys(model.sessions));
+  return { version: file.version, projects, project_order, collapsed: file.collapsed ?? [], flagged };
 }

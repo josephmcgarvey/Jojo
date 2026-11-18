@@ -51,6 +51,7 @@ import { toastFor } from "./toasts";
 import { chimeFor, playChime } from "./chime";
 import { shellProgram } from "./shells";
 import { setFolded } from "./folding";
+import { flagKey, setFlag } from "./flags";
 import { orderedProjects, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
 import {
   createFailed,
@@ -719,6 +720,19 @@ export function equalizeTabSizes(tabId: string): void {
 
 export function setTabRoot(tabId: string, root: LayoutNode): void {
   updateCurrentProject((p) => tabs.setTabRoot(p, tabId, root));
+}
+
+/** Whether the user flagged a session to come back to (Flag for later, layout.json's flagged). */
+export function isFlagged(sessionId: string): boolean {
+  return (app.workspace.layout.flagged ?? []).includes(flagKey(machineOfSession(sessionId), sessionId));
+}
+
+/** Flags a session to come back to, or removes its flag. The flag stays until removed here or the session is removed. */
+export function setSessionFlag(sessionId: string, on: boolean): void {
+  const before = app.workspace.layout.flagged ?? [];
+  const key = flagKey(machineOfSession(sessionId), sessionId);
+  if (before.includes(key) === on) return;
+  commit({ ...app.workspace, layout: { ...app.workspace.layout, flagged: setFlag(before, key, on) } });
 }
 
 /** Whether a location (machine id) or project is folded in the sidebar (layout.json's collapsed). */

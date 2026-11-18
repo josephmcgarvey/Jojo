@@ -107,6 +107,7 @@ describe("reconcileAll", () => {
     const file: LayoutFile = {
       version: 1,
       collapsed: [],
+      flagged: [],
       projects: {
         [layoutKey(LOCAL_MACHINE_ID, "OLD")]: { tabs: [newTab("T1", "Z")], active_tab: "T1" },
         "server1:P9": remote,
@@ -127,6 +128,7 @@ describe("reconcileAll", () => {
     const file: LayoutFile = {
       version: 1,
       collapsed: [],
+      flagged: ["local:S1", "server1:S9", "server1:GONE-SESSION"],
       projects: { "local:P1": local, "server1:GONE": { tabs: [newTab("G1", "Q")], active_tab: "G1" } },
       project_order: ["local:P1", "server1:GONE", "server1:P9"],
     };
@@ -134,6 +136,8 @@ describe("reconcileAll", () => {
     expect(Object.keys(result.projects).sort()).toEqual(["local:P1", "server1:P9"]);
     // A removed project's key leaves the sidebar order; other machines' keys stay.
     expect(result.project_order).toEqual(["local:P1", "server1:P9"]);
+    // A removed session's flag is dropped; other machines' flags stay.
+    expect(result.flagged).toEqual(["local:S1", "server1:S9"]);
     expect(result.projects["local:P1"]).toBe(local);
     expect(result.projects["server1:P9"]!.tabs.map((t) => paneIds(t.root))).toEqual([["S9"]]);
   });
