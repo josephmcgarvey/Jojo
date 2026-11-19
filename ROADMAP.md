@@ -181,3 +181,27 @@ another project") appears only as a tooltip on hover
 2. Hide items that can never apply in the current tab (Zoom, Swap with,
    Layout and Equalize sizes in a tab with one pane), and keep graying out
    items that can apply after a change, such as Open in split.
+
+## 10. Smooth working spinners under Prism
+
+**Status:** reported by the user on 2026-11-18 after the Prism performance
+changes (commit `d9ce43e`); postponed.
+
+Under Prism, the working spinners (the rotating badge in
+`app/src/ui/Badge.svelte`) stutter slightly. The probable cause, not yet
+measured, is the rainbow: `--jojo-hue` changes 8 times a second
+(`steps(96)` over 12 s in `app/src/app.css`), and each change recalculates
+the styles of the whole page, because the theme's tokens are set on the root
+element and every element inherits them. The spinner's rotation stalls
+during each recalculation. Possible fixes, to be measured in the WebView2
+performance profiler first:
+
+1. Give the working badge a fixed color in Prism (a token without
+   `var(--jojo-hue)`), so its own style does not change with the hue.
+2. Move the hue-dependent tokens off the root element onto only the
+   elements that use them (the focus ring, the logo, the selected session,
+   the background glow and the aurora), so a hue change recalculates those
+   elements instead of the whole page.
+3. Animate the rainbow's colors with `filter: hue-rotate()` on the few
+   decorated layers instead of a changing custom property, which the
+   compositor can apply without recalculating styles.
