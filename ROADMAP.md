@@ -205,3 +205,37 @@ performance profiler first:
 3. Animate the rainbow's colors with `filter: hue-rotate()` on the few
    decorated layers instead of a changing custom property, which the
    compositor can apply without recalculating styles.
+
+## 11. Dropping files and images onto a pane
+
+**Status:** requested by the user on 2026-11-19; postponed.
+
+Dropping a file onto a Jojo pane does nothing. Tauri takes files dropped on
+the window before the webview sees them and reports them as its own
+`drag-drop` event, with the file paths and the drop position; Jojo does not
+listen for it. In Windows Terminal and iTerm a drop types the file's path
+into the terminal, and Claude Code attaches an image whose path is typed in,
+which is how dropping images into Claude works there.
+
+The plan:
+
+1. **This PC sessions.** Listen for the webview's drag-drop event, find the
+   pane under the drop position (the pane rectangles in
+   `app/src/lib/layout/geometry.ts`), and type every dropped file's path into
+   that pane as one bracketed paste, quoted when a path contains spaces.
+   Claude Code attaches the images; a shell gets the paths for a command.
+2. **Remote sessions.** A path on this computer means nothing on the server,
+   so each file is first copied over SSH into `~/.jojo/drops/` on the server
+   (streamed over stdin, as `install.rs` uploads jojod, so the server needs
+   neither scp nor SFTP), and the server's path is typed instead. Open
+   questions: a size limit, and when old files in `~/.jojo/drops/` are
+   deleted.
+3. **Feedback.** While files are dragged over the window, the pane under the
+   pointer is highlighted, so it is clear where they will land.
+
+A related question, to test before building: pasting a screenshot from the
+clipboard. Claude Code reads the clipboard itself when its paste-image key
+is pressed. Jojo's own text paste (⌘V on macOS, Ctrl+Shift+V on Windows)
+handles only text, and whether Claude Code's key reaches it through Jojo is
+untested. A remote Claude Code cannot read this computer's clipboard at all;
+an image on the clipboard could go through the same upload as a dropped file.
