@@ -34,20 +34,46 @@ pub fn bundled_version_line() -> String {
     format!("jojod {} (protocol {})", jojod::VERSION, jojo_proto::PROTOCOL_VERSION)
 }
 
-/// The host aliases in `~/.ssh/config` (spec 8.2 step 1): every name on a
-/// `Host` line, except patterns containing `*`, `?` or `!`.
-pub fn ssh_config_hosts(config: &str) -> Vec<String> {
-    let mut hosts = Vec::new();
+/// One `Host` line of `~/.ssh/config`: the server it describes, by the
+/// names on the line. OpenSSH treats every name on a `Host` line as an alias
+/// of the same server, so a line such as `Host build-box 192.0.2.5` is one
+/// server with two names, not two servers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+pub struct SshHost {
+    /// The first name on the line, which Jojo connects with.
+    pub alias: String,
+    /// The line's other names, shown after the alias in the Host list.
+    pub other_names: Vec<String>,
+}
+
+impl SshHost {
+    /// Every name of the server: the alias, then the other names.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.alias.as_str()).chain(self.other_names.iter().map(String::as_str))
+    }
+}
+
+/// The servers in `~/.ssh/config` (spec 8.2 step 1), one per `Host` line,
+/// in file order. Patterns containing `*`, `?` or `!` are not names of a
+/// server and are left out; a line with only patterns gives no server. A
+/// name already listed on an earlier line is left out of later ones.
+pub fn ssh_config_hosts(config: &str) -> Vec<SshHost> {
+    let mut hosts: Vec<SshHost> = Vec::new();
     for line in config.lines() {
         let line = line.trim();
         let mut words = line.split_whitespace();
         if !words.next().is_some_and(|w| w.eq_ignore_ascii_case("host")) {
             continue;
         }
+        let mut names: Vec<String> = Vec::new();
         for name in words {
-            if !name.contains(['*', '?', '!']) && !hosts.iter().any(|h| h == name) {
-                hosts.push(name.to_owned());
+            if !name.contains(['*', '?', '!']) && !names.iter().any(|n| n == name) && !hosts.iter().any(|h| h.names().any(|n| n == name)) {
+                names.push(name.to_owned());
             }
+        }
+        if !names.is_empty() {
+            let alias = names.remove(0);
+            hosts.push(SshHost { alias, other_names: names });
         }
     }
     hosts
@@ -267,7 +293,10 @@ mod tests {
     #[test]
     fn lists_concrete_host_aliases_from_ssh_config() {
         let config = "Host build-box 192.0.2.5\n  HostName 192.0.2.5\n  User deploy\n\nHost *\n  ServerAliveInterval 30\nhost dev !bad\nMatch host x\n";
-        assert_eq!(ssh_config_hosts(config), vec!["build-box", "192.0.2.5", "dev"]);
+        let host = |alias: &str, others: &[&str]| SshHost { alias: alias.into(), other_names: others.iter().map(|s| s.to_string()).collect() };
+        assert_eq!(ssh_config_hosts(config), vec![host("build-box", &["192.0.2.5"]), host("dev", &[])]);
+        // A name listed on an earlier line is not listed again.
+        assert_eq!(ssh_config_hosts("Host a 192.0.2.9\nHost 192.0.2.9 b\n"), vec![host("a", &["192.0.2.9"]), host("b", &[])]);
     }
 
     #[test]

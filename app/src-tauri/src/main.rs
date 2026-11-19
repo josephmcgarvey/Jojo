@@ -49,7 +49,7 @@ fn list_machines() -> Vec<Machine> {
 
 /// Host aliases from `~/.ssh/config`, for the Add machine dialog.
 #[tauri::command]
-fn ssh_hosts() -> Vec<String> {
+fn ssh_hosts() -> Vec<jojo_app::install::SshHost> {
     jojo_app::install::default_ssh_config()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .map(|config| jojo_app::install::ssh_config_hosts(&config))
@@ -222,7 +222,8 @@ impl ImportFiles {
             machines: machines::load(&machines::default_path()),
             snippets: jojo_app::snippets::load(&jojo_app::snippets::default_path()),
             layout: layout::load(&layout::default_path()),
-            aliases: ssh_hosts(),
+            // Every name of every Host line, since a location may use any of them.
+            aliases: ssh_hosts().iter().flat_map(|h| h.names().map(str::to_owned).collect::<Vec<_>>()).collect(),
             jojo_key: jojo_app::install::default_jojo_key(),
         }
     }

@@ -5,7 +5,7 @@
 use jojo_app::bridge::ConnectionStatus;
 use jojo_app::config::{ImportPreview, ImportResult};
 use jojo_app::layout::LayoutFile;
-use jojo_app::install::InstallStep;
+use jojo_app::install::{InstallStep, SshHost};
 use jojo_app::machines::Machine;
 use jojo_app::settings::Settings;
 use jojo_app::shells::ShellOption;
@@ -23,6 +23,7 @@ fn export_backend_bindings() {
     ShellOption::export_all(&cfg).unwrap();
     Machine::export_all(&cfg).unwrap();
     InstallStep::export_all(&cfg).unwrap();
+    SshHost::export_all(&cfg).unwrap();
     Snippet::export_all(&cfg).unwrap();
     ImportPreview::export_all(&cfg).unwrap();
     ImportResult::export_all(&cfg).unwrap();

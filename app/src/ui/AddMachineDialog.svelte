@@ -7,6 +7,7 @@
   import { Channel, invoke } from "@tauri-apps/api/core";
   import type { InstallStep } from "../lib/backend/InstallStep";
   import type { Machine } from "../lib/backend/Machine";
+  import type { SshHost } from "../lib/backend/SshHost";
   import { errorText } from "../lib/errors";
   import { app, machineAdded } from "../lib/state/app.svelte";
   import { isMac } from "../lib/platform";
@@ -23,17 +24,31 @@
     hooks: "Claude Code hooks",
   };
 
-  let hosts = $state<string[]>([]);
+  /** The servers in ~/.ssh/config, one per Host line (alias, then its other names). */
+  let hosts = $state<SshHost[]>([]);
   let host = $state("");
   /** The Host select's value for a host typed into the text field. */
   const OTHER_HOST = "__other__";
   let otherHost = $state(false);
-  const hostChoice = $derived(otherHost ? OTHER_HOST : host);
+  /** The Host list's row for `host`: the server that has `host` among its names. */
+  const hostChoice = $derived(otherHost ? OTHER_HOST : (hosts.find((h) => h.alias === host || h.other_names.includes(host))?.alias ?? host));
   /** Hosts already in the sidebar, marked in the list (adding one again upgrades and reconnects it). */
   const added = $derived(new Set(app.machines.map((m) => m.ssh_host).filter((h): h is string => !!h)));
+  /** Whether a server is already in the sidebar under any of its names. */
+  const isAdded = (h: SshHost) => added.has(h.alias) || h.other_names.some((n) => added.has(n));
+  /**
+   * A server already in the sidebar under another of its names (an IP
+   * address listed after the alias) keeps that name, so choosing it upgrades
+   * and reconnects that location instead of adding the server again.
+   */
   function chooseHost(value: string): void {
     otherHost = value === OTHER_HOST;
-    host = otherHost ? "" : value;
+    if (otherHost) {
+      host = "";
+      return;
+    }
+    const chosen = hosts.find((h) => h.alias === value);
+    host = (chosen && [chosen.alias, ...chosen.other_names].find((n) => added.has(n))) ?? value;
   }
   /**
    * How Jojo signs in: "key", a host from ~/.ssh/config whose key is
@@ -58,7 +73,7 @@
   let steps = $state<InstallStep[]>([]);
 
   onMount(() => {
-    void invoke<string[]>("ssh_hosts")
+    void invoke<SshHost[]>("ssh_hosts")
       .then((list) => {
         hosts = list;
         // With no ~/.ssh/config hosts, the only choice is typing one.
@@ -119,8 +134,8 @@
         <span>Host</span>
         <select value={hostChoice} onchange={(e) => chooseHost(e.currentTarget.value)} disabled={running || done}>
           {#if !otherHost && !host}<option value="" disabled>Choose a host from ~/.ssh/config</option>{/if}
-          {#each hosts as alias (alias)}
-            <option value={alias}>{alias}{added.has(alias) ? " (added: upgrades and reconnects)" : ""}</option>
+          {#each hosts as h (h.alias)}
+            <option value={h.alias}>{h.alias}{h.other_names.length ? ` (${h.other_names.join(", ")})` : ""}{isAdded(h) ? " · added: upgrades and reconnects" : ""}</option>
           {/each}
           <option value={OTHER_HOST}>Other host (user@host)…</option>
         </select>
