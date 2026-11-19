@@ -110,13 +110,16 @@ and keep their names.
 The sidebar lists locations (**This PC** or **This Mac**, then each remote
 location), the projects under each location, and the sessions in each
 project. A project is a folder on its location; new sessions in a project
-start in that folder.
+start in that folder. Only the list scrolls: the JOJO logo at the top of the
+sidebar and the footer (**Remote location** and Settings) stay in place.
 
 1. The **Needs you** queue at the top of the sidebar lists every session
    waiting for the user, from every location, longest wait first. Clicking a
    row focuses that session's pane.
 2. Each session row shows the session's state badge, name, time in its
-   current state and, for Claude Code sessions, a context meter. The meter
+   current state and, for Claude Code sessions, a context meter. A shell
+   session without Claude Code has no hook-driven states, so its badge is a
+   terminal icon instead of a state circle. The meter
    shows how full Claude's context window is; it turns amber at 70% and red
    at 85%. The window size is inferred from the model name and token count
    (200,000 or 1,000,000 tokens).
@@ -249,7 +252,11 @@ to another, use **Export configuration…** and **Import configuration…** (see
 **Sign in with** setting offers two ways in:
 
 1. **SSH key**: a host alias from `~/.ssh/config` (or `user@host`) whose key
-   is loaded in the SSH agent, with its host key accepted once.
+   is loaded in the SSH agent, with its host key accepted once. The Host
+   list has one row per `Host` line. OpenSSH treats every name on a `Host`
+   line as an alias of the same server, so a line such as
+   `Host myserver 203.0.113.5` is one row, `myserver (203.0.113.5)`, and
+   Jojo connects with the first name.
 2. **Username and password**: the server's host name or address, port,
    username and password. With **Set up an SSH key** checked (the default),
    Jojo creates `~/.ssh/jojo_ed25519` if it does not exist, adds its public
@@ -282,6 +289,16 @@ Adding a location runs these steps over SSH and reports each one:
 6. Hooks: registers Jojo's hooks in the server's `~/.claude/settings.json`,
    and warns when Claude Code is not installed there.
 
+Adding a location that is already listed upgrades the daemon binary and
+reconnects, but a daemon that is already running keeps running its old code
+until it restarts. A daemon older than the app then reports actions it does
+not know, such as renaming a project, as "This jojod is older than the app".
+Right-clicking the location and choosing **Update jojod to (version)…**
+(shown as **Restart jojod…** when the versions match) installs the app's
+daemon when the server has another version, stops the running daemon with
+`jojod shutdown`, which ends that location's sessions, and reconnects, which
+starts the new daemon. The confirmation lists the sessions that end.
+
 When adding a project on a remote location, the dialog browses the server's
 folders. The remote daemon keeps running when the window disconnects, and the
 window reattaches when the connection returns. Any computer that adds the
@@ -299,7 +316,7 @@ Jojo has seven themes:
 | Theme | Mode | Description |
 |---|---|---|
 | Neon Glass | Dark | Translucent glass panels with blur and glow, and a violet accent. The default. |
-| Prism | Dark | Neon Glass with an animated rainbow: working sessions, the focused pane, the selected tab and session, the logo, dialog glows and the background glow cycle through the color wheel every 12 seconds. |
+| Prism | Dark | Neon Glass with an animated rainbow: working sessions, the focused pane, the selected tab and session, the logo, dialog glows and the background glow cycle through the color wheel every 12 seconds. An aurora of soft, streaked glows drifts slowly behind the window. Both animations pause while the Jojo window is not the active window. |
 | Daylight | Light | The Neon Glass layout in light colors. |
 | Graphite | Dark | Flat and matte, gray throughout, color only for session states. |
 | Phosphor | Dark | Green-screen terminal: square corners, text glow, monospace interface font. |
@@ -480,6 +497,6 @@ before tagging a build.
 
 ## Status
 
-Jojo is in alpha; the current release is 0.2.5. Postponed work is listed in
+Jojo is in alpha; the current release is 0.2.13. Postponed work is listed in
 [ROADMAP.md](ROADMAP.md). Jojo is released under the MIT License; see
 [LICENSE](LICENSE).
