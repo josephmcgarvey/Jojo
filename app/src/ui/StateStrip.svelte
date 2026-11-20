@@ -4,9 +4,10 @@
   // between locations, colored by state (attention.ts). A segment's tooltip
   // names the session, its state and its location; a click jumps to it. The
   // summary on the right counts the states, most urgent first.
-  import { app, displayLabel, focusPane, focusedSessionId } from "../lib/state/app.svelte";
+  import { app, displayLabel, focusPane, focusedSessionId, isFlagged } from "../lib/state/app.svelte";
   import { STATE_WORDS, stateSummary, stateToken, stripGroups } from "../lib/state/attention";
   import { orderedSessions } from "../lib/state/views";
+  import Flag from "./Flag.svelte";
 
   const groups = $derived(stripGroups(orderedSessions(app.machines, app.models)));
   const summary = $derived(stateSummary(groups.flatMap((g) => g.sessions)));
@@ -19,15 +20,16 @@
     <div class="group" title={labelOf(group.machineId)}>
       {#each group.sessions as session (session.id)}
         {@const token = stateToken(session.state)}
+        {@const flagged = isFlagged(session.id)}
         <button
           class="seg"
           class:needs={session.state === "needs_you"}
           class:on={focused === session.id}
           style:--seg={token ? `var(${token})` : "var(--jojo-idle)"}
-          title={`${displayLabel(session)} · ${STATE_WORDS[session.state]} · ${labelOf(group.machineId)}`}
-          aria-label={`${displayLabel(session)}, ${STATE_WORDS[session.state]}, on ${labelOf(group.machineId)}`}
+          title={`${displayLabel(session)} · ${STATE_WORDS[session.state]} · ${labelOf(group.machineId)}${flagged ? " · flagged" : ""}`}
+          aria-label={`${displayLabel(session)}, ${STATE_WORDS[session.state]}, on ${labelOf(group.machineId)}${flagged ? ", flagged" : ""}`}
           onclick={() => focusPane(session.id)}
-        ></button>
+        >{#if flagged}<span class="pennant"><Flag size={9} /></span>{/if}</button>
       {/each}
     </div>
   {/each}
@@ -51,6 +53,7 @@
     min-width: 0;
   }
   .seg {
+    position: relative;
     flex: 0 1 56px;
     min-width: 12px;
     width: 56px;
@@ -73,6 +76,15 @@
   }
   .seg.needs {
     box-shadow: 0 0 8px var(--jojo-needs-you-glow);
+  }
+  /* A flagged session's segment carries the Flag for later pennant above
+     its right end, since the sidebar rows that show flags can be hidden. */
+  .pennant {
+    position: absolute;
+    right: -2px;
+    bottom: 100%;
+    display: flex;
+    pointer-events: none;
   }
   .grow {
     flex: 1;

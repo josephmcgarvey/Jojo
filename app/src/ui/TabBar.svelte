@@ -1,19 +1,19 @@
 <script lang="ts">
   import { activeTab, tabLabel } from "../lib/layout/tabs";
   import { countPanes, paneIds } from "../lib/layout/tree";
-  import { displayLabel, app, closeTab, currentProjectLayout, isFlagged, newSession, renameTab, reorderTab, selectTab } from "../lib/state/app.svelte";
+  import { displayLabel, app, closeTab, currentProjectLayout, isFlagged, newSession, renameTab, reorderTab, selectTab, sidebarHidden } from "../lib/state/app.svelte";
   import { tabMenu } from "../lib/state/contextMenus";
-  import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
+  import { beginRename, endRename, openMenu, ui } from "../lib/state/ui.svelte";
   import { stateTooltip } from "../lib/state/toasts";
   import { STATE_WORDS, stateToken } from "../lib/state/attention";
   import { formatElapsed } from "../lib/state/elapsed";
-  import { SHORTCUT_LABELS } from "../lib/input/shortcuts";
   import Badge from "./Badge.svelte";
   import Flag from "./Flag.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
   import { isMac } from "../lib/platform";
   import WindowControls from "./WindowControls.svelte";
+  import WindowTools from "./WindowTools.svelte";
 
   const project = $derived(currentProjectLayout());
   const activeId = $derived(project ? activeTab(project)?.id : undefined);
@@ -93,7 +93,10 @@
      asking (state detail) or its project. Cards keep the tab behaviors:
      click selects, double-click renames, drag reorders, right-click opens
      the tab menu, × closes. -->
-<div class="tabs" bind:this={tabsElement}>
+<div class="tabs" class:bare={sidebarHidden()} bind:this={tabsElement}>
+  <!-- While the sidebar is hidden, its sidebar, Snippets and Search buttons
+       move here (WindowTools); otherwise they are in the sidebar's logo row. -->
+  {#if sidebarHidden()}<div class="lead"><WindowTools /></div>{/if}
   {#each project?.tabs ?? [] as tab, index (tab.id)}
     {@const focusedSession = app.model.sessions[tab.focused]}
     {@const panes = countPanes(tab.root)}
@@ -149,21 +152,6 @@
     <button class="new" title="New terminal" aria-label="New terminal" onclick={() => newSession(app.selectedProjectId!, "shell")}><PlusCircle /></button>
   {/if}
   <div class="drag" data-tauri-drag-region></div>
-  <!-- Icon buttons for the snippets library (SnippetsDialog.svelte, a
-       command-prompt icon) and the switcher ("Agents first" C, a magnifier;
-       also Ctrl+Shift+P). The names are in the tooltips and aria-labels. -->
-  <button class="tool" title="Snippets: saved commands to insert or run in the focused terminal" aria-label="Snippets" onclick={() => openDialog({ kind: "snippets" })}>
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" />
-      <path d="M4.5 6.2 6.8 8l-2.3 1.8M8.3 10.2h3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-    </svg>
-  </button>
-  <button class="tool" title={`Search sessions, commands and output (${SHORTCUT_LABELS.switcher})`} aria-label="Search" onclick={() => openDialog({ kind: "switcher" })}>
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4" />
-      <path d="m10.4 10.4 3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-    </svg>
-  </button>
   {#if !isMac}<div class="chrome"><WindowControls /></div>{/if}
 </div>
 
@@ -174,6 +162,16 @@
     gap: 8px;
     height: 64px;
     padding: 6px 0 4px 10px;
+  }
+  .lead {
+    display: flex;
+    align-items: center;
+    padding-right: 4px;
+  }
+  /* macOS with the sidebar hidden: the traffic-light buttons (20 px from the
+     left, about 52 px wide) sit over the tab row's left end. */
+  :global(html[data-platform="mac"]) .tabs.bare {
+    padding-left: 80px;
   }
   .tab {
     position: relative;
@@ -288,32 +286,6 @@
   .drag {
     flex: 1;
     align-self: stretch;
-  }
-  /* The Snippets and Search icon buttons: 32 px squares in the pane color,
-     with the theme's focus border and glow on hover and keyboard focus. */
-  .tool {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    border: var(--jojo-bw) solid var(--jojo-line);
-    border-radius: var(--jojo-radius);
-    background: var(--jojo-pane);
-    color: var(--jojo-muted);
-  }
-  .tool + .tool {
-    margin-left: -2px;
-  }
-  .tool:hover,
-  .tool:focus-visible {
-    color: var(--jojo-fg);
-    border-color: var(--jojo-focus-border);
-    box-shadow: var(--jojo-focus-ring);
-    outline: none;
-  }
-  .tool:active {
-    color: var(--jojo-accent);
   }
   /* Windows: the HTML window controls keep their 36 px row at the top. */
   .chrome {

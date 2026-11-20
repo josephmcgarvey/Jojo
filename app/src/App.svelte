@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { app, currentTab, focusedSessionId, saveSidebarWidth, startApp } from "./lib/state/app.svelte";
+  import { app, currentTab, focusedSessionId, saveSidebarWidth, setSidebarHidden, sidebarHidden, startApp } from "./lib/state/app.svelte";
   import { closeDialog, closeMenu, ui } from "./lib/state/ui.svelte";
   import { resolveShortcut } from "./lib/input/shortcuts";
   import { runAction } from "./lib/state/actions";
   import { dialog } from "./lib/state/dialog.svelte";
   import { terminalControls } from "./lib/terminal/registry";
   import { LOCAL_LABEL } from "./lib/platform";
-  import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, SIDEBAR_KEY_STEP } from "./lib/layout/sidebar";
+  import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, dragHidesSidebar, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, SIDEBAR_KEY_STEP } from "./lib/layout/sidebar";
   import { applyTheme, resolveTheme } from "./lib/theme";
   import Banner from "./ui/Banner.svelte";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
@@ -91,7 +91,16 @@
   function onResizeUp(event: PointerEvent): void {
     if (!resizeStart || event.pointerId !== resizeStart.pointerId) return;
     const width = dragWidth ?? sidebarWidth;
+    const released = resizeStart.width + event.clientX - resizeStart.x;
     resizeStart = null;
+    // Released well left of the minimum width: the sidebar hides and keeps
+    // its saved width for when it is shown again. A cancelled pointer
+    // (pointercancel) has no meaningful position and never hides it.
+    if (event.type === "pointerup" && dragHidesSidebar(released)) {
+      dragWidth = null;
+      void setSidebarHidden(true);
+      return;
+    }
     // The setting takes the new width before the dragged value is dropped, so the edge does not jump back.
     void saveSidebarWidth(width).finally(() => (dragWidth = null));
   }
@@ -110,7 +119,10 @@
   }
 </script>
 
-<div class="window" class:resizing={dragWidth !== null} style:--side-w={`${sidebarWidth}px`}>
+<!-- With the sidebar hidden (sidebarHidden setting), neither the sidebar nor
+     its edge is drawn and the main column takes the full width. -->
+<div class="window" class:resizing={dragWidth !== null} class:bare={sidebarHidden()} style:--side-w={`${sidebarWidth}px`}>
+  {#if !sidebarHidden()}
   <Sidebar />
   <!-- A focusable separator is a widget in ARIA (it has a value and takes
        Left and Right), which Svelte's check does not know. -->
@@ -124,7 +136,7 @@
     aria-valuemin={MIN_SIDEBAR_WIDTH}
     aria-valuemax={MAX_SIDEBAR_WIDTH}
     tabindex="0"
-    title="Drag to resize the sidebar; double-click for the default width"
+    title="Drag to resize the sidebar, or drag it to the left edge to hide it; double-click for the default width"
     onpointerdown={onResizeDown}
     onpointermove={onResizeMove}
     onpointerup={onResizeUp}
@@ -132,6 +144,7 @@
     ondblclick={() => void saveSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
     onkeydown={onResizeKey}
   ></div>
+  {/if}
   <section class="main">
     <TabBar />
     <Banner />
@@ -180,6 +193,9 @@
     grid-template-columns: var(--side-w) 1fr;
     height: 100%;
     background: var(--jojo-bg-glow);
+  }
+  .window.bare {
+    grid-template-columns: 1fr;
   }
   /* The aurora effect (app.css): one slowly drifting layer of the theme's
      aurora token behind the sidebar and panes. isolation keeps its

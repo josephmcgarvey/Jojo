@@ -34,6 +34,7 @@
     uiFontFamily: "",
     accentColor: "",
     sidebarWidth: 268,
+    sidebarHidden: false,
   };
   /** The terminal font select's value for a family typed into the text field. */
   const OTHER_FONT = "__other__";

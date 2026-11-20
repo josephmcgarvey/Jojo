@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "./sidebar";
+import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, dragHidesSidebar, HIDE_SIDEBAR_BELOW, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "./sidebar";
+
+describe("dragHidesSidebar", () => {
+  it("hides the sidebar only when the edge is dragged well past the minimum width", () => {
+    expect(dragHidesSidebar(HIDE_SIDEBAR_BELOW - 1)).toBe(true);
+    expect(dragHidesSidebar(HIDE_SIDEBAR_BELOW)).toBe(false);
+    expect(dragHidesSidebar(MIN_SIDEBAR_WIDTH - 20)).toBe(false);
+  });
+});
 
 describe("clampSidebarWidth", () => {
   it("keeps the width between the minimum and the maximum, rounded", () => {

@@ -16,6 +16,7 @@
   import Badge from "./Badge.svelte";
   import Cog from "./Cog.svelte";
   import Flag from "./Flag.svelte";
+  import WindowTools from "./WindowTools.svelte";
   import NeedsYouQueue from "./NeedsYouQueue.svelte";
   import PlusCircle from "./PlusCircle.svelte";
   import RenameField from "./RenameField.svelte";
@@ -169,7 +170,7 @@
   <!-- The JOJO logo (Alexandria SemiBold in the brand gradient). Dragging the
        row moves the window; on macOS the traffic-light buttons sit at its
        left (trafficLightPosition in tauri.macos.conf.json). -->
-  <div class="brand" data-tauri-drag-region><span class="logo" data-tauri-drag-region title={app.version ? `Jojo ${app.version}` : "Jojo"}>JOJO</span></div>
+  <div class="brand" data-tauri-drag-region><span class="logo" data-tauri-drag-region title={app.version ? `Jojo ${app.version}` : "Jojo"}>JOJO</span><WindowTools /></div>
   <!-- The logo above and the footer below stay in place; only this list scrolls. -->
   <div class="list">
   <NeedsYouQueue />
@@ -346,9 +347,15 @@
     padding-right: 8px;
     overflow-y: auto;
   }
+  /* The logo at the left and the sidebar, Snippets and Search buttons
+     (WindowTools) at the right. */
   .brand {
     flex: none;
-    padding: 2px 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 2px 10px 6px;
   }
   /* macOS: the traffic-light buttons take the left of the logo row
      (trafficLightPosition in tauri.macos.conf.json), so the logo sits at
@@ -356,12 +363,13 @@
      moved with `top`, so the row keeps its height and the list below does
      not move. */
   :global(html[data-platform="mac"]) .brand {
-    display: flex;
     justify-content: flex-end;
-  }
-  :global(html[data-platform="mac"]) .logo {
     position: relative;
     top: -9px;
+  }
+  /* macOS: the buttons sit before the logo, right of the traffic lights. */
+  :global(html[data-platform="mac"]) .brand :global(.tools) {
+    order: -1;
   }
   .logo {
     display: inline-block;

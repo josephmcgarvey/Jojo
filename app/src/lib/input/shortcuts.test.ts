@@ -56,6 +56,9 @@ describe("resolveShortcut", () => {
     expect(resolveShortcut(key("KeyT", { ctrlKey: true, shiftKey: true, metaKey: true }, "T"), copyOn)).toBeNull();
     expect(resolveShortcut(key("KeyP", { ctrlKey: true, shiftKey: true }, "P"), copyOn)).toBe("switcher");
     expect(resolveShortcut(key("KeyJ", { ctrlKey: true, shiftKey: true }, "J"), copyOn)).toBe("jump");
+    expect(resolveShortcut(key("KeyB", { ctrlKey: true, shiftKey: true }, "B"), copyOn)).toBe("toggle-sidebar");
+    // Plain Ctrl+B stays with the terminal (shells and tmux bind it).
+    expect(resolveShortcut(key("KeyB", { ctrlKey: true }, "b"), copyOn)).toBeNull();
     expect(resolveShortcut(key("KeyA"), copyOn)).toBeNull();
   });
 

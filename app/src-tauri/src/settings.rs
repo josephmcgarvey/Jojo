@@ -32,6 +32,9 @@ pub struct Settings {
     pub accent_color: String,
     /// The sidebar's width in CSS pixels, set by dragging its right edge.
     pub sidebar_width: u32,
+    /// The sidebar is hidden (Ctrl+Shift+B / ⌘B, the sidebar button, or
+    /// dragging its edge closed); the panes then take the full width.
+    pub sidebar_hidden: bool,
 }
 
 impl Default for Settings {
@@ -51,6 +54,7 @@ impl Default for Settings {
             ui_font_family: String::new(),
             accent_color: String::new(),
             sidebar_width: 268,
+            sidebar_hidden: false,
         }
     }
 }

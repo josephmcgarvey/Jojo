@@ -29,7 +29,8 @@ export type AppAction =
   | "copy"
   | "paste"
   | "switcher"
-  | "jump";
+  | "jump"
+  | "toggle-sidebar";
 
 export interface KeyInput {
   key: string;
@@ -64,6 +65,7 @@ export const WINDOWS_SHORTCUT_LABELS: Record<AppAction, string> = {
   paste: "Ctrl+Shift+V",
   switcher: "Ctrl+Shift+P",
   jump: "Ctrl+Shift+J",
+  "toggle-sidebar": "Ctrl+Shift+B",
 };
 
 /** macOS shortcut text, with the menu glyphs macOS uses (⌘ Command, ⌥ Option, ⇧ Shift, ⌃ Control). */
@@ -84,6 +86,7 @@ export const MAC_SHORTCUT_LABELS: Record<AppAction, string> = {
   paste: "⌘V",
   switcher: "⌘P",
   jump: "⌘J",
+  "toggle-sidebar": "⌘B",
 };
 
 /** Shortcut text for this platform. */
@@ -98,6 +101,7 @@ const CMD: Record<string, AppAction> = {
   KeyP: "switcher",
   KeyJ: "jump",
   KeyD: "split-right",
+  KeyB: "toggle-sidebar",
 };
 
 const CMD_SHIFT: Record<string, AppAction> = {
@@ -116,6 +120,7 @@ const CTRL_SHIFT: Record<string, AppAction> = {
   Tab: "previous-tab",
   KeyP: "switcher",
   KeyJ: "jump",
+  KeyB: "toggle-sidebar",
 };
 
 const ALT_SHIFT: Record<string, AppAction> = {

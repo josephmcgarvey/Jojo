@@ -1,6 +1,6 @@
 // Runs an application shortcut (spec 9.6) against the current state.
 import type { AppAction } from "../input/shortcuts";
-import { app, closePane, cycleTab, focusDirection, focusedSessionId, newSession, revealSession, splitFocused, zoomSession } from "./app.svelte";
+import { app, closePane, cycleTab, focusDirection, focusedSessionId, newSession, revealSession, splitFocused, toggleSidebar, zoomSession } from "./app.svelte";
 import { nextAttentionSession } from "./jump";
 import { openDialog } from "./ui.svelte";
 import { orderedSessions } from "./views";
@@ -61,6 +61,9 @@ export function runAction(action: AppAction): void {
       return;
     case "paste":
       if (focused) void pasteIntoPane(focused);
+      return;
+    case "toggle-sidebar":
+      toggleSidebar();
       return;
   }
 }

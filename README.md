@@ -125,18 +125,30 @@ sidebar and the footer (**Remote location** and Settings) stay in place.
    (200,000 or 1,000,000 tokens).
 3. Each tab is a card for its focused session: name, time in state, the
    state word in its color, and what the session is asking (for example a
-   permission prompt) or its project name. Right of the cards are **+** (a
-   new terminal), the Snippets button (a command-prompt icon) and the Search
-   button (a magnifier).
+   permission prompt) or its project name. Right of the cards is **+** (a
+   new terminal).
 4. Each pane has a border in its session's state color. Panes that need the
    user pulse. A bar along the bottom of each pane, under the terminal where
    the prompt is, shows the session's state badge, name and project, and the
    state word with its time while the session is working, needs you, done
    or failed.
-5. The state strip at the bottom of the window counts sessions per state.
+5. The state strip at the bottom of the window has one segment per session
+   that has not exited, from every location, grouped by location and colored
+   by state, with counts per state at its right. The focused session's
+   segment is taller, and a flagged session's segment carries a pennant.
+   Clicking a segment focuses that session.
 
-The sidebar's right edge can be dragged to resize it (200 to 480 pixels);
-double-clicking the edge returns it to the default width of 268 pixels.
+The sidebar's logo row also holds three buttons: the sidebar button, Snippets
+(a command-prompt icon) and Search (a magnifier). The sidebar's right edge can
+be dragged to resize it (200 to 480 pixels); double-clicking the edge returns
+it to the default width of 268 pixels.
+
+The sidebar can be hidden so the panes take the full width: click the sidebar
+button, press Ctrl+Shift+B (⌘B on macOS), or drag the sidebar's edge to the
+left edge of the window. While it is hidden, the three buttons sit at the left
+end of the tab row, and the sidebar button there shows it again at its saved
+width. Every session's state stays visible in the state strip. Jojo remembers
+whether the sidebar was hidden.
 
 Locations and projects fold. A chevron appears at the left of a location or
 project row when the pointer is over it; clicking it folds or unfolds the
@@ -165,6 +177,7 @@ in `layout.json`.
 | Copy, paste | Ctrl+Shift+C, Ctrl+Shift+V | ⌘C, ⌘V |
 | Switcher and output search | Ctrl+Shift+P | ⌘P |
 | Jump to the next session that needs you | Ctrl+Shift+J | ⌘J |
+| Hide or show the sidebar | Ctrl+Shift+B | ⌘B |
 
 Right-clicking a location, project, session, tab or pane name bar opens a menu
 with the actions for it, including split, zoom, swap, move, layout presets,
@@ -201,9 +214,10 @@ states clear when the session is clicked; a flag stays until **Remove flag**
 in the same menu, or until the session is removed.
 
 A flagged session shows a pennant in the theme's accent color on its sidebar
-row, its pane's name bar and its tab card. A folded location or project shows
-the pennant when any session it hides is flagged. Flags are saved in
-`layout.json` on each computer, so they are not shared between a PC and a
+row, its pane's name bar, its tab card and its segment in the state strip. A
+folded location or project shows the pennant when any session it hides is
+flagged. Flags are saved in `layout.json` on each computer, so they are not
+shared between a PC and a
 Mac.
 
 ### Snippets

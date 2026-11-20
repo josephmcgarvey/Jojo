@@ -29,4 +29,9 @@ accentColor: string,
 /**
  * The sidebar's width in CSS pixels, set by dragging its right edge.
  */
-sidebarWidth: number, };
+sidebarWidth: number, 
+/**
+ * The sidebar is hidden (Ctrl+Shift+B / ⌘B, the sidebar button, or
+ * dragging its edge closed); the panes then take the full width.
+ */
+sidebarHidden: boolean, };

@@ -977,6 +977,24 @@ export async function saveSidebarWidth(width: number): Promise<void> {
   await invoke("save_settings", { settings }).catch(() => {});
 }
 
+/** Whether the sidebar is hidden (the sidebarHidden setting). */
+export function sidebarHidden(): boolean {
+  return app.settings?.sidebarHidden ?? false;
+}
+
+/** Hides or shows the sidebar and saves the choice; the sidebar keeps its width for when it is shown again. */
+export async function setSidebarHidden(hidden: boolean): Promise<void> {
+  if (!app.settings || app.settings.sidebarHidden === hidden) return;
+  const settings = { ...app.settings, sidebarHidden: hidden };
+  app.settings = settings;
+  await invoke("save_settings", { settings }).catch(() => {});
+}
+
+/** Ctrl+Shift+B / ⌘B and the sidebar button: hides a shown sidebar, shows a hidden one. */
+export function toggleSidebar(): void {
+  void setSidebarHidden(!sidebarHidden());
+}
+
 /** Saves the settings screen's values and applies the terminal font to open panes (spec 9.10). */
 export async function saveSettings(settings: Settings): Promise<void> {
   await invoke("save_settings", { settings });
