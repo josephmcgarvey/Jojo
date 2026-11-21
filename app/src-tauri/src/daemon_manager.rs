@@ -264,19 +264,56 @@ pub fn install_hooks(jojod: &Path) -> io::Result<()> {
     }
 }
 
-/// Ends every jojod process of this user (used to replace a daemon that
-/// speaks an older protocol; its sessions end).
-#[cfg(unix)]
+/// Ends This PC's daemon (Restart daemon, or replacing a daemon that speaks
+/// an older protocol; its sessions end). In the default profile every
+/// jojod process of this user is ended. In a profile (`JOJO_PROFILE`) only
+/// that profile's daemon is, found by the process id it writes to
+/// `jojod.pid` in its state folder, so the user's other daemon and its
+/// sessions keep running.
 pub fn kill_daemons() -> io::Result<()> {
+    match jojod::paths::profile() {
+        Some(_) => kill_profile_daemon(&jojod::paths::default_state_dir()),
+        None => kill_all_daemons(),
+    }
+}
+
+/// Ends the daemon whose process id is in `state_dir`'s `jojod.pid`, when
+/// that process is still a jojod (a stale file never ends another program).
+/// A missing or unreadable file ends nothing.
+fn kill_profile_daemon(state_dir: &Path) -> io::Result<()> {
+    let Some(pid) = std::fs::read_to_string(state_dir.join(jojod::server::PID_FILE)).ok().and_then(|s| s.trim().parse::<u32>().ok()) else {
+        return Ok(());
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("taskkill");
+        // The image-name filter makes taskkill skip the process unless it is jojod.exe.
+        cmd.args(["/PID", &pid.to_string(), "/FI", "IMAGENAME eq jojod.exe", "/F"]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.output().map(|_| ())
+    }
+    #[cfg(unix)]
+    {
+        let name = std::process::Command::new("ps").args(["-p", &pid.to_string(), "-o", "comm="]).output()?;
+        if String::from_utf8_lossy(&name.stdout).trim().ends_with("jojod") {
+            std::process::Command::new("kill").args(["-9", &pid.to_string()]).output()?;
+        }
+        Ok(())
+    }
+}
+
+/// Ends every jojod process of this user.
+#[cfg(unix)]
+fn kill_all_daemons() -> io::Result<()> {
     // SAFETY: getuid has no preconditions and cannot fail.
     let uid = unsafe { libc::getuid() };
     std::process::Command::new("pkill").args(["-x", "-U", &uid.to_string(), "jojod"]).output().map(|_| ())
 }
 
-/// Ends every jojod process of this user (used to replace a daemon that
-/// speaks an older protocol; its sessions end).
+/// Ends every jojod process of this user.
 #[cfg(windows)]
-pub fn kill_daemons() -> io::Result<()> {
+fn kill_all_daemons() -> io::Result<()> {
     use std::os::windows::process::CommandExt;
     let mut cmd = std::process::Command::new("taskkill");
     cmd.args(["/IM", "jojod.exe", "/F"]);

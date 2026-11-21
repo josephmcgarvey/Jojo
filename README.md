@@ -419,6 +419,25 @@ that cannot be parsed is renamed to `<name>.corrupt-<unix milliseconds>` and
 replaced with defaults, so the app still starts and the file can be repaired
 by hand.
 
+### Profiles
+
+Setting the environment variable `JOJO_PROFILE` to a name (1 to 32 letters,
+digits, `-` or `_`) before starting Jojo runs a separate Jojo with its own
+settings, locations, layout and snippets in `profiles\<name>` under the
+settings folder, and its own daemon, sessions and logs in `profiles\<name>`
+under the daemon's folder, listening on its own pipe (`jojo-<user>-<name>`)
+or socket. Sessions in a profile pass the variable on, so Claude Code's hooks
+reach that profile's daemon. Profiles are meant for recording demos without
+showing real projects or servers. Restart daemon in a profile ends only that
+profile's daemon. Only one Jojo window runs at a time, so close the default
+profile's window first; its sessions keep running in its daemon.
+
+On Windows, from PowerShell:
+
+```powershell
+$env:JOJO_PROFILE = "demo"; & "$env:LOCALAPPDATA\Jojo\Jojo.exe"
+```
+
 ## Architecture
 
 Jojo consists of the window and the daemon. The repository is a Cargo

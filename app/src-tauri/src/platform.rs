@@ -8,11 +8,22 @@ pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
-/// Where settings.json, machines.toml and layout.json live:
-/// `%APPDATA%\Jojo` on Windows, `~/Library/Application Support/Jojo` on
-/// macOS, and `$XDG_CONFIG_HOME/jojo` (default `~/.config/jojo`) on Linux.
-/// Falls back to the temporary folder when the base variable is missing.
+/// Where settings.json, machines.toml, layout.json and snippets.json live:
+/// the folder below, with `profiles/<name>` added when `JOJO_PROFILE`
+/// selects a profile (see `jojod::paths::profile`).
 pub fn config_dir() -> PathBuf {
+    let base = base_config_dir();
+    match jojod::paths::profile() {
+        Some(name) => base.join("profiles").join(name),
+        None => base,
+    }
+}
+
+/// The default profile's folder: `%APPDATA%\Jojo` on Windows,
+/// `~/Library/Application Support/Jojo` on macOS, and
+/// `$XDG_CONFIG_HOME/jojo` (default `~/.config/jojo`) on Linux. Falls back
+/// to the temporary folder when the base variable is missing.
+fn base_config_dir() -> PathBuf {
     #[cfg(windows)]
     {
         std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("Jojo")

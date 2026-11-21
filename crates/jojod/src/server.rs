@@ -14,8 +14,15 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Runs the daemon until a `Shutdown` request, then kills every session.
 pub async fn run(cfg: DaemonConfig) -> anyhow::Result<()> {
     let listener = Listener::bind(&cfg.endpoint)?;
+    // The process id, so the app can end this daemon alone when it runs in
+    // a profile (daemon_manager::kill_daemons); a failed write only means
+    // the app cannot restart it that way.
+    let _ = std::fs::write(cfg.state_dir.join(PID_FILE), std::process::id().to_string());
     run_with_listener(cfg, listener).await
 }
+
+/// The file in the state folder that holds the running daemon's process id.
+pub const PID_FILE: &str = "jojod.pid";
 
 /// Separated from `run` so the accept loop's error handling can be driven by
 /// a fake `Accept` in tests instead of a real OS transport (Finding F1).
