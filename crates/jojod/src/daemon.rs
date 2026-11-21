@@ -13,7 +13,7 @@ use jojo_proto::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use tokio::sync::{broadcast, Notify};
 
@@ -46,6 +46,9 @@ pub struct Daemon {
     events: broadcast::Sender<ControlMsg>,
     next_client: AtomicU64,
     pub shutdown: Notify,
+    /// Set by `kill_all` when the daemon shuts down. A session that exits
+    /// after it is set was ended by the shutdown, not by its own program.
+    stopping: AtomicBool,
 }
 
 impl Daemon {
@@ -60,6 +63,7 @@ impl Daemon {
             events,
             next_client: AtomicU64::new(1),
             shutdown: Notify::new(),
+            stopping: AtomicBool::new(false),
         }))
     }
 
@@ -449,6 +453,16 @@ impl Daemon {
     }
 
     fn on_session_exit(&self, id: SessionId, exit_code: Option<i32>) {
+        // A session ended by the daemon's own shutdown (`kill_all`) is
+        // recorded with no exit code, as a session that was running when the
+        // daemon stopped is on the next load (Store::load). The app's Restore
+        // sessions brings back exactly those sessions. The kill's own code
+        // (1 for a killed process on Unix) would otherwise read as the
+        // program having exited by itself. On Linux the PTY closes at once
+        // when its process is killed, so this exit is often recorded before
+        // `jojod shutdown` finishes; that is how Update jojod left remote
+        // sessions unrestorable.
+        let exit_code = if self.stopping.load(Ordering::SeqCst) { None } else { exit_code };
         tracing::info!(session = %id, exit_code = ?exit_code, "session exited");
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(info) = store.session_mut(id) {
@@ -610,7 +624,10 @@ impl Daemon {
         }
     }
 
+    /// Ends every session at shutdown. Their exits are recorded with no exit
+    /// code (see `on_session_exit`), so the app restores them.
     pub fn kill_all(&self) {
+        self.stopping.store(true, Ordering::SeqCst);
         for s in self.sessions.lock().unwrap_or_else(PoisonError::into_inner).values() {
             s.kill();
         }

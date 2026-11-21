@@ -165,6 +165,42 @@ async fn exit_is_broadcast_and_persisted_across_restart() {
     tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
 }
 
+/// A session still running when the daemon is shut down (`jojod shutdown`,
+/// which the app's Update jojod uses) is recorded as ended because jojod
+/// stopped: exited with no exit code, which the app's Restore sessions
+/// brings back. Before the fix, kill_all's own kill was recorded as the
+/// session's exit code, so it was never restored.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_running_at_shutdown_has_no_exit_code_after_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    let project = add_project(&mut c, dir.path()).await;
+    let session = create_shell(&mut c, &project).await;
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+    // The open connection keeps the stopped daemon alive (its connection
+    // task holds it) while the killed session's waiter records the exit, up
+    // to READER_DRAIN_TIMEOUT (2 s) later. This is what happens on Linux,
+    // where the exit is recorded before `jojod shutdown` finishes.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    drop(c);
+
+    let (endpoint, server) = start(dir.path()).await;
+    let mut c = Client::connect(&endpoint).await.unwrap();
+    c.send(Frame::Control(ControlMsg::ListSessions)).await.unwrap();
+    match c.recv_until(WAIT, |f| matches!(f, Frame::Control(ControlMsg::Sessions { .. }))).await.unwrap() {
+        Frame::Control(ControlMsg::Sessions { sessions }) => {
+            let s = sessions.iter().find(|s| s.id == session.id).expect("session listed");
+            assert_eq!(s.state, jojo_proto::AgentState::Exited);
+            assert_eq!(s.exit_code, None, "a session ended by the daemon's shutdown keeps no exit code");
+        }
+        _ => unreachable!(),
+    }
+    c.send(Frame::Control(ControlMsg::Shutdown)).await.unwrap();
+    tokio::time::timeout(WAIT, server).await.unwrap().unwrap().unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn second_daemon_on_same_endpoint_fails() {
     let dir = tempfile::tempdir().unwrap();
