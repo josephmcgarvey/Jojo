@@ -530,6 +530,6 @@ before tagging a build.
 
 ## Status
 
-Jojo is in alpha; the current release is 0.2.15. Postponed work is listed in
+Jojo is in alpha; the current release is 0.2.16. Postponed work is listed in
 [ROADMAP.md](ROADMAP.md). Jojo is released under the MIT License; see
 [LICENSE](LICENSE).
