@@ -19,8 +19,10 @@ use serde_json::Value;
 
 /// The default context window of Claude models.
 pub const STANDARD_WINDOW: u64 = 200_000;
-/// The extended window (models with a `[1m]` suffix, and the Claude 5 Opus
-/// models, which report `"contextWindow":1000000` in Claude Code).
+/// The extended window: models with a `[1m]` suffix, and the Claude 5 Opus
+/// and Sonnet models, for which Claude Code reports `"contextWindow":1000000`
+/// although their transcript records name the model without the suffix
+/// (`claude-sonnet-5`, `claude-opus-5-5`).
 pub const EXTENDED_WINDOW: u64 = 1_000_000;
 
 /// How many bytes from the end of the transcript are read. The last reply's
@@ -88,14 +90,15 @@ pub fn context_usage(tail: &str) -> Option<ContextUsage> {
 
 /// The context window for a conversation: the window Claude Code reported
 /// in the transcript when there is one; otherwise EXTENDED_WINDOW for a
-/// `[1m]` model, a Claude 5 Opus model, or a conversation already past the
-/// standard window; otherwise STANDARD_WINDOW.
+/// `[1m]` model, a Claude 5 Opus or Sonnet model, or a conversation already
+/// past the standard window; otherwise STANDARD_WINDOW.
 pub fn context_window(model: Option<&str>, tokens: u64, reported: Option<u64>) -> u64 {
     if let Some(window) = reported.filter(|w| *w > 0) {
         return window.max(tokens);
     }
     let model = model.unwrap_or("");
-    if model.contains("[1m]") || model.starts_with("claude-opus-5") || tokens > STANDARD_WINDOW {
+    let extended_model = ["claude-opus-5", "claude-sonnet-5"].iter().any(|prefix| model.starts_with(prefix));
+    if model.contains("[1m]") || extended_model || tokens > STANDARD_WINDOW {
         EXTENDED_WINDOW
     } else {
         STANDARD_WINDOW
@@ -126,7 +129,7 @@ mod tests {
 
     #[test]
     fn sums_the_input_tokens_of_the_last_reply() {
-        let tail = [reply("claude-sonnet-5", 10, 20, 30), r#"{"type":"user","message":{"content":"next"}}"#.into(), reply("claude-sonnet-5", 4, 9_258, 120_000)].join("\n");
+        let tail = [reply("claude-haiku-4-5", 10, 20, 30), r#"{"type":"user","message":{"content":"next"}}"#.into(), reply("claude-haiku-4-5", 4, 9_258, 120_000)].join("\n");
         assert_eq!(context_usage(&tail), Some(ContextUsage { tokens: 129_262, window: STANDARD_WINDOW }));
     }
 
@@ -161,11 +164,14 @@ mod tests {
 
     #[test]
     fn infers_the_window_from_the_model_and_the_token_count() {
-        assert_eq!(context_window(Some("claude-sonnet-5"), 90_000, None), STANDARD_WINDOW);
-        assert_eq!(context_window(Some("claude-sonnet-5[1m]"), 90_000, None), EXTENDED_WINDOW);
+        assert_eq!(context_window(Some("claude-haiku-4-5"), 90_000, None), STANDARD_WINDOW);
+        assert_eq!(context_window(Some("claude-haiku-4-5[1m]"), 90_000, None), EXTENDED_WINDOW);
         assert_eq!(context_window(Some("claude-opus-5-5"), 90_000, None), EXTENDED_WINDOW);
+        // Claude Code reports a 1M window for claude-sonnet-5 (a Time Tracker
+        // session at 140,862 tokens showed 70% in Jojo and 14% in Claude).
+        assert_eq!(context_window(Some("claude-sonnet-5"), 140_862, None), EXTENDED_WINDOW);
         // Past 200k, the conversation must have the larger window.
-        assert_eq!(context_window(Some("claude-sonnet-5"), 460_298, None), EXTENDED_WINDOW);
+        assert_eq!(context_window(Some("claude-haiku-4-5"), 460_298, None), EXTENDED_WINDOW);
         assert_eq!(context_window(None, 10, Some(1_000_000)), EXTENDED_WINDOW);
     }
 
