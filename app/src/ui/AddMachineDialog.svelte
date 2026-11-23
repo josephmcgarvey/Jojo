@@ -36,6 +36,8 @@
   const added = $derived(new Set(app.machines.map((m) => m.ssh_host).filter((h): h is string => !!h)));
   /** Whether a server is already in the sidebar under any of its names. */
   const isAdded = (h: SshHost) => added.has(h.alias) || h.other_names.some((n) => added.has(n));
+  /** Whether the chosen host is already a remote location, which the line under the Host list explains. */
+  const chosenAdded = $derived(!otherHost && hosts.some((h) => h.alias === hostChoice && isAdded(h)));
   /**
    * A server already in the sidebar under another of its names (an IP
    * address listed after the alias) keeps that name, so choosing it upgrades
@@ -135,11 +137,14 @@
         <select value={hostChoice} onchange={(e) => chooseHost(e.currentTarget.value)} disabled={running || done}>
           {#if !otherHost && !host}<option value="" disabled>Choose a host from ~/.ssh/config</option>{/if}
           {#each hosts as h (h.alias)}
-            <option value={h.alias}>{h.alias}{h.other_names.length ? ` (${h.other_names.join(", ")})` : ""}{isAdded(h) ? " · added: upgrades and reconnects" : ""}</option>
+            <option value={h.alias}>{h.alias}{h.other_names.length ? ` (${h.other_names.join(", ")})` : ""}{isAdded(h) ? " (added)" : ""}</option>
           {/each}
           <option value={OTHER_HOST}>Other host (user@host)…</option>
         </select>
       </label>
+      {#if chosenAdded}
+        <p class="hint indent">Already in the sidebar. Install upgrades jojod on this server and reconnects; nothing is added twice.</p>
+      {/if}
       {#if otherHost}
         <label>
           <span>Address</span>
@@ -218,6 +223,9 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--jojo-fg);
+  }
+  .hint.indent {
+    margin: -4px 0 10px 78px;
   }
   .hint {
     margin: 0 0 12px;
