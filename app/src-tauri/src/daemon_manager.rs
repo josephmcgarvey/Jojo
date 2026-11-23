@@ -26,6 +26,9 @@ const START_DEADLINE: Duration = Duration::from_secs(if cfg!(windows) { 5 } else
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+/// How long staging retries a daemon file that is in use (see `stage_binaries`).
+#[cfg(windows)]
+const SHARING_RETRY: Duration = Duration::from_secs(2);
 #[cfg(windows)]
 const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
 
@@ -117,12 +120,31 @@ pub fn stage_binaries(source: &Path, dest: &Path) -> io::Result<bool> {
         if to.is_file() && std::fs::read(&to)? == std::fs::read(&from)? {
             continue;
         }
+        // ERROR_SHARING_VIOLATION: a daemon is running from this file. The
+        // copy is tried for up to SHARING_RETRY: right after Restart daemon
+        // ends jojod with `taskkill /F`, Windows releases the ended
+        // process's executable a moment later, and copying at once used to
+        // fail and keep the old daemon (an upgrade then never took effect).
+        // A daemon that is really running keeps the file locked throughout,
+        // and its version stays, as before.
         #[cfg(windows)]
-        match std::fs::copy(&from, &to) {
-            Ok(_) => copied = true,
-            // ERROR_SHARING_VIOLATION: the daemon is running from this file.
-            Err(e) if e.raw_os_error() == Some(32) => {}
-            Err(e) => return Err(e),
+        {
+            let deadline = Instant::now() + SHARING_RETRY;
+            loop {
+                match std::fs::copy(&from, &to) {
+                    Ok(_) => {
+                        copied = true;
+                        break;
+                    }
+                    Err(e) if e.raw_os_error() == Some(32) => {
+                        if Instant::now() >= deadline {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
         }
         #[cfg(unix)]
         {
