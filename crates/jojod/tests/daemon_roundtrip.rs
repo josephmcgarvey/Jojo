@@ -754,7 +754,7 @@ async fn hook_events_report_the_context_usage_from_the_transcript() {
         concat!(
             r#"{"type":"user","message":{"content":"Fix the login bug"}}"#,
             "\n",
-            r#"{"type":"assistant","isSidechain":false,"message":{"model":"claude-sonnet-5","usage":{"input_tokens":4,"cache_creation_input_tokens":2000,"cache_read_input_tokens":148000,"output_tokens":300}}}"#,
+            r#"{"type":"assistant","isSidechain":false,"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":4,"cache_creation_input_tokens":2000,"cache_read_input_tokens":148000,"output_tokens":300}}}"#,
             "\n",
         ),
     )

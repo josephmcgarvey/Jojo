@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "jojo-agent"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "jojo-proto",
  "serde_json",
@@ -2044,7 +2044,7 @@ dependencies = [
 
 [[package]]
 name = "jojo-app"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "anyhow",
  "jojo-proto",
@@ -2068,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "jojo-grid"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "alacritty_terminal",
  "vte",
@@ -2076,7 +2076,7 @@ dependencies = [
 
 [[package]]
 name = "jojo-proto"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "serde",
  "serde_json",
@@ -2087,7 +2087,7 @@ dependencies = [
 
 [[package]]
 name = "jojod"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "anyhow",
  "clap",
