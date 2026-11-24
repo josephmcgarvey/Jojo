@@ -113,6 +113,8 @@ describe("reconcileAll", () => {
         "server1:P9": remote,
       },
       project_order: [],
+      machine_order: [],
+      session_order: [],
     };
     const result = reconcileAll(file, model, ids());
     expect(Object.keys(result.projects).sort()).toEqual(["local:P1", "server1:P9"]);
@@ -131,6 +133,8 @@ describe("reconcileAll", () => {
       flagged: ["local:S1", "server1:S9", "server1:GONE-SESSION"],
       projects: { "local:P1": local, "server1:GONE": { tabs: [newTab("G1", "Q")], active_tab: "G1" } },
       project_order: ["local:P1", "server1:GONE", "server1:P9"],
+      machine_order: ["server1", "local"],
+      session_order: ["server1:GONE-SESSION", "local:S1", "server1:S9"],
     };
     const result = reconcileMachine(file, "server1", model, ids());
     expect(Object.keys(result.projects).sort()).toEqual(["local:P1", "server1:P9"]);
@@ -138,6 +142,9 @@ describe("reconcileAll", () => {
     expect(result.project_order).toEqual(["local:P1", "server1:P9"]);
     // A removed session's flag is dropped; other machines' flags stay.
     expect(result.flagged).toEqual(["local:S1", "server1:S9"]);
+    // So is a removed session's sidebar position; the location order is kept.
+    expect(result.session_order).toEqual(["local:S1", "server1:S9"]);
+    expect(result.machine_order).toEqual(["server1", "local"]);
     expect(result.projects["local:P1"]).toBe(local);
     expect(result.projects["server1:P9"]!.tabs.map((t) => paneIds(t.root))).toEqual([["S9"]]);
   });

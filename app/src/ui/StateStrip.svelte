@@ -9,7 +9,7 @@
   import { orderedSessions } from "../lib/state/views";
   import Flag from "./Flag.svelte";
 
-  const groups = $derived(stripGroups(orderedSessions(app.machines, app.models)));
+  const groups = $derived(stripGroups(orderedSessions(app.machines, app.models, app.workspace.layout)));
   const summary = $derived(stateSummary(groups.flatMap((g) => g.sessions)));
   const focused = $derived(focusedSessionId());
   const labelOf = (machineId: string) => app.machines.find((m) => m.id === machineId)?.label ?? machineId;

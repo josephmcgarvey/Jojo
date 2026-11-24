@@ -70,6 +70,19 @@ pub struct LayoutFile {
     /// name. Absent in files written before this field existed.
     #[serde(default)]
     pub project_order: Vec<String>,
+    /// The sidebar order of locations, as location ids (machines.toml),
+    /// set by dragging a location's heading. A location that is not listed
+    /// goes after the listed ones, in machines.toml order. Absent in files
+    /// written before this field existed.
+    #[serde(default)]
+    pub machine_order: Vec<String>,
+    /// The sidebar order of sessions within their project, as
+    /// `<machine id>:<session id>` keys, set by dragging a session. A
+    /// session that is not listed goes after the listed ones of its
+    /// project, by creation time. Absent in files written before this
+    /// field existed.
+    #[serde(default)]
+    pub session_order: Vec<String>,
     /// The sidebar groups the user folded: location ids (machines.toml) and
     /// project ids, whose rows are hidden under their heading. Absent in
     /// files written before this field existed.
@@ -85,7 +98,7 @@ pub struct LayoutFile {
 
 impl Default for LayoutFile {
     fn default() -> Self {
-        LayoutFile { version: LAYOUT_VERSION, projects: BTreeMap::new(), project_order: Vec::new(), collapsed: Vec::new(), flagged: Vec::new() }
+        LayoutFile { version: LAYOUT_VERSION, projects: BTreeMap::new(), project_order: Vec::new(), machine_order: Vec::new(), session_order: Vec::new(), collapsed: Vec::new(), flagged: Vec::new() }
     }
 }
 
@@ -164,7 +177,7 @@ mod tests {
         };
         let mut projects = BTreeMap::new();
         projects.insert("local:P1".to_string(), ProjectLayout { tabs: vec![tab], active_tab: Some("T1".into()) });
-        LayoutFile { version: LAYOUT_VERSION, projects, project_order: vec!["local:P1".into()], collapsed: vec!["local".into(), "P1".into()], flagged: vec!["local:S2".into()] }
+        LayoutFile { version: LAYOUT_VERSION, projects, project_order: vec!["local:P1".into()], machine_order: vec!["01REMOTE".into(), "local".into()], session_order: vec!["local:S2".into(), "local:S1".into()], collapsed: vec!["local".into(), "P1".into()], flagged: vec!["local:S2".into()] }
     }
 
     #[test]

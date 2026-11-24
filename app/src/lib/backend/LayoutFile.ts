@@ -10,6 +10,21 @@ export type LayoutFile = { version: number, projects: { [key in string]: Project
  */
 project_order: Array<string>, 
 /**
+ * The sidebar order of locations, as location ids (machines.toml),
+ * set by dragging a location's heading. A location that is not listed
+ * goes after the listed ones, in machines.toml order. Absent in files
+ * written before this field existed.
+ */
+machine_order: Array<string>, 
+/**
+ * The sidebar order of sessions within their project, as
+ * `<machine id>:<session id>` keys, set by dragging a session. A
+ * session that is not listed goes after the listed ones of its
+ * project, by creation time. Absent in files written before this
+ * field existed.
+ */
+session_order: Array<string>, 
+/**
  * The sidebar groups the user folded: location ids (machines.toml) and
  * project ids, whose rows are hidden under their heading. Absent in
  * files written before this field existed.

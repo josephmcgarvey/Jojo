@@ -27,7 +27,7 @@ export function runAction(action: AppAction): void {
       openDialog({ kind: "switcher" });
       return;
     case "jump": {
-      const ordered = orderedSessions(app.machines, app.models).map((o) => o.session);
+      const ordered = orderedSessions(app.machines, app.models, app.workspace.layout).map((o) => o.session);
       const next = nextAttentionSession(ordered, focused);
       if (next) revealSession(next);
       return;

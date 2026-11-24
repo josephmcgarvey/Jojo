@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { addProject, app, confirmRestartRemoteDaemon, daemonOutdated, displayLabel, isFlagged, focusPane, focusedSessionId, isFolded, newSession, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderProject, restartDaemon, selectProject, upgradeMachine } from "../lib/state/app.svelte";
+  import { addProject, app, confirmRestartRemoteDaemon, daemonOutdated, displayLabel, isFlagged, focusPane, focusedSessionId, isFolded, newSession, machinesInOrder, projectsInOrder, setGroupsFolded, removeMachine, removeProject, renameProject, renameSession, reorderMachine, reorderProject, reorderSession, restartDaemon, sessionsInOrder, selectProject, upgradeMachine } from "../lib/state/app.svelte";
   import { sessionMenu } from "../lib/state/contextMenus";
   import { formatElapsed } from "../lib/state/elapsed";
   import { beginRename, endRename, openDialog, openMenu, ui } from "../lib/state/ui.svelte";
   import type { Machine } from "../lib/backend/Machine";
   import type { MenuEntry } from "../lib/menu/types";
   import { shellChoices } from "../lib/state/shells";
-  import { sessionsForProject } from "../lib/state/views";
   import { contextMeter, contextTooltip } from "../lib/state/context";
   import { machineStatusText } from "../lib/state/machines";
   import { stateTooltip } from "../lib/state/toasts";
@@ -62,42 +61,67 @@
   }
 
   /**
-   * Drag a project's name to reorder the projects of its machine, the same
-   * way tabs are dragged (TabBar.svelte): more than DRAG_THRESHOLD pixels
-   * starts a drag, and the drop position is the number of the machine's
-   * project rows whose vertical center is above the pointer. A project's
-   * sessions move with it. Projects do not move between machines.
+   * Drag a location's heading, a project's name or a session's row to
+   * reorder it within its group, the same way tabs are dragged
+   * (TabBar.svelte): more than DRAG_THRESHOLD pixels starts a drag, and the
+   * drop position is the number of the group's rows whose vertical center is
+   * above the pointer. Locations reorder among locations (a location's
+   * projects and sessions move with it), projects among the projects of
+   * their location, and sessions among the sessions of their project; a row
+   * does not move to another group. The orders are saved in layout.json
+   * (machine_order, project_order, session_order).
    */
   const DRAG_THRESHOLD = 5;
-  let press: { machineId: string; projectId: string; startY: number; pointerId: number; element: HTMLElement } | null = null;
-  let dragging = $state<{ machineId: string; projectId: string; dropIndex: number } | null>(null);
+  type DragKind = "machine" | "project" | "session";
+  /** A row being dragged: `group` is "" for locations, the location id for projects, the project id for sessions. */
+  interface DragRow {
+    kind: DragKind;
+    group: string;
+    id: string;
+    machineId: string;
+  }
+  let press: (DragRow & { startY: number; pointerId: number; element: HTMLElement }) | null = null;
+  let dragging = $state<(DragRow & { dropIndex: number }) | null>(null);
 
-  function projectDropIndex(machineId: string, y: number): number {
-    const rows = [...document.querySelectorAll<HTMLElement>(`[data-project-machine="${CSS.escape(machineId)}"]`)];
+  function dropIndex(kind: DragKind, group: string, y: number): number {
+    const rows = [...document.querySelectorAll<HTMLElement>(`[data-drag="${kind}"][data-drag-group="${CSS.escape(group)}"]`)];
     return rows.filter((el) => {
       const r = el.getBoundingClientRect();
       return r.top + r.height / 2 < y;
     }).length;
   }
 
-  function onProjectPointerDown(event: PointerEvent, machineId: string, projectId: string): void {
-    if (event.button !== 0 || (event.target as HTMLElement).closest(".add, .chev-button")) return;
-    press = { machineId, projectId, startY: event.clientY, pointerId: event.pointerId, element: event.currentTarget as HTMLElement };
+  /** Where the dragged row will land relative to row `index` of a group of `count` rows: before it, or after it when it is the last. */
+  function dropMark(kind: DragKind, group: string, index: number, count: number): "before" | "after" | null {
+    if (!dragging || dragging.kind !== kind || dragging.group !== group) return null;
+    if (dragging.dropIndex === index) return "before";
+    if (index === count - 1 && dragging.dropIndex === count) return "after";
+    return null;
   }
 
-  function onProjectPointerMove(event: PointerEvent): void {
+  function onRowPointerDown(event: PointerEvent, row: DragRow): void {
+    // Buttons inside a row (fold chevron, +) and the rename field keep their own pointer handling.
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".add, .chev-button, .icon, input")) return;
+    press = { ...row, startY: event.clientY, pointerId: event.pointerId, element: event.currentTarget as HTMLElement };
+  }
+
+  function onRowPointerMove(event: PointerEvent): void {
     if (!press || event.pointerId !== press.pointerId) return;
     if (!dragging) {
       if (Math.abs(event.clientY - press.startY) < DRAG_THRESHOLD) return;
       press.element.setPointerCapture(event.pointerId);
     }
-    dragging = { machineId: press.machineId, projectId: press.projectId, dropIndex: projectDropIndex(press.machineId, event.clientY) };
+    const { kind, group, id, machineId } = press;
+    dragging = { kind, group, id, machineId, dropIndex: dropIndex(kind, group, event.clientY) };
   }
 
-  function onProjectPointerUp(event: PointerEvent): void {
+  function onRowPointerUp(event: PointerEvent): void {
     if (!press || event.pointerId !== press.pointerId) return;
     if (dragging) {
-      reorderProject(dragging.machineId, dragging.projectId, dragging.dropIndex);
+      const { kind, group, id, machineId, dropIndex: to } = dragging;
+      if (kind === "machine") reorderMachine(id, to);
+      else if (kind === "project") reorderProject(group, id, to);
+      else reorderSession(machineId, group, id, to);
       // As in TabBar: swallow only the click that follows this drag.
       const swallow = (e: MouseEvent) => e.stopPropagation();
       window.addEventListener("click", swallow, { capture: true, once: true });
@@ -107,7 +131,7 @@
     dragging = null;
   }
 
-  function onProjectPointerCancel(): void {
+  function onRowPointerCancel(): void {
     press = null;
     dragging = null;
   }
@@ -174,13 +198,31 @@
   <!-- The logo above and the footer below stay in place; only this list scrolls. -->
   <div class="list">
   <NeedsYouQueue />
-  {#each app.machines as machine (machine.id)}
+  {#each machinesInOrder() as machine, machineIndex (machine.id)}
   {@const status = app.statuses[machine.id]}
+  {@const machineDrop = dropMark("machine", "", machineIndex, app.machines.length)}
   {@const statusText = machineStatusText(machine, status)}
   {@const machineFolded = isFolded(machine.id)}
-  <div class="machine-group" class:offline={status?.state !== "connected"} class:folded={machineFolded}>
+  <div
+    class="machine-group"
+    class:offline={status?.state !== "connected"}
+    class:folded={machineFolded}
+    class:dragging={dragging?.kind === "machine" && dragging.id === machine.id}
+    class:drop-before={machineDrop === "before"}
+    class:drop-after={machineDrop === "after"}
+  >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="machine fold-row" title={statusText ?? machine.label} oncontextmenu={(e) => onMachineMenu(e, machine)}>
+  <div
+    class="machine fold-row"
+    title={statusText ?? machine.label}
+    data-drag="machine"
+    data-drag-group=""
+    oncontextmenu={(e) => onMachineMenu(e, machine)}
+    onpointerdown={(e) => onRowPointerDown(e, { kind: "machine", group: "", id: machine.id, machineId: machine.id })}
+    onpointermove={onRowPointerMove}
+    onpointerup={onRowPointerUp}
+    onpointercancel={onRowPointerCancel}
+  >
     <button
       class="chev-button"
       aria-label={`${machineFolded ? "Unfold" : "Fold"} ${machine.label}`}
@@ -197,7 +239,7 @@
     >{machine.label}{#if statusText}<span class="state"> · {statusText}</span>{/if}</button>
     {#if machineFolded}
       {@const projects = projectsOf(machine.id)}
-      {@const hidden = projects.flatMap((p) => sessionsForProject(app.model, p.id))}
+      {@const hidden = projects.flatMap((p) => sessionsInOrder(machine.id, p.id))}
       <!-- A folded row shows the flag when any session it hides is flagged. -->
       <span class="summary">{@render pips(hidden)}{#if hidden.some((x) => isFlagged(x.id))}<Flag size={10} />{/if}<span class="n">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></span>
     {/if}
@@ -209,24 +251,25 @@
   </div>
   <div class="kids" class:folded={machineFolded} inert={machineFolded}><div>
   {#each projectsOf(machine.id) as project, index (project.id)}
-    {@const projectSessions = sessionsForProject(app.model, project.id)}
+    {@const projectSessions = sessionsInOrder(machine.id, project.id)}
     {@const count = projectSessions.length}
     {@const projectFolded = isFolded(project.id)}
-    {@const dropHere = dragging !== null && dragging.machineId === machine.id}
+    {@const projectDrop = dropMark("project", machine.id, index, projectsOf(machine.id).length)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="project fold-row"
       class:folded={projectFolded}
       class:selected={app.selectedProjectId === project.id}
-      class:dragging={dragging?.projectId === project.id}
-      class:drop-before={dropHere && dragging?.dropIndex === index}
-      class:drop-after={dropHere && index === projectsOf(machine.id).length - 1 && dragging?.dropIndex === index + 1}
-      data-project-machine={machine.id}
+      class:dragging={dragging?.kind === "project" && dragging.id === project.id}
+      class:drop-before={projectDrop === "before"}
+      class:drop-after={projectDrop === "after"}
+      data-drag="project"
+      data-drag-group={machine.id}
       oncontextmenu={(e) => onProjectMenu(e, project.id)}
-      onpointerdown={(e) => onProjectPointerDown(e, machine.id, project.id)}
-      onpointermove={onProjectPointerMove}
-      onpointerup={onProjectPointerUp}
-      onpointercancel={onProjectPointerCancel}
+      onpointerdown={(e) => onRowPointerDown(e, { kind: "project", group: machine.id, id: project.id, machineId: machine.id })}
+      onpointermove={onRowPointerMove}
+      onpointerup={onRowPointerUp}
+      onpointercancel={onRowPointerCancel}
     >
       <!-- Alt+click folds or unfolds every project of this location. -->
       <button
@@ -269,7 +312,8 @@
       ><PlusCircle /></button>
     </div>
     <div class="kids" class:folded={projectFolded} inert={projectFolded}><div>
-    {#each projectSessions as session (session.id)}
+    {#each projectSessions as session, sessionIndex (session.id)}
+      {@const sessionDrop = dropMark("session", project.id, sessionIndex, projectSessions.length)}
       {#if isRenaming(session.id)}
         <div class="session renaming">
           <Badge agentState={session.state} title={stateTooltip(session)} />
@@ -287,6 +331,15 @@
         <button
           class="session"
           class:active={focusedSessionId() === session.id}
+          class:dragging={dragging?.kind === "session" && dragging.id === session.id}
+          class:drop-before={sessionDrop === "before"}
+          class:drop-after={sessionDrop === "after"}
+          data-drag="session"
+          data-drag-group={project.id}
+          onpointerdown={(e) => onRowPointerDown(e, { kind: "session", group: project.id, id: session.id, machineId: machine.id })}
+          onpointermove={onRowPointerMove}
+          onpointerup={onRowPointerUp}
+          onpointercancel={onRowPointerCancel}
           onclick={() => focusPane(session.id)}
           ondblclick={() => beginRename({ kind: "session", sessionId: session.id, where: "sidebar" })}
           oncontextmenu={(e) => onSessionMenu(e, session.id)}
@@ -481,15 +534,22 @@
   .project .chev-button {
     left: 6px;
   }
-  .project.dragging {
+  .machine-group.dragging,
+  .project.dragging,
+  .session.dragging {
     opacity: 0.55;
   }
-  /* The drop position: an accent line above the project the dragged one
-     will sit before, or below the machine's last project. */
-  .project.drop-before {
+  /* The drop position: an accent line above the location, project or
+     session the dragged one will sit before, or below the last one of its
+     group. */
+  .machine-group.drop-before,
+  .project.drop-before,
+  .session.drop-before {
     box-shadow: inset 0 2px 0 var(--jojo-accent);
   }
-  .project.drop-after {
+  .machine-group.drop-after,
+  .project.drop-after,
+  .session.drop-after {
     box-shadow: inset 0 -2px 0 var(--jojo-accent);
   }
   .project .name {

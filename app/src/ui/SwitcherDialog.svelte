@@ -46,7 +46,7 @@
 
   const items = $derived.by((): Item[] => {
     const list: Item[] = [];
-    for (const { session, machineId } of orderedSessions(app.machines, app.models)) {
+    for (const { session, machineId } of orderedSessions(app.machines, app.models, app.workspace.layout)) {
       const project = app.model.projects[session.project_id];
       list.push({
         key: `session:${session.id}`,

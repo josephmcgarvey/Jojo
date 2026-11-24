@@ -52,7 +52,7 @@ import { chimeFor, playChime } from "./chime";
 import { shellProgram } from "./shells";
 import { setFolded } from "./folding";
 import { flagKey, setFlag } from "./flags";
-import { orderedProjects, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
+import { orderedMachines, orderedProjects, orderedProjectSessions, reorderedKeys, reorderedProjectOrder, sessionsForProject, sortedProjects } from "./views";
 import {
   createFailed,
   emptyWorkspace,
@@ -758,6 +758,30 @@ export function reorderProject(machineId: string, projectId: string, toIndex: nu
   const shown = projectsInOrder(machineId).map((p) => p.id);
   const project_order = reorderedProjectOrder(app.workspace.layout.project_order ?? [], machineId, shown, projectId, toIndex);
   commit({ ...app.workspace, layout: { ...app.workspace.layout, project_order } });
+}
+
+/** The locations in sidebar order (layout.json's machine_order, then machines.toml order). */
+export function machinesInOrder(): Machine[] {
+  return orderedMachines(app.machines, app.workspace.layout.machine_order ?? []);
+}
+
+/** Moves a location to a drop position in the sidebar; saved in layout.json. */
+export function reorderMachine(machineId: string, toIndex: number): void {
+  const shown = machinesInOrder().map((m) => m.id);
+  const machine_order = reorderedKeys(app.workspace.layout.machine_order ?? [], shown, machineId, toIndex);
+  commit({ ...app.workspace, layout: { ...app.workspace.layout, machine_order } });
+}
+
+/** A project's sessions in sidebar order (layout.json's session_order, then creation time). */
+export function sessionsInOrder(machineId: string, projectId: string): SessionInfo[] {
+  return orderedProjectSessions(app.models[machineId] ?? emptyModel(), machineId, projectId, app.workspace.layout.session_order ?? []);
+}
+
+/** Moves a session to a drop position among its project's sessions; saved in layout.json. Sessions do not move between projects. */
+export function reorderSession(machineId: string, projectId: string, sessionId: string, toIndex: number): void {
+  const shown = sessionsInOrder(machineId, projectId).map((s) => `${machineId}:${s.id}`);
+  const session_order = reorderedKeys(app.workspace.layout.session_order ?? [], shown, `${machineId}:${sessionId}`, toIndex);
+  commit({ ...app.workspace, layout: { ...app.workspace.layout, session_order } });
 }
 
 /** One search of every session's output across the connected locations. */

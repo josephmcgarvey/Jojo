@@ -107,5 +107,7 @@ export function reconcileMachine(file: LayoutFile, machineId: string, model: Mod
   const project_order = (file.project_order ?? []).filter((key) => !key.startsWith(prefix) || key in projects);
   // Flags of this machine's sessions that are gone are dropped.
   const flagged = pruneFlags(file.flagged ?? [], machineId, Object.keys(model.sessions));
-  return { version: file.version, projects, project_order, collapsed: file.collapsed ?? [], flagged };
+  // So is the sidebar position of a removed session (the same key shape as a flag).
+  const session_order = pruneFlags(file.session_order ?? [], machineId, Object.keys(model.sessions));
+  return { version: file.version, projects, project_order, machine_order: file.machine_order ?? [], session_order, collapsed: file.collapsed ?? [], flagged };
 }
