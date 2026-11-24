@@ -11,6 +11,7 @@
   import { errorText } from "../lib/errors";
   import { app, machineAdded } from "../lib/state/app.svelte";
   import { isMac } from "../lib/platform";
+  import { examplePatternName, matchesHostPattern } from "../lib/sshPattern";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -30,8 +31,22 @@
   /** The Host select's value for a host typed into the text field. */
   const OTHER_HOST = "__other__";
   let otherHost = $state(false);
+  /**
+   * Wildcard Host patterns in ~/.ssh/config (`*.exe.xyz`). A pattern names
+   * no single server, so choosing one asks for the full name of a server it
+   * matches; SSH then applies that Host line's key and settings.
+   */
+  let patterns = $state<string[]>([]);
+  /** The pattern whose row is chosen, when the typed host is for one. */
+  let pattern = $state<string | null>(null);
+  /** The Host select's value prefix for a pattern row. */
+  const PATTERN = "__pattern__:";
+  /** Shown under the Address field when the typed name is not one the chosen pattern covers. */
+  const patternMismatch = $derived(pattern !== null && host.trim() !== "" && !matchesHostPattern(host, pattern));
   /** The Host list's row for `host`: the server that has `host` among its names. */
-  const hostChoice = $derived(otherHost ? OTHER_HOST : (hosts.find((h) => h.alias === host || h.other_names.includes(host))?.alias ?? host));
+  const hostChoice = $derived(
+    otherHost ? (pattern ? PATTERN + pattern : OTHER_HOST) : (hosts.find((h) => h.alias === host || h.other_names.includes(host))?.alias ?? host),
+  );
   /** Hosts already in the sidebar, marked in the list (adding one again upgrades and reconnects it). */
   const added = $derived(new Set(app.machines.map((m) => m.ssh_host).filter((h): h is string => !!h)));
   /** Whether a server is already in the sidebar under any of its names. */
@@ -44,7 +59,8 @@
    * and reconnects that location instead of adding the server again.
    */
   function chooseHost(value: string): void {
-    otherHost = value === OTHER_HOST;
+    pattern = value.startsWith(PATTERN) ? value.slice(PATTERN.length) : null;
+    otherHost = value === OTHER_HOST || pattern !== null;
     if (otherHost) {
       host = "";
       return;
@@ -82,6 +98,9 @@
         if (list.length === 0) otherHost = true;
       })
       .catch(() => (otherHost = true));
+    void invoke<string[]>("ssh_host_patterns")
+      .then((list) => (patterns = list))
+      .catch(() => (patterns = []));
   });
 
   /** The backend's prefix for "installing would end the running daemon" (install.rs RESTART_NEEDED). */
@@ -139,6 +158,13 @@
           {#each hosts as h (h.alias)}
             <option value={h.alias}>{h.alias}{h.other_names.length ? ` (${h.other_names.join(", ")})` : ""}{isAdded(h) ? " (added)" : ""}</option>
           {/each}
+          {#if patterns.length}
+            <optgroup label="Patterns (type a server name)">
+              {#each patterns as p (p)}
+                <option value={PATTERN + p}>{p}…</option>
+              {/each}
+            </optgroup>
+          {/if}
           <option value={OTHER_HOST}>Other host (user@host)…</option>
         </select>
       </label>
@@ -149,8 +175,19 @@
         <label>
           <span>Address</span>
           <!-- svelte-ignore a11y_autofocus -->
-          <input bind:value={host} placeholder="user@host or host" autofocus disabled={running || done} spellcheck="false" />
+          <input bind:value={host} placeholder={pattern ? examplePatternName(pattern) : "user@host or host"} autofocus disabled={running || done} spellcheck="false" />
         </label>
+        {#if pattern && patternMismatch}
+          <p class="hint indent warn">
+            <code>{host.trim()}</code> does not match <code>{pattern}</code>, so that Host line's key and settings do not apply. Type the server's
+            full name, such as <code>{examplePatternName(pattern)}</code>.
+          </p>
+        {:else if pattern}
+          <p class="hint indent">
+            Type the full name of one server that <code>{pattern}</code> matches, such as <code>{examplePatternName(pattern)}</code>. SSH uses that
+            Host line's key and settings.
+          </p>
+        {/if}
       {/if}
     {:else}
       <label>
@@ -226,6 +263,9 @@
   }
   .hint.indent {
     margin: -4px 0 10px 78px;
+  }
+  .hint.warn {
+    color: var(--jojo-needs-you);
   }
   .hint {
     margin: 0 0 12px;

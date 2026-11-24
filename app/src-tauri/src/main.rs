@@ -56,6 +56,16 @@ fn ssh_hosts() -> Vec<jojo_app::install::SshHost> {
         .unwrap_or_default()
 }
 
+/// Wildcard `Host` patterns from `~/.ssh/config` (`*.exe.xyz`), for the Add
+/// machine dialog, which asks for the full name of a server one matches.
+#[tauri::command]
+fn ssh_host_patterns() -> Vec<String> {
+    jojo_app::install::default_ssh_config()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|config| jojo_app::install::ssh_config_patterns(&config))
+        .unwrap_or_default()
+}
+
 /// A remote location added with a username and password instead of a host
 /// from ~/.ssh/config (the Add remote location dialog's "Username and
 /// password").
@@ -506,6 +516,7 @@ fn main() {
             restart_daemon,
             list_machines,
             ssh_hosts,
+            ssh_host_patterns,
             add_machine,
             remove_machine,
             restart_remote_daemon,

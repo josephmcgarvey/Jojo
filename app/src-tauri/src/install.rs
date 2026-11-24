@@ -79,6 +79,31 @@ pub fn ssh_config_hosts(config: &str) -> Vec<SshHost> {
     hosts
 }
 
+/// The wildcard patterns on `Host` lines in `~/.ssh/config`, such as
+/// `*.exe.xyz`, in file order without repeats. A pattern names no single
+/// server, so the Host list cannot connect to it; the Add location dialog
+/// lists each one and asks for the full name of a server it matches, whose
+/// connection then takes that line's settings (key, user, port). Negated
+/// patterns (`!name`) and patterns with no fixed text (`*`, `?*`), which
+/// match every host, are left out.
+pub fn ssh_config_patterns(config: &str) -> Vec<String> {
+    let mut patterns: Vec<String> = Vec::new();
+    for line in config.lines() {
+        let mut words = line.split_whitespace();
+        if !words.next().is_some_and(|w| w.eq_ignore_ascii_case("host")) {
+            continue;
+        }
+        for name in words {
+            let wildcard = name.contains(['*', '?']);
+            let fixed_text = name.chars().any(|c| !matches!(c, '*' | '?'));
+            if wildcard && fixed_text && !name.starts_with('!') && !patterns.iter().any(|p| p == name) {
+                patterns.push(name.to_owned());
+            }
+        }
+    }
+    patterns
+}
+
 pub fn default_ssh_config() -> Option<PathBuf> {
     crate::platform::home_dir().map(|home| home.join(".ssh").join("config"))
 }
@@ -297,6 +322,14 @@ mod tests {
         assert_eq!(ssh_config_hosts(config), vec![host("build-box", &["192.0.2.5"]), host("dev", &[])]);
         // A name listed on an earlier line is not listed again.
         assert_eq!(ssh_config_hosts("Host a 192.0.2.9\nHost 192.0.2.9 b\n"), vec![host("a", &["192.0.2.9"]), host("b", &[])]);
+    }
+
+    #[test]
+    fn wildcard_patterns_are_listed_for_typing_a_full_name() {
+        let config = "Host exe.dev *.exe.xyz\n  IdentityFile ~/.ssh/id_ed25519_exedev\nHost *\n  ServerAliveInterval 30\nHost web-?? !web-00 *.exe.xyz\nhost ?*\n";
+        assert_eq!(ssh_config_patterns(config), vec!["*.exe.xyz".to_string(), "web-??".to_string()]);
+        // The concrete name on the same line stays in the Host list.
+        assert_eq!(ssh_config_hosts(config).iter().map(|h| h.alias.as_str()).collect::<Vec<_>>(), vec!["exe.dev"]);
     }
 
     #[test]
