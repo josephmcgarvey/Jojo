@@ -346,6 +346,18 @@ async fn restart_remote_daemon(app: tauri::AppHandle, hub: State<'_, Arc<Hub>>, 
     Ok(())
 }
 
+/// Copies files dropped on a remote session's pane to the server
+/// (drops.rs) and returns the server's paths, in the order given.
+#[tauri::command]
+async fn upload_drops(id: String, paths: Vec<String>) -> Result<Vec<String>, String> {
+    let machine = machines::load(&machines::default_path())
+        .into_iter()
+        .find(|m| m.id == id && m.kind == MachineKind::Ssh)
+        .ok_or("This location is not a remote location")?;
+    let target = machine.ssh_target().ok_or("This location has no SSH host")?;
+    jojo_app::drops::upload(&target, &paths).await
+}
+
 #[tauri::command]
 fn get_settings() -> Settings {
     settings::load(&settings::default_path())
@@ -520,6 +532,7 @@ fn main() {
             add_machine,
             remove_machine,
             restart_remote_daemon,
+            upload_drops,
             get_settings,
             save_settings,
             local_running_sessions,

@@ -3,6 +3,7 @@
   import type { SessionInfo } from "../lib/protocol/SessionInfo";
   import { app, displayLabel, focusPane, isFlagged, machineOfSession, renameSession } from "../lib/state/app.svelte";
   import { disconnectedOverlay } from "../lib/state/machines";
+  import { fileDrop } from "../lib/input/fileDrop.svelte";
   import { paneMenu } from "../lib/state/contextMenus";
   import { notices } from "../lib/state/notices.svelte";
   import { endRename, openMenu, ui } from "../lib/state/ui.svelte";
@@ -42,6 +43,8 @@
   class:focused
   class:stateful={token !== null}
   class:needs={session.state === "needs_you"}
+  class:drop-target={fileDrop.sessionId === session.id}
+  data-drop-session={session.id}
   style:--state={token ? `var(${token})` : undefined}
   onpointerdowncapture={() => focusPane(session.id)}
 >
@@ -176,6 +179,17 @@
   }
   .notice.error {
     color: var(--jojo-error);
+  }
+  /* Files dragged over this pane land here (fileDrop.svelte.ts): an accent
+     outline inside the pane, drawn above the terminal. */
+  .pane.drop-target .body::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px dashed var(--jojo-accent);
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--jojo-accent) 10%, transparent);
+    pointer-events: none;
   }
   .overlay {
     position: absolute;

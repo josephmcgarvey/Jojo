@@ -6,6 +6,7 @@ pub mod config;
 pub mod connection;
 pub mod credentials;
 pub mod daemon_manager;
+pub mod drops;
 pub mod hub;
 pub mod install;
 pub mod layout;

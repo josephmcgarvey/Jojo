@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { startFileDrop } from "./lib/input/fileDrop.svelte";
   import { app, currentTab, focusedSessionId, saveSidebarWidth, setSidebarHidden, sidebarHidden, startApp } from "./lib/state/app.svelte";
   import { closeDialog, closeMenu, ui } from "./lib/state/ui.svelte";
   import { resolveShortcut } from "./lib/input/shortcuts";
@@ -38,10 +39,12 @@
   onMount(() => {
     window.addEventListener("keydown", onKeydown, true);
     const stopApp = startApp();
+    const stopFileDrop = startFileDrop();
     loadSnippets();
     return () => {
       window.removeEventListener("keydown", onKeydown, true);
       stopApp();
+      stopFileDrop();
     };
   });
   /**

@@ -16,13 +16,14 @@ export interface Notice {
 export const notices: Record<string, Notice> = $state({});
 let lastSerial = 0;
 
-export function showNotice(sessionId: string, text: string, tone: "info" | "error" = "info"): void {
+/** Shows `text` in the session's strip for `ms` milliseconds (by default COPIED_MS for info, ERROR_MS for errors), replacing any notice there. */
+export function showNotice(sessionId: string, text: string, tone: "info" | "error" = "info", ms?: number): void {
   const serial = ++lastSerial;
   notices[sessionId] = { text, tone, serial };
   setTimeout(
     () => {
       if (notices[sessionId]?.serial === serial) delete notices[sessionId];
     },
-    tone === "info" ? COPIED_MS : ERROR_MS,
+    ms ?? (tone === "info" ? COPIED_MS : ERROR_MS),
   );
 }
