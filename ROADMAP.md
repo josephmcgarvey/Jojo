@@ -45,7 +45,13 @@ Silicon and Intel. These behaviors are unconfirmed:
 
 ## 4. Video demo with voiceover
 
-**Status:** postponed by the user (2026-11-10); approach not chosen.
+**Status:** a 4:07 cut (`jojo-demo-full-v2.mp4`) is waiting for the user's
+feedback; the short cut has not been made. It was recorded by a Playwright
+script driving the real app over WebView2's debugging port, with a demo
+profile and demo server, and narrated with an ElevenLabs voice from the free
+plan, which must be regenerated on a paid plan before public use. Everything
+lives in `Documents\Jojo Demo\`, outside the repository. The notes below
+describe the two approaches considered before it was made.
 
 Two ways to make it, which differ in how the screen is recorded:
 
@@ -78,37 +84,7 @@ Both need ffmpeg (`winget install Gyan.FFmpeg`).
 3. The audience and length, for example a 60–90 second overview for a
    website or a 3–5 minute walkthrough for people trying Jojo.
 
-## 5. Clear error for servers that run each SSH connection in a container
-
-**Status:** found on 2026-11-12 on a RunCloud server; the server was fixed
-by changing the system user's shell, and the app change is postponed.
-
-RunCloud's jailed shell (`/bin/rc-shell`) runs every SSH connection in its
-own temporary Docker container: a separate process namespace (process 1 is
-`bash`), the hostname `localhost` and a `/.dockerenv` file. The home folder
-is shared between connections; processes are not. Jojo starts the remote
-daemon (`jojod serve --daemonize`) over one connection and attaches over
-another (`jojod attach --stdio`). The daemon dies with the first connection's
-container, the attach finds `~/.jojo/jojod.sock` with no listener, and the
-window retries about every 33 seconds while showing "Reconnecting"
-indefinitely, with no explanation. The server's log showed a new
-`jojod starting` line every 33 seconds and no client connections.
-
-The fix is to detect this case and report it instead of retrying:
-
-1. During **Add remote location** and on each reconnect, check for
-   `/.dockerenv` or a process 1 that is not an init system, and check whether
-   a daemon started in one connection is still running in the next.
-2. When it is not, stop retrying and show a message such as "This server
-   runs each SSH connection in a temporary container, so the Jojo daemon and
-   its sessions cannot keep running. Change the user's shell to /bin/bash
-   (RunCloud: System Users)."
-
-Running the daemon inside the attach connection would make such servers
-usable, but sessions would end whenever the window disconnects, so it is not
-part of this fix.
-
-## 6. Choosing an agent per session
+## 5. Choosing an agent per session
 
 **Status:** requested by the user on 2026-11-12; postponed. Compact
 conversation was built for Claude Code only (the session menu and the
@@ -140,7 +116,7 @@ The change replaces `SessionKind::Claude` with an agent id in the protocol
 version mismatches), adds the agent choice to the New session menu, and
 moves Compact conversation's command and enabled states into the profile.
 
-## 7. Natural-language search of session output
+## 6. Natural-language search of session output
 
 **Status:** postponed by the user, who chose plain-text search first
 (built in the switcher's In output section).
@@ -153,7 +129,7 @@ the session text sent to a model, which raises what is sent and where: the
 output can contain secrets and client data, so the design has to say which
 model runs it, whether it runs locally, and how a session is excluded.
 
-## 8. Shared snippets
+## 7. Shared snippets
 
 **Status:** postponed when the snippets library was built (commit
 `4c47cfb`). Placeholders, the other half of this entry, were built after
@@ -168,7 +144,7 @@ would be written back to it.
 Today snippets live only in `snippets.json` in the app's settings folder,
 one library per computer.
 
-## 9. Showing why menu items are disabled
+## 8. Showing why menu items are disabled
 
 **Status:** raised by the user on 2026-11-14; postponed.
 
@@ -182,7 +158,7 @@ another project") appears only as a tooltip on hover
    Layout and Equalize sizes in a tab with one pane), and keep graying out
    items that can apply after a change, such as Open in split.
 
-## 10. Smooth working spinners under Prism
+## 9. Smooth working spinners under Prism
 
 **Status:** reported by the user on 2026-11-18 after the Prism performance
 changes (commit `d9ce43e`); postponed.
@@ -206,36 +182,15 @@ performance profiler first:
    decorated layers instead of a changing custom property, which the
    compositor can apply without recalculating styles.
 
-## 11. Dropping files and images onto a pane
+## 10. Pasting a screenshot from the clipboard
 
-**Status:** requested by the user on 2026-11-19; postponed.
+**Status:** open question from the file drop work (dropping files onto a
+pane types their paths, and remote sessions get copies in
+`~/.jojo/drops/`).
 
-Dropping a file onto a Jojo pane does nothing. Tauri takes files dropped on
-the window before the webview sees them and reports them as its own
-`drag-drop` event, with the file paths and the drop position; Jojo does not
-listen for it. In Windows Terminal and iTerm a drop types the file's path
-into the terminal, and Claude Code attaches an image whose path is typed in,
-which is how dropping images into Claude works there.
-
-The plan:
-
-1. **This PC sessions.** Listen for the webview's drag-drop event, find the
-   pane under the drop position (the pane rectangles in
-   `app/src/lib/layout/geometry.ts`), and type every dropped file's path into
-   that pane as one bracketed paste, quoted when a path contains spaces.
-   Claude Code attaches the images; a shell gets the paths for a command.
-2. **Remote sessions.** A path on this computer means nothing on the server,
-   so each file is first copied over SSH into `~/.jojo/drops/` on the server
-   (streamed over stdin, as `install.rs` uploads jojod, so the server needs
-   neither scp nor SFTP), and the server's path is typed instead. Open
-   questions: a size limit, and when old files in `~/.jojo/drops/` are
-   deleted.
-3. **Feedback.** While files are dragged over the window, the pane under the
-   pointer is highlighted, so it is clear where they will land.
-
-A related question, to test before building: pasting a screenshot from the
-clipboard. Claude Code reads the clipboard itself when its paste-image key
-is pressed. Jojo's own text paste (⌘V on macOS, Ctrl+Shift+V on Windows)
-handles only text, and whether Claude Code's key reaches it through Jojo is
-untested. A remote Claude Code cannot read this computer's clipboard at all;
-an image on the clipboard could go through the same upload as a dropped file.
+Claude Code reads the clipboard itself when its paste-image key is pressed.
+Jojo's own text paste (⌘V on macOS, Ctrl+Shift+V on Windows) handles only
+text, and whether Claude Code's key reaches it through Jojo is untested. A
+remote Claude Code cannot read this computer's clipboard at all; an image on
+the clipboard could be saved to a file and sent through the same upload as a
+dropped file (`app/src-tauri/src/drops.rs`).
