@@ -31,6 +31,10 @@ pub enum ConnectionStatus {
     /// SSH refused the key (spec 8.3 rule 5). The loop stops retrying until
     /// the user asks to reconnect.
     AuthFailed { message: String },
+    /// The server cannot keep a daemon running between SSH connections
+    /// (see `ssh::daemon_does_not_persist`). The loop stops retrying until
+    /// the user asks to reconnect.
+    Unsupported { message: String },
 }
 
 /// The machine id of This PC (spec 8.1).

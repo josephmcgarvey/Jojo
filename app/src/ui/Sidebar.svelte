@@ -214,7 +214,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="machine fold-row"
-    title={statusText ?? machine.label}
+    title={status && "message" in status ? status.message : (statusText ?? machine.label)}
     data-drag="machine"
     data-drag-group=""
     oncontextmenu={(e) => onMachineMenu(e, machine)}

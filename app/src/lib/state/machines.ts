@@ -18,6 +18,8 @@ export function machineStatusText(machine: Pick<Machine, "kind">, status: Connec
       return "reconnecting";
     case "auth_failed":
       return "auth failed";
+    case "unsupported":
+      return "cannot keep sessions";
     case "version_mismatch":
       return machine.kind === "local" ? "restart required" : "upgrade required";
     case "elevated":
@@ -33,5 +35,6 @@ export function machineStatusText(machine: Pick<Machine, "kind">, status: Connec
 export function disconnectedOverlay(machine: Pick<Machine, "kind" | "label"> | undefined, status: ConnectionStatus | undefined): string | null {
   if (!machine || machine.kind === "local" || status?.state === "connected") return null;
   if (status?.state === "auth_failed") return `Auth failed on ${machine.label}. Load your key with ssh-add, then Reconnect.`;
+  if (status?.state === "unsupported") return status.message;
   return `Disconnected. Sessions keep running on ${machine.label}.`;
 }

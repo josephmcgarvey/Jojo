@@ -130,6 +130,13 @@ where
                 bridge.wait_for_restart_after(since).await;
                 attempt = 0;
             }
+            Err(ConnectError::Unsupported(message)) => {
+                // Starting another daemon would end the same way; wait for
+                // the user's Reconnect after they change the server.
+                bridge.emit_status(ConnectionStatus::Unsupported { message });
+                bridge.wait_for_restart_after(since).await;
+                attempt = 0;
+            }
             Err(ConnectError::Io(e)) => {
                 attempt += 1;
                 let message = e.to_string();

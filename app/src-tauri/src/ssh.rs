@@ -276,7 +276,7 @@ impl AsyncRead for ChildReader {
 enum AttachFailure {
     Connect(ConnectError),
     /// The remote `jojod attach` could not reach a daemon (exit code 1).
-    NoDaemon(String),
+    NoDaemon,
 }
 
 async fn attach(target: &SshTarget) -> Result<Client, AttachFailure> {
@@ -339,7 +339,7 @@ fn classify(host: &str, stderr: &str, handshake: io::Error) -> AttachFailure {
     // jojod reports a missing or refusing socket as "Error: ... (os error 2)"
     // or "(os error 111)"; ssh's own connection errors start with "ssh:".
     if !stderr.contains("ssh:") && (stderr.contains("(os error 2)") || stderr.contains("(os error 111)")) {
-        return AttachFailure::NoDaemon(stderr.to_owned());
+        return AttachFailure::NoDaemon;
     }
     let detail = if stderr.is_empty() { handshake.to_string() } else { stderr.to_owned() };
     AttachFailure::Connect(ConnectError::Io(io::Error::other(format!("ssh {host}: {detail}"))))
@@ -353,7 +353,7 @@ pub async fn connect(target: &SshTarget) -> Result<Client, ConnectError> {
     match attach(target).await {
         Ok(client) => return Ok(client),
         Err(AttachFailure::Connect(e)) => return Err(e),
-        Err(AttachFailure::NoDaemon(_)) => {}
+        Err(AttachFailure::NoDaemon) => {}
     }
     let started = run(target, &start_daemon_command(), b"").await.map_err(ConnectError::Io)?;
     if is_auth_failure(started.code, &started.stderr) {
@@ -365,8 +365,72 @@ pub async fn connect(target: &SshTarget) -> Result<Client, ConnectError> {
     match attach(target).await {
         Ok(client) => Ok(client),
         Err(AttachFailure::Connect(e)) => Err(e),
-        Err(AttachFailure::NoDaemon(stderr)) => Err(ConnectError::Io(io::Error::other(format!("jojod on {host} is not accepting connections: {stderr}")))),
+        // `serve --daemonize` reported a running daemon, yet this new
+        // connection finds none: the daemon ended with the connection that
+        // started it.
+        Err(AttachFailure::NoDaemon) => Err(ConnectError::Unsupported(daemon_does_not_persist(target).await)),
     }
+}
+
+/// Reports what the server looks like to a new connection: whether
+/// `/.dockerenv` exists, the name of process 1 (Linux only) and the user's
+/// login shell, each on its own `key=value` line.
+const SERVER_PROBE: &str = "[ -f /.dockerenv ] && echo dockerenv=yes; [ -r /proc/1/comm ] && echo \"pid1=$(cat /proc/1/comm)\"; echo \"shell=$SHELL\"";
+
+/// Whether the probe's output shows a container: a `/.dockerenv` file, or a
+/// process 1 that is not a system's init (systemd, init, launchd, runit,
+/// openrc-init). A container started for one connection has `bash` or
+/// `sshd` as process 1.
+pub fn probe_shows_container(stdout: &str) -> bool {
+    stdout.lines().any(|line| match line.trim().split_once('=') {
+        Some(("dockerenv", "yes")) => true,
+        Some(("pid1", name)) => !["systemd", "init", "launchd", "runit", "openrc-init"].contains(&name.trim()),
+        _ => false,
+    })
+}
+
+/// The login shell the probe reported, when there is one.
+fn probe_shell(stdout: &str) -> Option<&str> {
+    stdout.lines().find_map(|line| line.trim().strip_prefix("shell=")).filter(|s| !s.is_empty())
+}
+
+/// The explanation shown when a daemon started on `host` is gone by the
+/// next SSH connection. It names the cause when the probe shows a container
+/// and the RunCloud fix when the login shell is RunCloud's jailed shell.
+pub fn unsupported_message(host: &str, probe: &str) -> String {
+    let fix = match probe_shell(probe) {
+        Some(s) if s.ends_with("rc-shell") => format!(
+            "The login shell is {s}, RunCloud's jailed shell. In RunCloud, open the server's System Users and change this user's shell to /bin/bash, then Reconnect."
+        ),
+        Some(s) => format!("Change this user's login shell (now {s}) to /bin/bash or another ordinary shell, then Reconnect."),
+        None => "Change this user's login shell to /bin/bash or another ordinary shell, then Reconnect.".to_owned(),
+    };
+    if probe_shows_container(probe) {
+        format!("{host} runs each SSH connection in its own temporary container, so the Jojo daemon and its sessions end when the connection that started them closes. {fix}")
+    } else {
+        format!("jojod on {host} ends when the SSH connection that started it closes, so sessions cannot keep running there. {fix}")
+    }
+}
+
+/// Probes `target` over a new connection and returns `unsupported_message`.
+/// A probe that cannot run gives the message without the container detail.
+pub async fn daemon_does_not_persist(target: &SshTarget) -> String {
+    let probe = run(target, SERVER_PROBE, b"").await.map(|out| out.stdout).unwrap_or_default();
+    unsupported_message(&target.host, &probe)
+}
+
+/// Whether a daemon is reachable over a new connection. `jojod attach
+/// --stdio` with stdin closed connects, reaches the end of its input and
+/// exits 0, or exits 1 with jojod's "os error 2" (no socket) or "os error
+/// 111" (nothing listening). Some(false) only for those two errors; None
+/// when the check itself failed (an ssh error, a timeout).
+pub async fn daemon_reachable(target: &SshTarget) -> Option<bool> {
+    let out = run(target, &format!("{REMOTE_JOJOD} attach --stdio"), b"").await.ok()?;
+    if out.code == Some(0) {
+        return Some(true);
+    }
+    let no_daemon = !out.stderr.contains("ssh:") && (out.stderr.contains("(os error 2)") || out.stderr.contains("(os error 111)"));
+    no_daemon.then_some(false)
 }
 
 #[cfg(test)]
@@ -378,7 +442,7 @@ mod tests {
             AttachFailure::Connect(ConnectError::AuthFailed(_)) => "auth",
             AttachFailure::Connect(ConnectError::Io(e)) if e.kind() == io::ErrorKind::NotFound => "not installed",
             AttachFailure::Connect(_) => "other",
-            AttachFailure::NoDaemon(_) => "no daemon",
+            AttachFailure::NoDaemon => "no daemon",
         }
     }
 
@@ -398,6 +462,28 @@ mod tests {
         // $SHELL is used only when it is an executable file (RunCloud sets it to /bin/rc-shell, which does not exist).
         assert!(cmd.starts_with("s=\"$SHELL\"; [ -x \"$s\" ] || s=$(command -v bash) || s=/bin/sh;"), "{cmd}");
         assert!(cmd.ends_with("exec \"$s\" -lc '~/.local/bin/jojod serve --daemonize'"), "{cmd}");
+    }
+
+    #[test]
+    fn probe_output_shows_a_container_by_dockerenv_or_process_1() {
+        assert!(probe_shows_container("dockerenv=yes\npid1=bash\nshell=/bin/rc-shell\n"));
+        assert!(probe_shows_container("pid1=bash\nshell=/bin/bash\n"));
+        assert!(!probe_shows_container("pid1=systemd\nshell=/bin/bash\n"));
+        // macOS has no /proc: only the shell line.
+        assert!(!probe_shows_container("shell=/bin/zsh\n"));
+        assert!(!probe_shows_container(""));
+    }
+
+    #[test]
+    fn unsupported_message_names_the_container_and_the_runcloud_fix() {
+        let runcloud = unsupported_message("web1", "dockerenv=yes\npid1=bash\nshell=/bin/rc-shell\n");
+        assert!(runcloud.starts_with("web1 runs each SSH connection in its own temporary container"), "{runcloud}");
+        assert!(runcloud.contains("RunCloud's jailed shell"), "{runcloud}");
+        let other = unsupported_message("box", "pid1=systemd\nshell=/usr/bin/fish\n");
+        assert!(other.starts_with("jojod on box ends when the SSH connection"), "{other}");
+        assert!(other.contains("(now /usr/bin/fish)"), "{other}");
+        let unknown = unsupported_message("box", "");
+        assert!(unknown.contains("Change this user's login shell to /bin/bash"), "{unknown}");
     }
 
     #[test]

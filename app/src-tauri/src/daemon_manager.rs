@@ -74,6 +74,10 @@ pub enum ConnectError {
     Mismatch { daemon: u32 },
     /// SSH refused the key (spec 8.3 rule 5); ssh's stderr.
     AuthFailed(String),
+    /// A remote daemon ends when the SSH connection that started it closes
+    /// (the server runs each connection in its own temporary container), so
+    /// retrying cannot help; the text explains what to change on the server.
+    Unsupported(String),
     Io(io::Error),
 }
 
@@ -87,6 +91,7 @@ impl std::fmt::Display for ConnectError {
                 jojo_proto::PROTOCOL_VERSION
             ),
             ConnectError::AuthFailed(stderr) => write!(f, "SSH refused the key: {stderr}"),
+            ConnectError::Unsupported(message) => f.write_str(message),
             ConnectError::Io(e) => write!(f, "{e}"),
         }
     }

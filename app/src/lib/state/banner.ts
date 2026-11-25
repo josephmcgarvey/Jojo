@@ -53,6 +53,9 @@ export function connectionBanner(status: ConnectionStatus, everConnected: boolea
     case "auth_failed":
       // Spec 8.3 rule 5 (remote machines only).
       return { text: "Auth failed. Load your key with ssh-add, then Reconnect.", action: "Reconnect" };
+    case "unsupported":
+      // Remote machines only: the daemon ends with the SSH connection that started it.
+      return { text: status.message, action: "Reconnect" };
   }
 }
 

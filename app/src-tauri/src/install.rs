@@ -201,6 +201,12 @@ pub async fn install(target: &SshTarget, daemon_dir: &Path, allow_restart: bool,
     if started.code != Some(0) {
         return Err(fail(&mut report, "start", format!("jojod did not start: {}", started.stderr.trim())));
     }
+    // A server that runs each SSH connection in its own temporary
+    // container (RunCloud's /bin/rc-shell) ends the daemon with the
+    // connection that started it; check from a new connection.
+    if crate::ssh::daemon_reachable(target).await == Some(false) {
+        return Err(fail(&mut report, "start", crate::ssh::daemon_does_not_persist(target).await));
+    }
     report(step("start", "ok", "jojod is running"));
 
     // Step 6: logout survival.
