@@ -55,10 +55,28 @@
   const themeFont = $derived(/^\s*"?([^",]+)/.exec(theme.tokens["font-ui"] ?? "")?.[1] ?? "Geist Sans");
   /** The base color in use: the chosen one clamped to the theme's lightness range, or the theme's own. */
   const accent = $derived(effectiveAccent(theme, draft.accentColor));
+  // A preset equal to the theme's own accent (Violet on Neon Glass and Prism)
+  // is left out: the default swatch already draws that color.
   const swatches = $derived([
     { name: `${theme.name} default`, value: "", shown: theme.accent },
-    ...BASE_COLOR_PRESETS.map((p) => ({ name: p.name, value: p.color, shown: effectiveAccent(theme, p.color) })),
+    ...BASE_COLOR_PRESETS.filter((p) => p.color.toLowerCase() !== theme.accent.toLowerCase()).map((p) => ({
+      name: p.name,
+      value: p.color,
+      shown: effectiveAccent(theme, p.color),
+    })),
   ]);
+  /**
+   * The swatch whose stored value is the chosen base color: the default when
+   * none is set (or it is not a #rgb/#rrggbb color), a preset when it is that
+   * preset's color, none for any other color. Compared by stored value, not by
+   * the color drawn, because two presets can be adjusted to the same color on
+   * a light theme and a preset can equal the theme's accent.
+   */
+  const chosenSwatch = $derived.by(() => {
+    const value = draft.accentColor.trim().toLowerCase();
+    if (!parseHex(value)) return "";
+    return swatches.find((s) => s.value !== "" && s.value.toLowerCase() === value)?.value ?? (value === theme.accent.toLowerCase() ? "" : null);
+  });
   // Live preview of the appearance choices; cleared when the screen closes.
   $effect(() => {
     app.themePreview = { theme: draft.theme, accentColor: draft.accentColor, uiFontFamily: draft.uiFontFamily };
@@ -185,10 +203,10 @@
           {#each swatches as swatch (swatch.name)}
             <button
               class="swatch"
-              class:chosen={swatch.shown === accent}
+              class:chosen={swatch.value === chosenSwatch}
               title={swatch.name}
               aria-label={`Base color ${swatch.name}`}
-              aria-pressed={swatch.shown === accent}
+              aria-pressed={swatch.value === chosenSwatch}
               style:background={swatch.shown}
               onclick={() => (draft.accentColor = swatch.value)}
             ></button>
