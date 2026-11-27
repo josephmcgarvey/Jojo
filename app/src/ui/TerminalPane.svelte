@@ -115,7 +115,11 @@
     const onMouseDown = (event: MouseEvent) => {
       if (event.button === 0) window.addEventListener("mouseup", onWindowMouseUp, true);
     };
-    host.addEventListener("mousedown", onMouseDown);
+    // Capture phase: when the program has mouse reporting on, a Shift-drag
+    // selection starts in xterm.js's SelectionService, which stops the
+    // mousedown's propagation, so a bubble-phase listener here never ran
+    // and the Shift selection was not copied.
+    host.addEventListener("mousedown", onMouseDown, true);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
@@ -224,7 +228,7 @@
 
     return () => {
       host.removeEventListener("contextmenu", onContextMenu, true);
-      host.removeEventListener("mousedown", onMouseDown);
+      host.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("mouseup", onWindowMouseUp, true);
       stream.stop();
       observer.disconnect();
