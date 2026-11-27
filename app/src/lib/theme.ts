@@ -5,6 +5,7 @@ import type { ITheme } from "@xterm/xterm";
 import contrast from "../themes/contrast.json";
 import daylight from "../themes/daylight.json";
 import graphite from "../themes/graphite.json";
+import parchment from "../themes/parchment.json";
 import neonGlass from "../themes/neon-glass.json";
 import phosphor from "../themes/phosphor.json";
 import porcelain from "../themes/porcelain.json";
@@ -35,6 +36,7 @@ export const THEMES: Record<string, Theme> = {
   graphite: graphite as Theme,
   phosphor: phosphor as Theme,
   porcelain: porcelain as Theme,
+  parchment: parchment as Theme,
   contrast: contrast as Theme,
 };
 

@@ -27,7 +27,7 @@ Jojo has four defining properties:
    the server, and the server's sessions appear in the same sidebar as local
    ones.
 4. The interface is HTML and CSS, so every color, font, border, blur and glow
-   is a theme token. Jojo ships seven themes.
+   is a theme token. Jojo ships eight themes.
 
 ## Installing
 
@@ -325,7 +325,7 @@ color, terminal and interface fonts, scrollback length, copy on select,
 notifications and sound, the default shell, session restore, and naming
 sessions from Claude's first prompt.
 
-Jojo has seven themes:
+Jojo has eight themes:
 
 | Theme | Mode | Description |
 |---|---|---|
@@ -335,6 +335,7 @@ Jojo has seven themes:
 | Graphite | Dark | Flat and matte, gray throughout, color only for session states. |
 | Phosphor | Dark | Green-screen terminal: square corners, text glow, monospace interface font. |
 | Porcelain | Light | Solid white panels with soft shadows and a cobalt accent. |
+| Parchment | Light | Warm cream paper with sepia-brown text and a burnt-sienna accent; solid panels and a faint warm background glow. |
 | Contrast | Dark | Black and white, 2-pixel borders, yellow focus and orange "needs you". |
 
 The base color setting recolors the accent of any theme. The resulting colors
