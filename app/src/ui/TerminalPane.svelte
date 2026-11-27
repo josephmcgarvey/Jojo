@@ -15,6 +15,9 @@
   import { openLink } from "../lib/terminal/links";
   import { createPaneStream } from "../lib/terminal/paneStream";
   import { suppressQueryReplies } from "../lib/terminal/queries";
+  import { handleClipboardWrites } from "../lib/terminal/osc52";
+  import { errorText } from "../lib/errors";
+  import { showNotice } from "../lib/state/notices.svelte";
   import { terminalFontStack } from "../lib/fonts";
   import { registerTerminal } from "../lib/terminal/registry";
   import { router } from "../lib/terminal/router";
@@ -71,6 +74,11 @@
     // open without a confirmation; open_url validates them.
     created.loadAddon(new WebLinksAddon((_event, uri) => void openLink(id, uri, false)));
     suppressQueryReplies(created);
+    // A program's own copy (Claude Code's mouse selection on a server)
+    // arrives as OSC 52; see osc52.ts.
+    handleClipboardWrites(created, (text) => {
+      navigator.clipboard.writeText(text).catch((err) => showNotice(id, `Copy failed: ${errorText(err)}`, "error"));
+    });
     created.open(host);
     // Spec 9.4 mouse reporting rule. This listener runs in the capture phase
     // on the host, before xterm.js's handlers on its child elements. The
